@@ -11,8 +11,8 @@
 | Maintainer | Mahesh. Approves this plan, each brief, any golden change, any skipped Critical/Major, and each merge. PRs open automatically |
 | Orchestrator | Claude Code. Writes briefs, validates findings, runs gates. Writes no product code |
 | Author | CodeRabbit Coding Agent: `coderabbit code new` / `resume` / `push`. One task per step, one fix task per review round |
-| Judges | 4 read-only subagents (Opus, a different model from the author): scope, behavior/goldens, tests, security/hygiene |
-| Gate | CodeRabbit review + PR Security Review + Security Gate check + CI on the exact head commit |
+| Judges | 4 read-only judges, none the author's model: scope, behavior/goldens, tests, security/hygiene. Scope, tests and security run as Opus subagents. **Behavior runs on Codex** (`codex exec -m gpt-6.1-sol -c model_reasoning_effort="xhigh" -s read-only`), so not every judge shares one model's blind spots |
+| Gate | CodeRabbit review + PR Security Review + the `CodeRabbit Security` check + the Security Gate pre-merge row + CI, on the exact head commit |
 
 ## Simplifications for run 1
 
@@ -115,20 +115,36 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 
 ## Per-step loop (what the orchestrator runs)
 
-1. Write the brief in `docs/briefs/NN-*.md`: scope, `ALLOW:` globs, acceptance tests, required checks, what to report.
+1. **Check outside facts, then write the brief** in `docs/briefs/NN-*.md`: scope, `ALLOW:` globs, acceptance tests, required checks, what to report. Before writing, the orchestrator verifies every outside fact the brief relies on against the real system, not memory:
+   - the check names the repo actually emits (`gh api …/check-runs` on a recent head);
+   - CLI flags (`--help`);
+   - the target platforms (macOS, with bash 3.2 and Node 22 or later; Ubuntu CI; Windows only for portability in tests);
+   - CodeRabbit setting states.
+   Each verified fact is listed in the brief under `## Assumptions (verified)`.
 2. `coderabbit code new` with the brief, as a **normal task** that starts by asking for a plan ("write a plan, make no code changes until I approve"). Do not use `--plan`: a plan-mode task cannot be continued as a coding task. After the maintainer approves the plan, continue in the same task with `coderabbit code resume -m`.
-3. `coderabbit code push` to the task's working branch → `scope-gate.sh` → deterministic fixers (format, safe lint) as a labeled commit.
-4. Verify in parallel: the required checks on the orchestrator's machine (macOS) and in CI, the 4 judges, and red-then-green for every new test (against `main`, or the previous head in a fix round). Any failure → a fix round (step 6) before the PR exists.
-5. **Open the PR automatically.** When step 4 is all green, `scripts/golden/open-pr.sh` opens the PR with no maintainer prompt:
+   - In the task's web UI: **Run CLI review on, Autofix off.** The CLI has no flag for either, so every brief also carries the CLI-review rule below, and the step does not depend on the switch.
+   - Autofix stays off because it acts on PR review comments before the orchestrator has validated them.
+3. **The Coding Agent's own CLI review** happens before it finishes, under the rule every brief carries:
+   > Before finishing, run `coderabbit review --agent --committed --base main`. Fix valid findings only within the ALLOW globs, with a test for each behavior or security fix. In the report, list every CLI finding as fixed or skipped, with the reason. Never change a file outside ALLOW to satisfy a finding; report it instead.
+
+   The orchestrator checks that list. A skipped Critical or Major needs the same validation as a PR finding.
+4. `coderabbit code push` to the task's working branch → `scope-gate.sh` (base = the merge base with `main`) → deterministic fixers (format, safe lint) as a labeled commit.
+5. Verify in parallel: the required checks on the orchestrator's machine (macOS) and in CI, the 4 judges, and red-then-green for every new test (against `main`, or the previous head in a fix round). Static guards that scan the test files themselves are proven by the tests judge instead of red-then-green. Any failure → a fix round (step 7) before the PR exists.
+   - **Judge briefs are unprompted.** Each judge gets the shared preamble, its own property brief from `scripts/golden/judges/`, the diff range and the brief or fix-round message, and nothing else. The orchestrator does not add hints, suspected bugs or areas to focus on, because hints anchor the judge.
+   - **The scope judge also checks the brief itself:** whether every outside fact the brief assumes holds in the repo and environment (check names exist, flags apply, the platforms named are the real ones). A brief that is wrong fails the scope judge just as a diff that strays from the brief does.
+   - **Judge notes are never dropped.** Every judge note of Minor or higher goes into the next fix round, or into the PR body under "Skipped findings" with a reason. The orchestrator does not decide silently.
+6. **Open the PR automatically.** When step 5 is all green, `scripts/golden/open-pr.sh` opens the PR with no maintainer prompt:
    - title from the brief;
-   - body with the validation results, judge verdicts, red-then-green lists and skipped findings;
+   - body with the validation results, judge verdicts, red-then-green lists, the CLI-review list and skipped findings;
    - then a `@coderabbitai test` comment.
    Until that script lands, the orchestrator runs the same `gh` commands.
-6. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. After a fix round on an open PR, re-verify (step 4) and push; the PR updates itself.
-7. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI and the `CodeRabbit Security` check green, and the Security Gate row passed in the pre-merge checks table. Then merge.
-8. Log the stage times; QA sweep.
+7. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. Each fix-round message carries the CLI-review rule too. After a fix round on an open PR, re-verify (step 5) and push; the PR updates itself.
+8. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI and the `CodeRabbit Security` check green, and the Security Gate row passed in the pre-merge checks table. Then merge.
+9. Log the stage times; QA sweep.
 
 **Maintainer checkpoints:** the plan and each brief (scope), the Coding Agent's plan for each step, any golden change, any skipped Critical/Major finding, and the merge. Opening a PR is not a checkpoint.
+
+**Why these rules (lessons from PR 0):** CodeRabbit raised 5 Major findings across three reviews of PR 0. Of those, 2 traced to errors in the brief, 1 to a judge note the orchestrator downgraded, and 1 to a judge prompt that steered attention elsewhere; the fifth was invalid and was withdrawn. A third brief error ("Security Gate" described as a GitHub check) surfaced when the strict gate first ran. The pre-PR CLI review, the brief-assumption check, the no-silent-drop rule and unprompted, mixed-model judges each target one of those causes.
 
 ## Done when
 
