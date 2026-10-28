@@ -652,3 +652,19 @@ test("rule 6: cent-price regression snapshots the rounded discount and total in 
   assert.deepEqual(result.lastOrder, expected);
   assert.deepEqual(result.orders[0], expected);
 });
+
+for (const [label, quantity] of [["NaN", NaN], ["Infinity", Infinity], ["1.5", 1.5], ['"2"', "2"]]) {
+  for (const [operation, change] of [
+    ["addItem (new line)", (state) => add(state, mat, quantity)],
+    ["addItem (merge)", (state) => add(state, lamp, quantity)],
+    ["changeQuantity (existing line)", (state) => changeQuantity(state, lamp.id, "Terracotta", quantity)],
+    ["changeQuantity (missing line)", (state) => changeQuantity(state, "missing", "Terracotta", quantity)],
+  ]) {
+    test(`rule 2: quantity-validation regression: ${operation} rejects ${label} without changing frozen state`, () => {
+      const before = richState();
+      const state = freeze(structuredClone(before));
+      assert.throws(() => change(state), { name: "RangeError", message: "Quantity must be a whole number." });
+      assert.deepEqual(state, before);
+    });
+  }
+}

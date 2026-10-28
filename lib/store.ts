@@ -61,6 +61,10 @@ export const demoAccount = {
   name: "Alex Morgan",
 };
 
+function validateQuantity(quantity: number): void {
+  if (!Number.isInteger(quantity)) throw new RangeError("Quantity must be a whole number.");
+}
+
 function clampQuantity(quantity: number): number {
   return Math.min(10, Math.max(1, quantity));
 }
@@ -78,6 +82,7 @@ function updateCart(state: StoreState, cart: CartItem[]): StoreState {
 }
 
 export function addItem(state: StoreState, product: Product, color: string, quantity: number): StoreState {
+  validateQuantity(quantity);
   if (!product.inStock || !product.colors.some((option) => option.name === color)) {
     throw new RangeError("Choose an available product and one of its colors.");
   }
@@ -91,6 +96,7 @@ export function addItem(state: StoreState, product: Product, color: string, quan
 }
 
 export function changeQuantity(state: StoreState, productId: string, color: string, quantity: number): StoreState {
+  validateQuantity(quantity);
   return updateCart(state, state.cart.map((item) => item.productId === productId && item.color === color
     ? { ...item, quantity: clampQuantity(quantity) }
     : item));
