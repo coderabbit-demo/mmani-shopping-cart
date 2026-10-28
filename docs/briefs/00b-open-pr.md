@@ -7,6 +7,7 @@
 
 - `gh` 2.100.0 is on the orchestrator's machine. `gh pr create` takes `--base`, `--head`, `--title` and `--body-file`.
 - The check-runs on a recent PR head (4c4ac45) are `CodeRabbit`, `CodeRabbit Security`, `golden`, `typecheck` and `unit`. The Security Gate is a pre-merge table row, not a check-run.
+- `reviews.auto_review.auto_pause_after_reviewed_commits` exists in CodeRabbit's schema v2: an integer, default 5, where 0 disables it.
 - The orchestrator runs macOS `/bin/bash` 3.2.57 with Node 24; CI runs Ubuntu with Node 22. Windows matters only for portability in tests.
 
 ## Goal
@@ -44,6 +45,8 @@ When verification is green, the pipeline opens the step's PR with no maintainer 
 
 5. **`scripts/golden/judges/preamble.md` says judges take no hints.** State that the judge works only from the diff, the brief or fix-round message, and its property brief, and that it covers its whole property even if the orchestrator's message seems to point somewhere. Docs only; exempt from the test rule.
 
+6. **Raise CodeRabbit's auto-pause limit.** In `.coderabbit.yaml`, set `reviews.auto_review.auto_pause_after_reviewed_commits: 10`. The default is 5, and PR 0's reviews paused after its sixth push. Verified against https://coderabbit.ai/integrations/schema.v2.json: an integer, default 5, where 0 disables the pause. Config only; exempt from the test rule.
+
 ## CLI review (required before finishing)
 
 Before finishing, run `coderabbit review --agent --committed --base main`. Fix valid findings only within the ALLOW globs, with a test for each behavior or security fix. In the report, list every CLI finding as fixed or skipped, with the reason. Never change a file outside ALLOW to satisfy a finding; report it instead.
@@ -56,6 +59,7 @@ ALLOW: scripts/golden/scope-gate.sh
 ALLOW: tests/scripts.test.mjs
 ALLOW: scripts/golden/judges/scope.md
 ALLOW: scripts/golden/judges/preamble.md
+ALLOW: .coderabbit.yaml
 ```
 
 ## Required checks
