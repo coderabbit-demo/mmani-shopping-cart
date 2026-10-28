@@ -11,7 +11,7 @@
 | Maintainer | Mahesh. Approves this plan, each brief, any golden change, any skipped Critical/Major, and each merge. PRs open automatically |
 | Orchestrator | Claude Code. Writes briefs, validates findings, runs gates. Writes no product code |
 | Author | CodeRabbit Coding Agent: `coderabbit code new` / `resume` / `push`. One task per step, one fix task per review round |
-| Judges | 4 read-only judges, none the author's model: scope, behavior/goldens, tests, security/hygiene. Scope, tests and security run as Opus subagents. **Behavior runs on Codex** (`codex exec -m gpt-6.1-sol -c model_reasoning_effort="xhigh" -s read-only`), so not every judge shares one model's blind spots |
+| Judges | 4 read-only judges, none the author's model: scope, behavior/goldens, tests, security/hygiene. Scope, tests and security run as Opus subagents. **Behavior runs on Codex** (`codex exec -m gpt-6.1-sol -c model_reasoning_effort="xhigh" -s read-only "<brief>" </dev/null`; without `</dev/null` it waits on stdin when run in the background and returns nothing), so not every judge shares one model's blind spots |
 | Gate | CodeRabbit review + PR Security Review + the `CodeRabbit Security` check + the Security Gate pre-merge row + CI, on the exact head commit |
 
 ## Simplifications for run 1
