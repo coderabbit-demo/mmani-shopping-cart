@@ -1,7 +1,7 @@
 # Brief 02 — `feat: behavior pin for domain`
 
 **Mode:** pin the accepted feature. The goldens are new: no existing golden changes, because none exist yet. **Jira:** SC-5
-**Read first:** `docs/PLAN.md`, sections 5.1 and PR 2, and `AGENTS.md`.
+**Read first:** `docs/PLAN.md` (PR 2 section) and `AGENTS.md`. The pin design follows section 5.1, "Pin and plan", of the Golden Framework whitepaper, not of PLAN.md.
 
 ## Assumptions (verified 2026-10-28 on main 861121b)
 
