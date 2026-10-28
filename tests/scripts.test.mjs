@@ -234,8 +234,12 @@ test("red-green treats an empty test file as setup failure", (t) => {
   assert.doesNotMatch(result.stdout, /^RED:/m);
 });
 
-function securitySummary(status = "passed") {
-  return `<details>\n<summary>Pre-merge checks</summary>\n<details>\n<summary>${status === "passed" ? "Passed" : "Failed"} checks</summary>\n\n| Check | Status | Explanation |\n| --- | --- | --- |\n|        Security Gate       | ![${status}](https://storage.googleapis.com/coderabbit_public_assets/pre-merge-checks-${status}.svg) | Review result. |\n\n</details>\n</details>`;
+function reviewCoverage(coveredCommitId = "a".repeat(40), kind = "reviewed") {
+  return `<!-- final_review_risk_coverage:${JSON.stringify({ sourceCommitId: coveredCommitId, coveredCommitId, kind })} -->`;
+}
+
+function securitySummary(status = "passed", coverage = reviewCoverage()) {
+  return `<details>\n<summary>Pre-merge checks</summary>\n<details>\n<summary>${status === "passed" ? "Passed" : "Failed"} checks</summary>\n\n| Check | Status | Explanation |\n| --- | --- | --- |\n|        Security Gate       | ![${status}](https://storage.googleapis.com/coderabbit_public_assets/pre-merge-checks-${status}.svg) | Review result. |\n\n</details>\n</details>\n${coverage}`;
 }
 
 function strictFixture(t) {
@@ -289,6 +293,41 @@ test("strict gate accepts a passed Security Gate row without a Security Gate che
   assert.match(result.stdout, /PASS: strict gate/);
   assert.equal(result.stderr, "");
   assert.equal(fixture.data.checks[0].check_runs.some((check) => check.name === "Security Gate"), false);
+});
+
+for (const [name, coverage] of [
+  ["an older head marker", reviewCoverage("b".repeat(40))],
+  ["a missing marker", ""],
+  ["a malformed marker", "<!-- final_review_risk_coverage:{invalid JSON} -->"],
+  ["an unreviewed marker", reviewCoverage("a".repeat(40), "pending")],
+  ["conflicting markers", `${reviewCoverage()}\n${reviewCoverage("b".repeat(40))}`],
+  ["conflicting markers in reverse order", `${reviewCoverage("b".repeat(40))}\n${reviewCoverage()}`],
+  ["a malformed marker alongside valid coverage", `${reviewCoverage()}\n<!-- final_review_risk_coverage:{invalid JSON} -->`],
+  ["an unterminated marker alongside valid coverage", `${reviewCoverage()}\n<!-- final_review_risk_coverage:{`],
+]) {
+  test(`strict gate rejects Security Gate coverage with ${name}`, (t) => {
+    const fixture = strictFixture(t);
+    fixture.data.comments.push([{
+      id: 2,
+      user: { login: "coderabbitai[bot]" },
+      updated_at: "2026-10-28T13:00:00Z",
+      body: `${securitySummary("passed", coverage)}\n<!-- change_assessment_commit:"${fixture.data.head}" -->`,
+    }]);
+    const result = fixture.run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(result.stderr, `FAIL: Security Gate summary does not cover head ${fixture.data.head}\n`);
+    assert.doesNotMatch(result.stdout, /PASS: strict gate/);
+  });
+}
+
+test("strict gate accepts reviewed Security Gate coverage for the current head", (t) => {
+  const fixture = strictFixture(t);
+  fixture.data.comments[0][0].user.login = "coderabbitai[bot]";
+  fixture.data.comments[0][0].body = securitySummary("passed", reviewCoverage(fixture.data.head));
+  const result = fixture.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, `PASS: strict gate for PR #1 at ${fixture.data.head}\n`);
 });
 
 for (const status of ["failed", "warning", "error", "inconclusive"]) {

@@ -9,6 +9,7 @@ no Critical/Major in the latest CodeRabbit review, and successful head
 checks/statuses. typecheck, unit, golden, and CodeRabbit Security must be
 present and successful. The latest CodeRabbit summary's Pre-merge checks
 must contain a Security Gate row with the passed status image.
+The same summary must have reviewed risk coverage for the current head.
 Skipped/neutral GitHub checks do not pass.
 Requires authenticated gh, Node >=22.6.0, and Bash. Read-only GitHub calls.
 HELP
@@ -67,6 +68,18 @@ const summary = read('comments.json').flat()
 if (!summary) {
   failures.push('CodeRabbit summary with Pre-merge checks is missing');
 } else {
+  const coverageMarkers = [...summary.body.matchAll(/<!--\s*final_review_risk_coverage\s*:\s*([\s\S]*?)-->/g)];
+  const markerCount = (summary.body.match(/<!--\s*final_review_risk_coverage\b/g) ?? []).length;
+  const coversHead = coverageMarkers.length > 0 && coverageMarkers.length === markerCount
+    && coverageMarkers.every(([, json]) => {
+      try {
+        const coverage = JSON.parse(json);
+        return coverage?.kind === 'reviewed' && coverage.coveredCommitId === head;
+      } catch {
+        return false;
+      }
+    });
+  if (!coversHead) failures.push(`Security Gate summary does not cover head ${head}`);
   const marker = summary.body.indexOf('Pre-merge checks');
   const stack = [];
   const tags = [...summary.body.matchAll(/<\/?details\b[^>]*>/gi)];
