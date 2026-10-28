@@ -96,7 +96,7 @@ Name each rule test after its rule, for example "rule 1: ...". The tests must co
 - **Rule 6:** a three-line order appears in full in both `orders[0]` and `lastOrder`, and they are deep-equal. Placing an order clears the cart and coupon. An empty cart throws.
 - **Immutability:** every exported state function leaves a deep-frozen input state unchanged. Use `structuredClone` with a recursive `Object.freeze`.
 
-All of these tests fail on `main`, where `lib/` doesn't exist. Red must come from assertions or a missing module, never from a typo. The tests judge checks that each test asserts behavior.
+`lib/` doesn't exist on `main`, so red-then-green is **not applicable** (brand-new modules). Use plain static imports; do not manufacture a red. The tests judge proves that each test asserts real behavior. *(Corrected 2026-10-28: the first version said a missing module counts as red, which contradicts `red-green.sh`. The Coding Agent flagged it during planning.)*
 
 ## CLI review (required before finishing)
 
