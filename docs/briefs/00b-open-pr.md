@@ -1,7 +1,7 @@
 # Brief 00b — `chore: automatic PR opening`
 
 **Mode:** Brownfield, pipeline tooling only. Runs after PR 0 merges.
-**Read first:** `docs/PLAN.md`, "Per-step loop", step 5.
+**Read first:** `docs/PLAN.md`, "Per-step loop", steps 1–6.
 
 ## Assumptions (verified 2026-10-28)
 
