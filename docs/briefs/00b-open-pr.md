@@ -29,10 +29,16 @@ When verification is green, the pipeline opens the step's PR with no maintainer 
    - rejects a bad branch name and a brief outside `docs/briefs/`;
    - each test asserts the exit code and the stdout/stderr content.
 
+3. **`scripts/golden/scope-gate.sh` compares from the merge base.**
+   - Today it diffs `<base>` against `<head>` directly. Once `main` moves past the branch point, commits on `main` show up as branch changes and fail the gate. This happened on PR 0: the docs commit 1424799 on `main` was reported as out of scope.
+   - Fix: diff `$(git merge-base <base> <head>)` against `<head>`.
+   - Guard: a test where `main` gains a commit after the branch point and the gate still passes for an in-scope branch change.
+
 ## ALLOW
 
 ```
 ALLOW: scripts/golden/open-pr.sh
+ALLOW: scripts/golden/scope-gate.sh
 ALLOW: tests/scripts.test.mjs
 ```
 
