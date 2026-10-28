@@ -427,9 +427,17 @@ else if (action === 'pr create') {
   data.body = fs.readFileSync(option('--body-file'), 'utf8');
   result = data.pr.url;
 } else if (action === 'api') {
-  if (!args.includes('--paginate') || !args.includes('--slurp') ||
+  if (!args.includes('--paginate') ||
       !args.includes('repos/fixture/repo/issues/7/comments?per_page=100')) process.exit(19);
-  result = data.comments;
+  if (args.includes('--jq')) {
+    if (args.includes('--slurp')) process.exit(19);
+    result = data.comments.map((page) => Array.isArray(page) &&
+      page.every((comment) => typeof comment?.body === 'string')
+      ? page.filter((comment) => comment.body === '@coderabbitai test').length : -1).join('\\n');
+  } else {
+    if (!args.includes('--slurp')) process.exit(19);
+    result = data.comments;
+  }
 } else if (action === 'pr comment') {
   data.comments.push([{ body: option('--body') }]);
   result = data.pr.url + '#issuecomment-1';
@@ -687,4 +695,84 @@ test("open-pr encodes parentheses in the brief link", (t) => {
   write(f.directory, brief, f.source);
   assertOpened(f.run(["feature/sc-3", brief, f.results]));
   assert.match(f.data.body, /\[Brief\]\(https:\/\/github\.com\/fixture\/repo\/blob\/feature%2Fsc-3\/docs\/briefs\/step%29link%28\.md\)/);
+});
+
+
+for (const matching of [true, false]) {
+  test(`open-pr handles more than 1 MiB of comments ${matching ? "with" : "without"} an exact match`, (t) => {
+    const f = openPrFixture(t);
+    f.data.comments = [
+      Array.from({ length: 100 }, () => ({ body: "Unrelated comment: " + "x".repeat(12_000) })),
+      [{ body: "@coderabbitai test please" }, ...(matching ? [{ body: "@coderabbitai test" }] : [])],
+    ];
+    assert.ok(Buffer.byteLength(JSON.stringify(f.data.comments)) > 1024 * 1024);
+    assertOpened(f.run());
+    const api = f.data.calls.find((args) => args[0] === "api");
+    assert.ok(api.includes("--paginate"));
+    assert.ok(api.includes("--jq"));
+    assert.equal(api.includes("--slurp"), false);
+    assert.equal(f.data.calls.filter((args) => args[1] === "comment").length, matching ? 0 : 1);
+    assert.equal(f.data.comments.flat().filter((comment) => comment.body === "@coderabbitai test").length, 1);
+  });
+}
+
+test("strict gate accepts a completed neutral CodeRabbit Security check", (t) => {
+  const f = strictFixture(t);
+  f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security").conclusion = "neutral";
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, `PASS: strict gate for PR #1 at ${f.data.head}\n`);
+});
+
+test("strict gate rejects unit neutral even when CodeRabbit Security neutral passes", (t) => {
+  const f = strictFixture(t);
+  for (const check of f.data.checks[0].check_runs) {
+    if (["unit", "CodeRabbit Security"].includes(check.name)) check.conclusion = "neutral";
+  }
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stderr, "FAIL: check unit: completed/neutral\n");
+  assert.equal(result.stdout, "");
+});
+
+for (const conclusion of ["failure", "cancelled", "timed_out", "action_required", "skipped", null]) {
+  test(`strict gate rejects CodeRabbit Security conclusion ${conclusion ?? "pending"}`, (t) => {
+    const f = strictFixture(t);
+    f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security").conclusion = conclusion;
+    const result = f.run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(result.stderr, `FAIL: check CodeRabbit Security: completed/${conclusion ?? "pending"}\n`);
+    assert.equal(result.stdout, "");
+  });
+}
+
+test("strict gate rejects a pending CodeRabbit Security check", (t) => {
+  const f = strictFixture(t);
+  const security = f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security");
+  security.status = "in_progress";
+  security.conclusion = null;
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stderr, "FAIL: check CodeRabbit Security: in_progress/pending\n");
+  assert.equal(result.stdout, "");
+});
+
+test("strict gate rejects a neutral CodeRabbit Security check for another head", (t) => {
+  const f = strictFixture(t);
+  const security = f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security");
+  security.head_sha = "b".repeat(40);
+  security.conclusion = "neutral";
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stderr, "FAIL: check CodeRabbit Security: completed/neutral\n");
+  assert.equal(result.stdout, "");
+});
+
+test("strict gate help documents the neutral exception only for CodeRabbit Security", () => {
+  const result = command(scripts, "bash", [join(scripts, "strict-gate.sh"), "--help"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /CodeRabbit Security also accepts neutral/);
+  assert.match(result.stdout, /All other checks require success/);
 });

@@ -44,7 +44,25 @@ const [branch, briefFile, resultsFile, directory] = process.argv.slice(2);
 function fail(message) { throw new Error(message); }
 function gh(...args) {
   try {
-    return execFileSync('bash', ['-c', 'exec gh "$@"', 'gh', ...args], {
+    const command = args[0] === 'api' ? `set -o pipefail
+      gh "$@" | {
+        matched=false
+        valid=true
+        seen=false
+        while IFS= read -r count || [[ -n $count ]]; do
+          seen=true
+          case $count in
+            ''|*[!0-9]*) valid=false ;;
+            *[1-9]*) matched=true ;;
+          esac
+        done
+        if [[ $valid == true && $seen == true ]]; then
+          printf '%s\\n' "$matched"
+        else
+          printf 'null\\n'
+        fi
+      }` : 'exec gh "$@"';
+    return execFileSync('bash', ['-c', command, 'gh', ...args], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (error) {
@@ -106,10 +124,10 @@ try {
     url = gh('pr', 'create', '--base', 'main', '--head', branch, '--title', title, '--body-file', bodyFile).trim();
     number = prNumber(url);
   }
-  const pages = json(gh('api', '--paginate', '--slurp', `repos/${repo.nameWithOwner}/issues/${number}/comments?per_page=100`));
-  if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page)) ||
-      pages.flat().some((comment) => typeof comment?.body !== 'string')) fail('Invalid comments returned by gh');
-  if (!pages.flat().some((comment) => comment.body === '@coderabbitai test')) {
+  const matched = json(gh('api', '--paginate', `repos/${repo.nameWithOwner}/issues/${number}/comments?per_page=100`,
+    '--jq', 'if type == "array" and all(.[]; (.body | type) == "string") then [.[] | select(.body == "@coderabbitai test")] | length else -1 end'));
+  if (typeof matched !== 'boolean') fail('Invalid comments returned by gh');
+  if (!matched) {
     gh('pr', 'comment', number, '--body', '@coderabbitai test');
   }
   writeFileSync(join(directory, 'url'), url);
