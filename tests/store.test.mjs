@@ -616,3 +616,39 @@ test("immutability: selectors and catalog inputs accept frozen data without muta
   assert.deepEqual(state, before);
   assert.deepEqual(product, stand);
 });
+
+test("rule 3: cent-price regression rounds the $100.10 DESK15 discount half-up", () => {
+  const state = applyCoupon(add(freshState(), { ...lamp, price: 100.10 }), "DESK15").state;
+  assert.deepEqual(totals(state), { subtotal: 100.1, discount: 15.02, shipping: 0, total: 85.08 });
+});
+
+test("rule 4: cent-price regression includes express shipping after the rounded discount", () => {
+  const state = setDelivery(applyCoupon(add(freshState(), { ...lamp, price: 100.10 }), "DESK15").state, "express");
+  assert.deepEqual(totals(state), { subtotal: 100.1, discount: 15.02, shipping: 12, total: 97.08 });
+});
+
+test("rule 2: cent-price regression computes an exact $0.30 line total for three $0.10 items", () => {
+  const state = add(freshState(), { ...lamp, price: 0.10 }, 3);
+  assert.equal(lineTotal(state.cart[0]), 0.3);
+});
+
+test("rule 2: cent-price regression sums subtotals in cents across quantities and lines", () => {
+  const state = add(freshState(), { ...lamp, price: 0.10 }, 3);
+  assert.equal(subtotal(state), 0.3);
+  const twoLines = add(state, { ...keyboard, price: 0.20 });
+  assert.equal(subtotal(twoLines), 0.5);
+  assert.deepEqual(totals(twoLines), { subtotal: 0.5, discount: 0, shipping: 0, total: 0.5 });
+});
+
+test("rule 6: cent-price regression snapshots the rounded discount and total in both order records", () => {
+  const state = applyCoupon(add(freshState(), { ...lamp, price: 100.10 }), "DESK15").state;
+  const result = placeOrder(state, address, "cent-order", "2026-10-28T12:00:00.000Z");
+  const expected = {
+    id: "cent-order", createdAt: "2026-10-28T12:00:00.000Z",
+    items: [{ productId: lamp.id, color: "Terracotta", quantity: 1, unitPrice: 100.1 }],
+    subtotal: 100.1, discount: 15.02, shipping: 0, total: 85.08,
+    delivery: "standard", address,
+  };
+  assert.deepEqual(result.lastOrder, expected);
+  assert.deepEqual(result.orders[0], expected);
+});

@@ -100,12 +100,20 @@ export function removeItem(state: StoreState, productId: string, color: string):
   return updateCart(state, state.cart.filter((item) => item.productId !== productId || item.color !== color));
 }
 
+function lineTotalCents(item: CartItem): number {
+  return Math.round(item.unitPrice * 100) * item.quantity;
+}
+
+function subtotalCents(state: StoreState): number {
+  return state.cart.reduce((sum, item) => sum + lineTotalCents(item), 0);
+}
+
 export function lineTotal(item: CartItem): number {
-  return item.unitPrice * item.quantity;
+  return lineTotalCents(item) / 100;
 }
 
 export function subtotal(state: StoreState): number {
-  return state.cart.reduce((sum, item) => sum + lineTotal(item), 0);
+  return subtotalCents(state) / 100;
 }
 
 export function applyCoupon(state: StoreState, code: string): { state: StoreState; error?: string } {
@@ -126,19 +134,15 @@ export function setDelivery(state: StoreState, delivery: Delivery): StoreState {
   return { ...state, delivery };
 }
 
-function roundToCents(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
 export function totals(state: StoreState): { subtotal: number; discount: number; shipping: number; total: number } {
-  const currentSubtotal = subtotal(state);
-  const discount = state.coupon && currentSubtotal >= 100 ? roundToCents(currentSubtotal * 0.15) : 0;
-  const shipping = state.delivery === "express" ? 12 : 0;
+  const currentSubtotalCents = subtotalCents(state);
+  const discountCents = state.coupon && currentSubtotalCents >= 10000 ? Math.round(currentSubtotalCents * 15 / 100) : 0;
+  const shippingCents = state.delivery === "express" ? 1200 : 0;
   return {
-    subtotal: currentSubtotal,
-    discount,
-    shipping,
-    total: roundToCents(currentSubtotal - discount + shipping),
+    subtotal: currentSubtotalCents / 100,
+    discount: discountCents / 100,
+    shipping: shippingCents / 100,
+    total: (currentSubtotalCents - discountCents + shippingCents) / 100,
   };
 }
 
