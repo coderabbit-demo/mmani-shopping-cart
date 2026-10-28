@@ -4,7 +4,10 @@ set -euo pipefail
 usage() {
   cat <<'HELP'
 Usage: red-green.sh <base> <head> <test-file>...
-Run each named head test against base (must fail) and head (must pass).
+Run each named head test against base (must fail an assertion) and head
+(must pass). Base results use structured node:test events, rendered as TAP.
+RED requires a failed ERR_ASSERTION in a loaded test. Import/load errors,
+non-assertion failures, or no failed assertions are setup failures, not RED.
 Tests must be repository-relative .test.mjs files. Head test contents are
 copied into base so a missing test at base cannot itself count as red.
 Runs npm ci, including package lifecycle scripts, in temporary worktrees of
@@ -55,11 +58,35 @@ for revision in base head; do
 done
 failed=0
 for file in "$@"; do
-  if (cd "$tmp/base" && node --experimental-strip-types --test "$file"); then
-    printf 'FAIL: test is not red on base: %s\n' "$file" >&2
-    failed=1
-  else
+  if (cd "$tmp/base" && node --experimental-strip-types - "$file" <<'JS'
+const { run } = require('node:test');
+const { tap } = require('node:test/reporters');
+let assertions = 0;
+let setupFailure = false;
+async function* inspect(events) {
+  for await (const event of events) {
+    if (event.type === 'test:fail' && !event.data.todo && !event.data.skip) {
+      const error = event.data.details.error;
+      if (error?.failureType === 'testCodeFailure' && error.cause?.code === 'ERR_ASSERTION') {
+        assertions += 1;
+      } else if (error?.failureType !== 'subtestsFailed') {
+        setupFailure = true;
+      }
+    }
+    yield event;
+  }
+}
+(async () => {
+  const events = run({ files: [process.argv[2]] });
+  for await (const output of tap(inspect(events))) process.stdout.write(output);
+  process.exitCode = assertions > 0 && !setupFailure ? 0 : 2;
+})();
+JS
+  ); then
     printf 'RED: %s\n' "$file"
+  else
+    printf 'SETUP FAILURE: base test did not produce a loaded assertion failure: %s\n' "$file" >&2
+    failed=1
   fi
   if (cd "$tmp/head" && node --experimental-strip-types --test "$file"); then
     printf 'GREEN: %s\n' "$file"

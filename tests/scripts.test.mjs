@@ -207,16 +207,48 @@ test("red-green rejects green-on-base and red-on-head tests", (t) => {
   }
 });
 
+for (const failure of ["syntax error", "missing module"]) {
+  test(`red-green treats an imported ${failure} on base as setup failure`, (t) => {
+    const directory = fixture(t);
+    if (failure === "syntax error") write(directory, "value.mjs", "export const value = ;\n");
+    const base = git(directory, "rev-parse", "HEAD");
+    const broken = failure === "syntax error" ? commit(directory) : base;
+    write(directory, "value.mjs", "export const value = 2;\n");
+    write(directory, "tests/value.test.mjs", 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { value } from "../value.mjs";\ntest("value is updated", () => assert.equal(value, 2));\n');
+    const head = commit(directory);
+    const result = command(directory, "bash", [join(scripts, "red-green.sh"), broken, head, "tests/value.test.mjs"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /SETUP FAILURE: base test did not produce a loaded assertion failure/);
+    assert.doesNotMatch(result.stdout, /^RED:/m);
+    assert.match(result.stdout, /GREEN: tests\/value.test.mjs/);
+  });
+}
+
+test("red-green treats an empty test file as setup failure", (t) => {
+  const directory = fixture(t);
+  write(directory, "tests/empty.test.mjs", "export const value = 1;\n");
+  const head = commit(directory);
+  const result = command(directory, "bash", [join(scripts, "red-green.sh"), head, head, "tests/empty.test.mjs"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /SETUP FAILURE: base test did not produce a loaded assertion failure/);
+  assert.doesNotMatch(result.stdout, /^RED:/m);
+});
+
+function securitySummary(status = "passed") {
+  return `<details>\n<summary>Pre-merge checks</summary>\n<details>\n<summary>${status === "passed" ? "Passed" : "Failed"} checks</summary>\n\n| Check | Status | Explanation |\n| --- | --- | --- |\n|        Security Gate       | ![${status}](https://storage.googleapis.com/coderabbit_public_assets/pre-merge-checks-${status}.svg) | Review result. |\n\n</details>\n</details>`;
+}
+
 function strictFixture(t) {
   const directory = fixture(t);
   const head = "a".repeat(40);
-  const names = ["typecheck", "unit", "golden", "CodeRabbit Security", "Security Gate"];
+  const names = ["typecheck", "unit", "golden", "CodeRabbit Security"];
   const data = {
     head,
     reviews: [[{ id: 1, user: { login: "coderabbitai[bot]" }, state: "APPROVED", commit_id: head, submitted_at: "2026-10-28T12:00:00Z", body: "Approved." }]],
     threads: [{ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }],
     checks: [{ check_runs: names.map((name) => ({ name, head_sha: head, status: "completed", conclusion: "success" })) }],
     statuses: [[]],
+    comments: [[{ id: 1, user: { login: "coderabbitai" }, updated_at: "2026-10-28T12:00:00Z", body: securitySummary() }]],
   };
   write(directory, "bin/gh", `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -228,6 +260,7 @@ else if (args.includes('graphql')) result = data.threads;
 else {
   const route = args.find((arg) => arg.startsWith('repos/'));
   if (route.includes('/reviews?')) result = data.reviews;
+  else if (route.includes('/comments?')) result = data.comments;
   else if (route.includes('/check-runs?')) result = data.checks;
   else if (route.includes('/statuses?')) result = data.statuses;
   else if (route.includes('/pulls/')) result = data.head;
@@ -249,11 +282,47 @@ process.stdout.write(typeof result === 'string' ? result : JSON.stringify(result
   };
 }
 
-test("strict gate accepts approved head with every required check successful", (t) => {
+test("strict gate accepts a passed Security Gate row without a Security Gate check-run", (t) => {
   const fixture = strictFixture(t);
   const result = fixture.run();
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /PASS: strict gate/);
+  assert.equal(result.stderr, "");
+  assert.equal(fixture.data.checks[0].check_runs.some((check) => check.name === "Security Gate"), false);
+});
+
+for (const status of ["failed", "warning", "error", "inconclusive"]) {
+  test(`strict gate rejects a ${status} Security Gate row in the latest summary`, (t) => {
+    const fixture = strictFixture(t);
+    fixture.data.comments.push([{ id: 2, user: { login: "coderabbitai" }, updated_at: "2026-10-28T13:00:00Z", body: securitySummary(status) }]);
+    const result = fixture.run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /Security Gate status is not passed in latest CodeRabbit summary/);
+  });
+}
+
+test("strict gate rejects a missing Pre-merge checks section", (t) => {
+  const fixture = strictFixture(t);
+  fixture.data.comments[0][0].body = "Review summary without pre-merge results.";
+  const result = fixture.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /CodeRabbit summary with Pre-merge checks is missing/);
+});
+
+test("strict gate rejects a missing Security Gate row", (t) => {
+  const fixture = strictFixture(t);
+  fixture.data.comments[0][0].body = securitySummary().replace("Security Gate", "Other check");
+  const result = fixture.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Security Gate row is missing from latest CodeRabbit summary/);
+});
+
+test("strict gate still requires the CodeRabbit Security GitHub check", (t) => {
+  const fixture = strictFixture(t);
+  fixture.data.checks[0].check_runs.pop();
+  const result = fixture.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /required check is missing: CodeRabbit Security/);
 });
 
 test("strict gate reports failures across reviews, paginated threads and checks", (t) => {
@@ -266,7 +335,7 @@ test("strict gate reports failures across reviews, paginated threads and checks"
   fixture.data.statuses = [[{ context: "deployment", state: "pending" }]];
   const result = fixture.run();
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  for (const reason of ["not approved", "Critical or Major", "unresolved", "typecheck", "Security Gate", "deployment"]) {
+  for (const reason of ["not approved", "Critical or Major", "unresolved", "typecheck", "CodeRabbit Security", "deployment"]) {
     assert.ok(result.stderr.includes(reason), result.stderr);
   }
 });
