@@ -1,0 +1,283 @@
+export type Category =
+  | "All objects"
+  | "Desk essentials"
+  | "Lighting"
+  | "Tech accessories"
+  | "Little extras";
+
+export type Art = "lamp" | "keyboard" | "headphones" | "plant" | "stand" | "mat" | "organizer" | "clock";
+
+export type Product = {
+  id: string;
+  name: string;
+  subtitle: string;
+  description: string;
+  price: number;
+  category: Category;
+  art: Art;
+  background: string;
+  colors: { name: string; hex: string }[];
+  badge?: string;
+  rating: string;
+  details: string[];
+  inStock: boolean;
+};
+
+export const categories: Category[] = [
+  "All objects", "Desk essentials", "Lighting", "Tech accessories", "Little extras",
+];
+
+export const products: Product[] = [
+  {
+    "id": "arc-desk-lamp",
+    "name": "Arc desk lamp",
+    "subtitle": "A little light. A lot of focus.",
+    "description": "Meet your brightest desk companion. A sculptural silhouette, a warm, adjustable glow, and just the right amount of personality. Made for early starts and one-more-chapter nights.",
+    "price": 68,
+    "category": "Lighting",
+    "art": "lamp",
+    "background": "#ede6da",
+    "colors": [
+      {
+        "name": "Terracotta",
+        "hex": "#bd6549"
+      },
+      {
+        "name": "Sage",
+        "hex": "#7c8d76"
+      },
+      {
+        "name": "Cream",
+        "hex": "#d8cdb7"
+      }
+    ],
+    "badge": "Bestseller",
+    "rating": "4.9",
+    "details": [
+      "Warm, dimmable LED light",
+      "Adjustable shade · 38 cm tall",
+      "Powder-coated recycled aluminum",
+      "USB-C cable included"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "form-mechanical-keyboard",
+    "name": "Form mechanical keyboard",
+    "subtitle": "Make every word feel good.",
+    "description": "A satisfying little click for your big ideas. Our compact wireless keyboard brings soft-touch keys and a considered layout to your everyday rhythm.",
+    "price": 94,
+    "category": "Tech accessories",
+    "art": "keyboard",
+    "background": "#e7e9e3",
+    "colors": [
+      {
+        "name": "Cloud",
+        "hex": "#e0ded1"
+      },
+      {
+        "name": "Forest",
+        "hex": "#426253"
+      },
+      {
+        "name": "Clay",
+        "hex": "#bc806b"
+      }
+    ],
+    "badge": "New arrival",
+    "rating": "4.8",
+    "details": [
+      "75% compact layout",
+      "Bluetooth + USB-C connectivity",
+      "Quiet tactile switches",
+      "Mac and Windows compatible"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "hush-wireless-headphones",
+    "name": "Hush wireless headphones",
+    "subtitle": "Find your own little world.",
+    "description": "Less distraction, more headspace. Cushioned comfort and rich, balanced sound that takes you from your morning playlist to your afternoon deep work.",
+    "price": 129,
+    "category": "Tech accessories",
+    "art": "headphones",
+    "background": "#e7e5df",
+    "colors": [
+      {
+        "name": "Oat",
+        "hex": "#c4b69d"
+      },
+      {
+        "name": "Ink",
+        "hex": "#3e4545"
+      }
+    ],
+    "rating": "4.9",
+    "details": [
+      "Active noise cancellation",
+      "Up to 40 hours of listening",
+      "Soft vegan leather cushions",
+      "Travel pouch included"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "little-green-companion",
+    "name": "Little green companion",
+    "subtitle": "Room for something living.",
+    "description": "A small reminder to take a breath. This easygoing succulent comes nestled in a handmade ceramic pot, ready to make itself at home beside your screen.",
+    "price": 24,
+    "category": "Little extras",
+    "art": "plant",
+    "background": "#e8eadd",
+    "colors": [
+      {
+        "name": "Sand",
+        "hex": "#cbb692"
+      },
+      {
+        "name": "Chalk",
+        "hex": "#e0ded4"
+      }
+    ],
+    "badge": "A fan favorite",
+    "rating": "4.7",
+    "details": [
+      "Live, easy-care succulent",
+      "Hand-finished ceramic pot",
+      "Approximately 16 cm tall",
+      "Care card included"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "rise-laptop-stand",
+    "name": "Rise laptop stand",
+    "subtitle": "A fresh perspective on work.",
+    "description": "Give your laptop a lift and your shoulders a break. A beautifully simple stand with a solid aluminum build, designed to make a little more space on your desk.",
+    "price": 56,
+    "category": "Desk essentials",
+    "art": "stand",
+    "background": "#e3e7e7",
+    "colors": [
+      {
+        "name": "Silver",
+        "hex": "#aeb7b5"
+      },
+      {
+        "name": "Midnight",
+        "hex": "#475758"
+      }
+    ],
+    "rating": "4.8",
+    "details": [
+      "Fits 11–16 inch laptops",
+      "Non-slip silicone feet",
+      "Recycled aluminum construction",
+      "Open design for better airflow"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "everyday-desk-mat",
+    "name": "Everyday desk mat",
+    "subtitle": "Set the tone for your day.",
+    "description": "A soft landing for everything you do. Generously sized and pleasantly textured, this desk mat brings a little order and a lot of warmth to your workspace.",
+    "price": 38,
+    "category": "Desk essentials",
+    "art": "mat",
+    "background": "#ebe3d8",
+    "colors": [
+      {
+        "name": "Cognac",
+        "hex": "#a77552"
+      },
+      {
+        "name": "Olive",
+        "hex": "#717b5c"
+      },
+      {
+        "name": "Charcoal",
+        "hex": "#515451"
+      }
+    ],
+    "rating": "4.8",
+    "details": [
+      "80 × 40 cm surface",
+      "Water-resistant vegan leather",
+      "Natural cork backing",
+      "Wipes clean with a damp cloth"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "tidy-desk-organizer",
+    "name": "Tidy desk organizer",
+    "subtitle": "A home for the small things.",
+    "description": "Your favorite pen, those wandering paperclips, and the things you always reach for. Give them a home with our thoughtfully divided, solid wood organizer.",
+    "price": 32,
+    "category": "Desk essentials",
+    "art": "organizer",
+    "background": "#e7e3d8",
+    "colors": [
+      {
+        "name": "Natural oak",
+        "hex": "#b38b57"
+      },
+      {
+        "name": "Walnut",
+        "hex": "#70513c"
+      }
+    ],
+    "rating": "4.6",
+    "details": [
+      "Responsibly sourced solid wood",
+      "Three useful compartments",
+      "Soft felt base",
+      "22 × 12 × 9 cm"
+    ],
+    "inStock": true
+  },
+  {
+    "id": "slow-time-clock",
+    "name": "Slow time clock",
+    "subtitle": "Time, at a gentler pace.",
+    "description": "An analog moment in a digital day. A quiet, minimal clock that keeps you grounded without adding another notification to your life.",
+    "price": 42,
+    "category": "Little extras",
+    "art": "clock",
+    "background": "#e5e7e9",
+    "colors": [
+      {
+        "name": "Moss",
+        "hex": "#667969"
+      },
+      {
+        "name": "Rust",
+        "hex": "#ae6855"
+      }
+    ],
+    "rating": "4.9",
+    "details": [
+      "Silent sweep movement",
+      "Solid metal case · 12 cm diameter",
+      "Freestanding design",
+      "One AA battery included"
+    ],
+    "inStock": false
+  }
+];
+
+export function productById(id: string): Product | undefined {
+  return products.find((product) => product.id === id);
+}
+
+export function money(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
