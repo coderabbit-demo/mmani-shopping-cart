@@ -1,6 +1,7 @@
 # Brief 00 — `chore: scaffold + framework contract`
 
 **Mode:** Greenfield scaffold. This is the approved exception for manifests, the lockfile and workflows.
+**Jira:** SC-2
 **Read first:** `docs/PLAN.md` (whole file), especially "Visual design: CodeRabbit brand" and PR 0.
 
 ## Goal

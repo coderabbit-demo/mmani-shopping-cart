@@ -63,9 +63,25 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 - **Logo:** the store keeps its own name, DeskDrop, set in Geist. We never redraw the rabbit or pair the mark with substitute text. The footer carries a small "Built with CodeRabbit" credit using the official logotype file, unmodified, with clear space: white on the dark theme, orange on the light theme. The files are committed to `public/brand/` from coderabbit.ai/brand. The header never shows a CodeRabbit mark.
 - **Product art:** the built-in SVGs are recolored with brand tokens: mauve backgrounds, orange and accent details.
 
+## Jira (issue validation)
+
+Requirements and per-PR acceptance criteria live in the Jira project **ShoppingCart (`SC`)** at coderabbit-demo.atlassian.net, labeled `mmani-shopping-cart`. Each PR names its issue key in the description (`Jira: SC-N`) so CodeRabbit's linked-issues check can validate the PR against that issue's acceptance criteria. When a plan item changes, update its Jira issue in the same step.
+
+| Issue | Type | PR |
+| --- | --- | --- |
+| [SC-1](https://coderabbit-demo.atlassian.net/browse/SC-1) | Epic | Requirements: stack, pages, cart rules 1–6, brand, delivery |
+| [SC-2](https://coderabbit-demo.atlassian.net/browse/SC-2) | Task | PR 0: scaffold + framework contract |
+| [SC-3](https://coderabbit-demo.atlassian.net/browse/SC-3) | Task | PR 0b: automatic PR opening |
+| [SC-4](https://coderabbit-demo.atlassian.net/browse/SC-4) | Story | PR 1: catalog + cart domain |
+| [SC-5](https://coderabbit-demo.atlassian.net/browse/SC-5) | Task | PR 2: behavior pin |
+| [SC-6](https://coderabbit-demo.atlassian.net/browse/SC-6) | Story | PR 3: storefront shell + browse |
+| [SC-7](https://coderabbit-demo.atlassian.net/browse/SC-7) | Story | PR 4: product detail + cart page |
+| [SC-8](https://coderabbit-demo.atlassian.net/browse/SC-8) | Story | PR 5: checkout, receipt, orders |
+| [SC-9](https://coderabbit-demo.atlassian.net/browse/SC-9) | Story | PR 6: account, wishlist, persistence, demo reset |
+
 ## Phases (one PR each, < 30 files excluding goldens)
 
-### PR 0 — `chore: scaffold + framework contract` (approved greenfield exception)
+### PR 0 — `chore: scaffold + framework contract` (approved greenfield exception) · SC-2
 - Next.js/TS skeleton, `package.json` and lockfile pinned to the reference versions, `tsconfig`, `.gitignore`, empty layout page.
 - `.github/workflows/ci.yml`: typecheck, unit tests, golden check (no-op until PR 2), e2e (from PR 3). No path filters.
 - `.coderabbit.yaml`: `request_changes_workflow: true`, golden path instruction, gitleaks + semgrep, **Security Gate** custom check (`mode: error`), `AGENTS.md` as code guidelines.
@@ -74,37 +90,37 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 - `scripts/golden/`: `scope-gate.sh` (deny list + `ALLOW:` globs), `red-green.sh`, `strict-gate.sh`, `judges/` (one brief per judge).
 - Maintainer action: publish the CodeRabbit Security GitHub check (done 2026-10-28; see "CodeRabbit setup"). Add a branch ruleset on `main` that requires CI and `CodeRabbit Security`.
 
-### PR 0b — `chore: automatic PR opening`
+### PR 0b — `chore: automatic PR opening` · SC-3
 - `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`). From PR 1 on, every PR is opened by this script once verification is green.
 
-### PR 1 — `feat: catalog + cart domain`
+### PR 1 — `feat: catalog + cart domain` · SC-4
 - `lib/catalog.ts` (8 products, categories, `money`), `lib/store.ts` (pure state functions: add/change/remove, coupon, totals with shipping, sign-in, place order).
 - `tests/store.test.mjs`: acceptance tests from the spec, including cart rules 1–6. Red is meaningful because the tests assert behavior, not imports.
 - No UI.
 
-### PR 2 — `feat: behavior pin for domain` *(pin the accepted feature)*
+### PR 2 — `feat: behavior pin for domain` *(pin the accepted feature)* · SC-5
 - `scripts/golden/capture.mjs`: replays fixture scenarios (carts, coupons, deliveries, orders) through `lib/store` and writes JSON goldens to `tests/golden/`; `--check` compares byte-for-byte.
 - `tests/golden/BASELINE` (source commit) + `MANIFEST.sha256`.
 - CI golden job goes live. From here on, every PR is brownfield.
 - **Deep Scan baseline** after merge.
 
-### PR 3 — `feat: storefront shell + browse`
+### PR 3 — `feat: storefront shell + browse` · SC-6
 - `app/layout.tsx` (Geist + Hack fonts), `globals.css` (brand tokens, dark + light), `components/shell.tsx` (header, mobile nav, bag/wishlist counts, footer with the "Built with CodeRabbit" credit), `product-art.tsx`, `product-card.tsx`, `shop.tsx`.
 - `/` with search, category filter, in-stock filter, sort, quick-add; `not-found.tsx`.
 - Playwright config + journey: search, filter, 404, mobile viewport fit.
 - Goldens extended: server-rendered HTML snapshots of `/` and 404.
 - e2e: a contrast check on the key text and CTA tokens in both color schemes.
 
-### PR 4 — `feat: product detail + cart page`
+### PR 4 — `feat: product detail + cart page` · SC-7
 - `/products/[slug]` (color + quantity selection, add to bag), `/cart` (quantity, remove, apply/remove coupon), `store-provider.tsx` (in-memory state).
 - e2e: choose a non-default color → cart shows that color (rule 1); change quantity → line total updates (rule 2); drop below $100 → coupon is removed (rule 3).
 
-### PR 5 — `feat: checkout, receipt, orders`
+### PR 5 — `feat: checkout, receipt, orders` · SC-8
 - `/checkout` (address form with validation, standard/express delivery, simulated payment), `/checkout/success`, `/orders`.
 - e2e: express adds shipping to the total (rule 4); a multi-item order appears in full in history (rule 6); validation blocks an empty form.
 - **Security focus:** form input is rendered safely, no PII in URLs or logs. Attack-path tests use benign markers.
 
-### PR 6 — `feat: account, wishlist, persistence, demo reset`
+### PR 6 — `feat: account, wishlist, persistence, demo reset` · SC-9
 - `/account` (demo sign-in/out, invalid credentials error), `/wishlist`, `/demo` reset, localStorage persistence under `deskdrop-demo-v1` with in-memory fallback.
 - e2e: signing in keeps the wishlist (rule 5); a reload keeps the cart and receipt; reset clears everything; storage disabled → app still works.
 - **Security focus:** demo credentials are clearly fixture-only, no real auth claims, and localStorage parsing tolerates corrupt data.
@@ -135,7 +151,7 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
    - **Judge notes are never dropped.** Every judge note of Minor or higher goes into the next fix round, or into the PR body under "Skipped findings" with a reason. The orchestrator does not decide silently.
 6. **Open the PR automatically.** When step 5 is all green, `scripts/golden/open-pr.sh` opens the PR with no maintainer prompt:
    - title from the brief;
-   - body with the validation results, judge verdicts, red-then-green lists, the CLI-review list and skipped findings;
+   - body starting with `Jira: SC-N` (the step's issue), then the validation results, judge verdicts, red-then-green lists, the CLI-review list and skipped findings;
    - then a `@coderabbitai test` comment.
    Until that script lands, the orchestrator runs the same `gh` commands.
 7. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. Each fix-round message carries the CLI-review rule too. After a fix round on an open PR, re-verify (step 5) and push; the PR updates itself.

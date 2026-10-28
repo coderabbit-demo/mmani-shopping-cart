@@ -1,6 +1,6 @@
 # Brief 00b — `chore: automatic PR opening`
 
-**Mode:** Brownfield, pipeline tooling only. Runs after PR 0 merges.
+**Mode:** Brownfield, pipeline tooling only. Runs after PR 0 merges. **Jira:** SC-3
 **Read first:** `docs/PLAN.md`, "Per-step loop", steps 1–6.
 
 ## Assumptions (verified 2026-10-28)
@@ -18,7 +18,7 @@ When verification is green, the pipeline opens the step's PR with no maintainer 
 1. **`scripts/golden/open-pr.sh <branch> <brief-file> <results-file>`**
    - POSIX bash, `set -euo pipefail`, `--help`. Must work on macOS `/bin/bash` 3.2 and on bash 5. No new dependencies; uses `gh`.
    - Title: the backticked text in the brief's first `#` heading, for example `chore: scaffold + framework contract`.
-   - Body: a link to the brief, then the results file verbatim (validation results, judge verdicts, red-then-green lists, skipped findings). It ends with the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+   - Body: a first line `Jira: <key>`, taken from the brief's `**Jira:**` field; fail if the field is missing. Then a link to the brief, then the results file verbatim (validation results, judge verdicts, red-then-green lists, skipped findings). It ends with the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
    - If an open PR already exists for the branch, update its body and print its URL. Otherwise, run `gh pr create --base main --head <branch>`.
    - Afterwards, post a `@coderabbitai test` comment once per PR. Skip it if an identical comment already exists.
    - Print the PR URL as the last line of stdout. Exit nonzero on any `gh` failure and never print a URL in that case. No path may exit 0 without a URL; use the fail-closed EXIT-trap pattern from `scope-gate.sh`.
