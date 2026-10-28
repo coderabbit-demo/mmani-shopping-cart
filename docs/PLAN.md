@@ -24,6 +24,24 @@ Keep the comparison against SDD and Kiro fair and the overhead low:
 - Deep Scan runs twice: once after PR 2 (first real attack surface, the sign-in and checkout forms) and once before "release" (after PR 6).
 - Stage timing goes in one CSV (`docs/stage-log.csv`) so the three runs can be compared.
 
+## CodeRabbit setup: what needs turning on
+
+Once CodeRabbit review is installed on the repo, **PR Security Review runs automatically with every review**. The repo itself needs no setup, and nothing in the repo turns it on. Only two things in the CodeRabbit app need turning on:
+
+| Setting | Where | Why it matters to the gate |
+| --- | --- | --- |
+| **Publish the CodeRabbit Security GitHub check**: Block on = Major and above | CodeRabbit app → Security → Repositories → Settings | Without it, security findings appear only in the review and the `CodeRabbit` check. With it, a separate `CodeRabbit Security` check-run appears on every head commit. It clears only when a later review confirms the fix in code. `strict-gate.sh` requires it. **Enabled 2026-10-28.** |
+| **Deep Scan** | CodeRabbit app → Security | Scans the whole repository at milestones (after PR 2 and before release). Billed per run; not part of the per-PR gate. |
+
+Everything else is configured in `.coderabbit.yaml` and needs no switch:
+- the review itself;
+- PR Security Review;
+- path instructions;
+- gitleaks and semgrep;
+- the **Security Gate**, a custom pre-merge check. It is reported as a row in the "Pre-merge checks" table of CodeRabbit's summary comment, not as a GitHub check.
+
+The QA Agent is set up separately in the CodeRabbit app (a scope and an environment). Its environment is prepared from `main` once PR 0 merges.
+
 ## Build to the spec, not the reference code
 
 The reference is used for product scope, UX and copy only. Its code is not copied, and briefs never point the agent at its `lib/` or `components/`. Cart rules the acceptance tests must hold:
@@ -54,7 +72,7 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 - `AGENTS.md`: the framework's author rules (stack, no new deps, test per behavior, no TODO/debug artifacts).
 - `docs/BRAND.md` (rules above). `.coderabbit.yaml` lists it as a code guideline for `app/**` and `components/**`, plus a path instruction that flags a raw hex color outside the token block in `globals.css`.
 - `scripts/golden/`: `scope-gate.sh` (deny list + `ALLOW:` globs), `red-green.sh`, `strict-gate.sh`, `judges/` (one brief per judge).
-- Maintainer action: turn on the CodeRabbit Security check with Block on = Major+; add a branch ruleset that requires CI and CodeRabbit Security.
+- Maintainer action: publish the CodeRabbit Security GitHub check (done 2026-10-28; see "CodeRabbit setup"). Add a branch ruleset on `main` that requires CI and `CodeRabbit Security`.
 
 ### PR 0b — `chore: automatic PR opening`
 - `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`). From PR 1 on, every PR is opened by this script once verification is green.
@@ -107,7 +125,7 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
    - then a `@coderabbitai test` comment.
    Until that script lands, the orchestrator runs the same `gh` commands.
 6. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. After a fix round on an open PR, re-verify (step 4) and push; the PR updates itself.
-7. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI + CodeRabbit Security + Security Gate green. Then merge.
+7. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI and the `CodeRabbit Security` check green, and the Security Gate row passed in the pre-merge checks table. Then merge.
 8. Log the stage times; QA sweep.
 
 **Maintainer checkpoints:** the plan and each brief (scope), the Coding Agent's plan for each step, any golden change, any skipped Critical/Major finding, and the merge. Opening a PR is not a checkpoint.
