@@ -1,5 +1,7 @@
 # Automation: post-merge QA sweep + Jira update
 
+> **Status: deferred (2026-10-28).** It isn't set up in the CodeRabbit app yet. Until it is, the orchestrator does these steps by hand after each merge (`docs/PLAN.md`, per-step loop, step 10).
+
 A CodeRabbit **workspace automation**, created in the web app under **Automations → Triggers**. When a PR merges into `main`, it:
 - moves the PR's Jira issue in the ShoppingCart (`SC`) project to Done, with a comment;
 - sweeps that PR's QA Agent result into the comment;

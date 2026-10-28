@@ -157,7 +157,7 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 7. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. Each fix-round message carries the CLI-review rule too. After a fix round on an open PR, re-verify (step 5) and push; the PR updates itself.
 8. **Wait for CodeRabbit's review of the exact head.** CodeRabbit pauses automatic reviews after `reviews.auto_review.auto_pause_after_reviewed_commits` reviewed pushes (default 5; PR 0 hit it after 6 pushes). If the head has no review and the PR shows reviews paused, comment `@coderabbitai resume`. PR 0b raises the limit to 10: each push in this loop is one verified fix round, and the cap stays as a backstop.
 9. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI and the `CodeRabbit Security` check green, and the Security Gate row passed in the pre-merge checks table. Then merge.
-10. Log the stage times; QA sweep.
+10. Log the stage times; QA sweep. **Until the post-merge automation (`docs/automations/post-merge-sweep.md`) is set up (deferred 2026-10-28), the orchestrator does this step by hand after each merge:** read the PR's QA Agent result, file product defects as `qa-sweep` Bugs under SC-1, comment the result on the PR's `SC-N` issue, link the PR, and move the issue to Done.
 
 **Maintainer checkpoints:** the plan and each brief (scope), the Coding Agent's plan for each step, any golden change, any skipped Critical/Major finding, and the merge. Opening a PR is not a checkpoint.
 
