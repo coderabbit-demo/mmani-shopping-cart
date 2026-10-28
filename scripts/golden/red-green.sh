@@ -7,8 +7,10 @@ Usage: red-green.sh <base> <head> <test-file>...
 Run each named head test against base (must fail) and head (must pass).
 Tests must be repository-relative .test.mjs files. Head test contents are
 copied into base so a missing test at base cannot itself count as red.
-Each worktree uses its own npm ci when it has a package.json. Installation,
-missing test files, and syntax errors are setup failures, not red results.
+Runs npm ci, including package lifecycle scripts, in temporary worktrees of
+both revisions when they have a package.json. Use only on trusted branches.
+Installation, missing test files, and syntax errors are setup failures,
+not red results.
 Requires Git, Node >=22.6.0, npm, and Bash. Temporary worktrees are removed.
 HELP
 }
