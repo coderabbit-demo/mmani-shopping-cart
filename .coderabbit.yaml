@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+reviews:
+  request_changes_workflow: true
+  path_instructions:
+    - path: "tests/golden/**"
+      instructions: >-
+        Any golden change in a PR whose title starts with refactor is a Critical
+        finding. In a fix or feat PR, every golden difference must match the PR
+        description. Goldens may change only when the brief explicitly allows it.
+    - path: "app/**/*.css"
+      instructions: >-
+        Follow docs/BRAND.md. Any raw hex or rgb color outside a :root token block
+        in app/globals.css is a Major finding. Light-theme token overrides must
+        also be inside a :root block. Components must use color tokens.
+    - path: "components/**"
+      instructions: >-
+        Follow docs/BRAND.md. Any raw hex or rgb color outside a :root token block
+        in app/globals.css is a Major finding. Components must use color tokens.
+  tools:
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    eslint:
+      enabled: false
+  pre_merge_checks:
+    custom_checks:
+      - name: Security Gate
+        mode: error
+        instructions: "Fail only when the review finds security-related major or critical issues (command injection, committed secrets, SSRF, path traversal, insecure infrastructure, ...)."
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/AGENTS.md"
+      - "docs/BRAND.md"
