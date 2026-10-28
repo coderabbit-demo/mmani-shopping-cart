@@ -4,6 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'HELP'
 Usage: scope-gate.sh <base> <head> [allow-file]
+Compare head against its merge base with base.
 Reject protected files unless covered by an ALLOW: glob in allow-file.
 With allow-file, every changed file must match an ALLOW: glob.
 Globs match repository-relative paths: * stays within one path segment;
@@ -53,6 +54,7 @@ matches_path() {
 if [[ $# -lt 2 || $# -gt 3 ]]; then usage >&2; exit 2; fi
 base=$(git rev-parse --verify --end-of-options "$1^{commit}")
 head=$(git rev-parse --verify --end-of-options "$2^{commit}")
+merge_base=$(git merge-base "$base" "$head")
 repo=$(git rev-parse --show-toplevel)
 patterns=()
 if [[ $# == 3 ]]; then
@@ -68,7 +70,7 @@ if [[ $# == 3 ]]; then
 fi
 changes=$(mktemp)
 # Disable rename detection so both paths must satisfy the allowlist.
-git -C "$repo" diff --no-ext-diff --no-renames --name-only -z "$base" "$head" -- > "$changes"
+git -C "$repo" diff --no-ext-diff --no-renames --name-only -z "$merge_base" "$head" -- > "$changes"
 failed=0
 while IFS= read -r -d '' path; do
   allowed=0

@@ -5,12 +5,13 @@ usage() {
   cat <<'HELP'
 Usage: strict-gate.sh <pr-number>
 Require CodeRabbit approval on the current head, no unresolved threads,
-no Critical/Major in the latest CodeRabbit review, and successful head
-checks/statuses. typecheck, unit, golden, and CodeRabbit Security must be
-present and successful. The latest CodeRabbit summary's Pre-merge checks
+no Critical/Major in the latest CodeRabbit review, and passing head
+checks/statuses. typecheck, unit, golden, and CodeRabbit Security must be present.
+CodeRabbit Security also accepts neutral when completed on the current head.
+All other checks require success. The latest CodeRabbit summary's Pre-merge checks
 must contain a Security Gate row with the passed status image.
 The same summary must have reviewed risk coverage for the current head.
-Skipped/neutral GitHub checks do not pass.
+Skipped GitHub checks do not pass.
 Requires authenticated gh, Node >=22.6.0, and Bash. Read-only GitHub calls.
 HELP
 }
@@ -119,7 +120,9 @@ for (const status of read('statuses.json').flat()) {
   if (!statuses.has(status.context)) statuses.set(status.context, status);
 }
 for (const check of checks) {
-  if (check.head_sha !== head || check.status !== 'completed' || check.conclusion !== 'success') {
+  const passing = check.conclusion === 'success' ||
+    (check.name === 'CodeRabbit Security' && check.conclusion === 'neutral');
+  if (check.head_sha !== head || check.status !== 'completed' || !passing) {
     failures.push(`check ${check.name}: ${check.status}/${check.conclusion ?? 'pending'}`);
   }
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -387,4 +387,392 @@ test("strict gate rejects absent or revoked approval and skipped checks", (t) =>
   assert.equal(fixture.run().status, 1);
   fixture.data.checks[0].check_runs[0].conclusion = "skipped";
   assert.match(fixture.run().stderr, /completed\/skipped/);
+});
+
+function openPrFixture(t) {
+  const directory = fixture(t);
+  const brief = "docs/briefs/step with spaces.md";
+  const results = "results with spaces.md";
+  const title = "chore: automatic PR opening";
+  const source = `# Brief 00b — \`${title}\`\n\n**Mode:** Brownfield. **Jira:** SC-3\n`;
+  const report = "Validation: PASS\r\nJudges: PASS\r\nRED then GREEN\nSkipped findings: none\nLiteral: `code` $HOME $(touch injected)";
+  const stateFile = join(directory, "responses.json");
+  write(directory, brief, source);
+  write(directory, results, report);
+  const data = { pr: null, calls: [], comments: [[]], failure: null };
+  write(directory, "bin/gh", `#!/usr/bin/env node
+const fs = require('node:fs');
+const file = process.env.OPEN_PR_FIXTURE;
+const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+const args = process.argv.slice(2);
+const action = args.slice(0, args[0] === 'api' ? 1 : 2).join(' ');
+const option = (name) => args[args.indexOf(name) + 1];
+data.calls.push(args);
+const save = () => fs.writeFileSync(file, JSON.stringify(data));
+if (data.failure === action) {
+  save();
+  console.log('https://github.com/fixture/repo/pull/7');
+  console.error('remote failure https://github.com/fixture/repo/pull/7');
+  process.exit(17);
+}
+let result;
+if (action === 'repo view') result = { nameWithOwner: 'fixture/repo', url: 'https://github.com/fixture/repo' };
+else if (action === 'pr list') result = data.listResponse ?? (data.pr ? [data.pr] : []);
+else if (action === 'pr create') {
+  data.pr = { number: 7, url: 'https://github.com/fixture/repo/pull/7', isCrossRepository: false };
+  data.body = fs.readFileSync(option('--body-file'), 'utf8');
+  data.title = option('--title');
+  result = data.createResponse ?? data.pr.url;
+} else if (action === 'pr edit') {
+  data.body = fs.readFileSync(option('--body-file'), 'utf8');
+  result = data.pr.url;
+} else if (action === 'api') {
+  if (!args.includes('--paginate') ||
+      !args.includes('repos/fixture/repo/issues/7/comments?per_page=100')) process.exit(19);
+  if (args.includes('--jq')) {
+    if (args.includes('--slurp')) process.exit(19);
+    result = data.comments.map((page) => Array.isArray(page) &&
+      page.every((comment) => typeof comment?.body === 'string')
+      ? page.filter((comment) => comment.body === '@coderabbitai test').length : -1).join('\\n');
+  } else {
+    if (!args.includes('--slurp')) process.exit(19);
+    result = data.comments;
+  }
+} else if (action === 'pr comment') {
+  data.comments.push([{ body: option('--body') }]);
+  result = data.pr.url + '#issuecomment-1';
+} else process.exit(18);
+save();
+process.stdout.write(typeof result === 'string' ? result + '\\n' : JSON.stringify(result));
+`);
+  chmodSync(join(directory, "bin/gh"), 0o755);
+  return {
+    directory, brief, results, title, source, report, data,
+    run(args = ["feature/sc-3", brief, results], script = join(scripts, "open-pr.sh")) {
+      writeFileSync(stateFile, JSON.stringify(data));
+      const result = command(directory, "bash", [script, ...args], {
+        ...gitEnv,
+        PATH: `${join(directory, "bin")}:${process.env.PATH}`,
+        OPEN_PR_FIXTURE: stateFile,
+        TMPDIR: directory,
+      });
+      Object.assign(data, JSON.parse(readFileSync(stateFile, "utf8")));
+      return result;
+    },
+  };
+}
+
+function assertOpened(result) {
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout, "https://github.com/fixture/repo/pull/7\n");
+  assert.equal(result.stderr, "");
+}
+
+function assertOpenFailed(result, message) {
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, message);
+  assert.doesNotMatch(result.stderr, /https?:\/\//);
+}
+
+test("open-pr creates a PR with exact metadata, verbatim results and a final URL", (t) => {
+  const f = openPrFixture(t);
+  assertOpened(f.run());
+  assert.equal(f.data.title, f.title);
+  const create = f.data.calls.find((args) => args[0] === "pr" && args[1] === "create");
+  assert.equal(create[create.indexOf("--base") + 1], "main");
+  assert.equal(create[create.indexOf("--head") + 1], "feature/sc-3");
+  assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  assert.equal(readdirSync(f.directory).includes("injected"), false);
+});
+
+test("open-pr updates an existing PR body without creating a duplicate", (t) => {
+  const f = openPrFixture(t);
+  f.data.pr = { number: 7, url: "https://github.com/fixture/repo/pull/7", isCrossRepository: false };
+  assertOpened(f.run());
+  assert.equal(f.data.calls.filter((args) => args[1] === "edit").length, 1);
+  assert.equal(f.data.calls.some((args) => args[1] === "create"), false);
+  assert.ok(f.data.body.includes(f.report));
+});
+
+test("open-pr posts the test comment exactly once across two runs", (t) => {
+  const f = openPrFixture(t);
+  assertOpened(f.run());
+  assertOpened(f.run());
+  assert.equal(f.data.calls.filter((args) => args[1] === "create").length, 1);
+  assert.equal(f.data.calls.filter((args) => args[1] === "comment").length, 1);
+  assert.deepEqual(f.data.comments.flat(), [{ body: "@coderabbitai test" }]);
+});
+
+test("open-pr finds an identical test comment on a later page", (t) => {
+  const f = openPrFixture(t);
+  f.data.comments = [[{ body: "Please run @coderabbitai test" }], [{ body: "@coderabbitai test" }]];
+  assertOpened(f.run());
+  assert.equal(f.data.calls.some((args) => args[1] === "comment"), false);
+});
+
+test("open-pr does not treat a similar comment as an identical request", (t) => {
+  const f = openPrFixture(t);
+  f.data.comments = [[{ body: "@coderabbitai test please" }]];
+  assertOpened(f.run());
+  assert.equal(f.data.calls.filter((args) => args[1] === "comment").length, 1);
+});
+
+for (const action of ["repo view", "pr list", "pr create", "pr edit", "api", "pr comment"]) {
+  test(`open-pr fails without leaking a URL when gh ${action} fails`, (t) => {
+    const f = openPrFixture(t);
+    f.data.failure = action;
+    if (action === "pr edit") f.data.pr = { number: 7, url: "https://github.com/fixture/repo/pull/7", isCrossRepository: false };
+    const result = f.run();
+    assertOpenFailed(result, /FAIL: gh .*failed/);
+    assert.equal(result.status, 17);
+  });
+}
+
+for (const branch of ["-bad", "feature;echo", "feature name", "$(touch injected)", ""]) {
+  test(`open-pr rejects invalid branch ${JSON.stringify(branch)} before calling gh`, (t) => {
+    const f = openPrFixture(t);
+    assertOpenFailed(f.run([branch, f.brief, f.results]), /Invalid branch/);
+    assert.deepEqual(f.data.calls, []);
+  });
+}
+
+for (const path of ["outside.md", "docs/briefs/../../outside.md", "docs/briefs-neighbor/step.md"]) {
+  test(`open-pr rejects a brief outside docs/briefs: ${path}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, "outside.md", f.source);
+    write(f.directory, "docs/briefs-neighbor/step.md", f.source);
+    assertOpenFailed(f.run(["feature/sc-3", path, f.results]), /Brief must be under docs\/briefs/);
+    assert.deepEqual(f.data.calls, []);
+  });
+}
+
+for (const missing of ["brief", "results"]) {
+  test(`open-pr rejects a missing ${missing} file`, (t) => {
+    const f = openPrFixture(t);
+    rmSync(join(f.directory, f[missing]));
+    assertOpenFailed(f.run(), /Brief and results must be existing files/);
+    assert.deepEqual(f.data.calls, []);
+  });
+}
+
+for (const [name, source] of [
+  ["missing Jira", "# Brief — `chore: title`\n"],
+  ["malformed Jira", "# Brief — `chore: title`\n**Jira:** invalid\n"],
+  ["missing heading", "**Jira:** SC-3\n"],
+  ["missing backticked title", "# Brief without title\n**Jira:** SC-3\n"],
+  ["title only in a later heading", "# No title\n# Later `chore: title`\n**Jira:** SC-3\n"],
+]) {
+  test(`open-pr rejects metadata with ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, source);
+    assertOpenFailed(f.run(), /Brief must contain/);
+    assert.deepEqual(f.data.calls, []);
+  });
+}
+
+test("open-pr rejects malformed create output without printing a URL", (t) => {
+  const f = openPrFixture(t);
+  f.data.createResponse = "not a PR URL";
+  assertOpenFailed(f.run(), /Invalid PR URL/);
+  assert.equal(f.data.calls.some((args) => args[0] === "api"), false);
+});
+
+test("open-pr rejects ambiguous existing PRs", (t) => {
+  const f = openPrFixture(t);
+  f.data.listResponse = [7, 8].map((number) => ({ number, url: `https://github.com/fixture/repo/pull/${number}`, isCrossRepository: false }));
+  assertOpenFailed(f.run(), /Multiple open PRs/);
+  assert.equal(f.data.calls.some((args) => ["create", "edit"].includes(args[1])), false);
+});
+
+test("open-pr help succeeds without invoking gh", (t) => {
+  const f = openPrFixture(t);
+  const result = f.run(["--help"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /^Usage: open-pr.sh/);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(f.data.calls, []);
+});
+
+test("open-pr rejects an incorrect argument count", (t) => {
+  const f = openPrFixture(t);
+  const result = f.run([]);
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /Usage: open-pr.sh/);
+  assert.deepEqual(f.data.calls, []);
+});
+
+test("scope gate ignores main commits after the branch point", (t) => {
+  const directory = fixture(t);
+  git(directory, "branch", "-M", "main");
+  git(directory, "checkout", "--quiet", "-b", "feature");
+  write(directory, "app/page.tsx", "in scope\n");
+  const head = commit(directory);
+  git(directory, "checkout", "--quiet", "main");
+  write(directory, "docs/main-only.md", "unrelated main commit\n");
+  const base = commit(directory);
+  write(directory, "allow.txt", "ALLOW: app/**\n");
+  const result = scope(directory, base, head, "allow.txt");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout, "PASS: diff is within scope\n");
+  assert.equal(result.stderr, "");
+});
+
+test("scope gate fails closed for histories without a merge base", (t) => {
+  const directory = fixture(t);
+  const base = git(directory, "rev-parse", "HEAD");
+  git(directory, "checkout", "--quiet", "--orphan", "unrelated");
+  write(directory, "app/page.tsx", "unrelated history\n");
+  const result = scope(directory, base, commit(directory));
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stdout, "");
+  assert.doesNotMatch(result.stderr, /PASS:/);
+});
+
+test("open-pr fails closed if execution ends before recording a URL", (t) => {
+  const f = openPrFixture(t);
+  let source;
+  assert.doesNotThrow(() => { source = readFileSync(join(scripts, "open-pr.sh"), "utf8"); });
+  const interrupted = source.replace(/^node --input-type=module .*$/m, "exit 0");
+  assert.notEqual(interrupted, source);
+  write(f.directory, "interrupted-open-pr.sh", interrupted);
+  const result = f.run(undefined, "interrupted-open-pr.sh");
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /FAIL: PR operation ended without a URL/);
+  assert.deepEqual(f.data.calls, []);
+});
+
+test("open-pr suppresses its URL if temporary-file cleanup fails", (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, "bin/rm", "#!/usr/bin/env bash\nexit 1\n");
+  chmodSync(join(f.directory, "bin/rm"), 0o755);
+  const result = f.run();
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /FAIL: could not remove PR temporary files/);
+});
+
+test("open-pr accepts absolute brief and results paths within the repository", (t) => {
+  const f = openPrFixture(t);
+  assertOpened(f.run(["feature/sc-3", join(f.directory, f.brief), join(f.directory, f.results)]));
+  assert.ok(f.data.body.includes(f.report));
+});
+
+for (const [name, response] of [
+  ["malformed JSON", "invalid json"],
+  ["a malformed PR list", { unexpected: true }],
+  ["an invalid PR number", [{ number: 8, url: "https://github.com/fixture/repo/pull/7", isCrossRepository: false }]],
+]) {
+  test(`open-pr rejects ${name} without editing a PR`, (t) => {
+    const f = openPrFixture(t);
+    f.data.listResponse = response;
+    assertOpenFailed(f.run(), /Invalid (JSON|PR)/);
+    assert.equal(f.data.calls.some((args) => ["create", "edit"].includes(args[1])), false);
+  });
+}
+
+test("open-pr rejects malformed comment pages without printing a URL", (t) => {
+  const f = openPrFixture(t);
+  f.data.comments = [{ body: "@coderabbitai test" }];
+  assertOpenFailed(f.run(), /Invalid comments/);
+  assert.equal(f.data.calls.some((args) => args[1] === "comment"), false);
+});
+
+
+test("open-pr rejects a symlink escaping docs/briefs", { skip: process.platform === "win32" }, (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, "outside.md", f.source);
+  symlinkSync(join(f.directory, "outside.md"), join(f.directory, "docs/briefs/escape.md"));
+  assertOpenFailed(f.run(["feature/sc-3", "docs/briefs/escape.md", f.results]), /Brief must be under docs\/briefs/);
+  assert.deepEqual(f.data.calls, []);
+});
+
+test("open-pr encodes parentheses in the brief link", (t) => {
+  const f = openPrFixture(t);
+  const brief = "docs/briefs/step)link(.md";
+  write(f.directory, brief, f.source);
+  assertOpened(f.run(["feature/sc-3", brief, f.results]));
+  assert.match(f.data.body, /\[Brief\]\(https:\/\/github\.com\/fixture\/repo\/blob\/feature%2Fsc-3\/docs\/briefs\/step%29link%28\.md\)/);
+});
+
+
+for (const matching of [true, false]) {
+  test(`open-pr handles more than 1 MiB of comments ${matching ? "with" : "without"} an exact match`, (t) => {
+    const f = openPrFixture(t);
+    f.data.comments = [
+      Array.from({ length: 100 }, () => ({ body: "Unrelated comment: " + "x".repeat(12_000) })),
+      [{ body: "@coderabbitai test please" }, ...(matching ? [{ body: "@coderabbitai test" }] : [])],
+    ];
+    assert.ok(Buffer.byteLength(JSON.stringify(f.data.comments)) > 1024 * 1024);
+    assertOpened(f.run());
+    const api = f.data.calls.find((args) => args[0] === "api");
+    assert.ok(api.includes("--paginate"));
+    assert.ok(api.includes("--jq"));
+    assert.equal(api.includes("--slurp"), false);
+    assert.equal(f.data.calls.filter((args) => args[1] === "comment").length, matching ? 0 : 1);
+    assert.equal(f.data.comments.flat().filter((comment) => comment.body === "@coderabbitai test").length, 1);
+  });
+}
+
+test("strict gate accepts a completed neutral CodeRabbit Security check", (t) => {
+  const f = strictFixture(t);
+  f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security").conclusion = "neutral";
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, `PASS: strict gate for PR #1 at ${f.data.head}\n`);
+});
+
+test("strict gate rejects unit neutral even when CodeRabbit Security neutral passes", (t) => {
+  const f = strictFixture(t);
+  for (const check of f.data.checks[0].check_runs) {
+    if (["unit", "CodeRabbit Security"].includes(check.name)) check.conclusion = "neutral";
+  }
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stderr, "FAIL: check unit: completed/neutral\n");
+  assert.equal(result.stdout, "");
+});
+
+for (const conclusion of ["failure", "cancelled", "timed_out", "action_required", "skipped", null]) {
+  test(`strict gate rejects CodeRabbit Security conclusion ${conclusion ?? "pending"}`, (t) => {
+    const f = strictFixture(t);
+    f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security").conclusion = conclusion;
+    const result = f.run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(result.stderr, `FAIL: check CodeRabbit Security: completed/${conclusion ?? "pending"}\n`);
+    assert.equal(result.stdout, "");
+  });
+}
+
+test("strict gate rejects a pending CodeRabbit Security check", (t) => {
+  const f = strictFixture(t);
+  const security = f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security");
+  security.status = "in_progress";
+  security.conclusion = null;
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stderr, "FAIL: check CodeRabbit Security: in_progress/pending\n");
+  assert.equal(result.stdout, "");
+});
+
+test("strict gate rejects a neutral CodeRabbit Security check for another head", (t) => {
+  const f = strictFixture(t);
+  const security = f.data.checks[0].check_runs.find((check) => check.name === "CodeRabbit Security");
+  security.head_sha = "b".repeat(40);
+  security.conclusion = "neutral";
+  const result = f.run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(result.stderr, "FAIL: check CodeRabbit Security: completed/neutral\n");
+  assert.equal(result.stdout, "");
+});
+
+test("strict gate help documents the neutral exception only for CodeRabbit Security", () => {
+  const result = command(scripts, "bash", [join(scripts, "strict-gate.sh"), "--help"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /CodeRabbit Security also accepts neutral/);
+  assert.match(result.stdout, /All other checks require success/);
 });
