@@ -1,0 +1,26 @@
+{
+  "state": {
+    "cart": [],
+    "wishlist": [],
+    "user": null,
+    "coupon": null,
+    "delivery": "standard",
+    "orders": [],
+    "lastOrder": null,
+    "notice": null
+  },
+  "lineTotals": [],
+  "subtotal": 0,
+  "totals": {
+    "subtotal": 0,
+    "discount": 0,
+    "shipping": 0,
+    "total": 0
+  },
+  "formattedTotals": {
+    "subtotal": "$0",
+    "discount": "$0",
+    "shipping": "$0",
+    "total": "$0"
+  }
+}

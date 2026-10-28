@@ -1,0 +1,6 @@
+{
+  "error": {
+    "name": "RangeError",
+    "message": "Choose an available product and one of its colors."
+  }
+}

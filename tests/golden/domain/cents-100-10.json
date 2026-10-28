@@ -1,0 +1,136 @@
+{
+  "standard": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 100.1
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      100.1
+    ],
+    "subtotal": 100.1,
+    "totals": {
+      "subtotal": 100.1,
+      "discount": 15.02,
+      "shipping": 0,
+      "total": 85.08
+    },
+    "formattedTotals": {
+      "subtotal": "$100.10",
+      "discount": "$15.02",
+      "shipping": "$0",
+      "total": "$85.08"
+    }
+  },
+  "express": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 100.1
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "express",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      100.1
+    ],
+    "subtotal": 100.1,
+    "totals": {
+      "subtotal": 100.1,
+      "discount": 15.02,
+      "shipping": 12,
+      "total": 97.08
+    },
+    "formattedTotals": {
+      "subtotal": "$100.10",
+      "discount": "$15.02",
+      "shipping": "$12",
+      "total": "$97.08"
+    }
+  },
+  "order": {
+    "cart": [],
+    "wishlist": [],
+    "user": null,
+    "coupon": null,
+    "delivery": "standard",
+    "orders": [
+      {
+        "id": "DD-GOLDEN1",
+        "createdAt": "2026-10-28T12:00:00.000Z",
+        "items": [
+          {
+            "productId": "arc-desk-lamp",
+            "color": "Terracotta",
+            "quantity": 1,
+            "unitPrice": 100.1
+          }
+        ],
+        "subtotal": 100.1,
+        "discount": 15.02,
+        "shipping": 0,
+        "total": 85.08,
+        "delivery": "standard",
+        "address": {
+          "name": "Taylor Example",
+          "email": "taylor@example.test",
+          "street": "12 Example Lane",
+          "city": "Example City",
+          "postal": "12345",
+          "country": "US"
+        }
+      }
+    ],
+    "lastOrder": {
+      "id": "DD-GOLDEN1",
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "items": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 100.1
+        }
+      ],
+      "subtotal": 100.1,
+      "discount": 15.02,
+      "shipping": 0,
+      "total": 85.08,
+      "delivery": "standard",
+      "address": {
+        "name": "Taylor Example",
+        "email": "taylor@example.test",
+        "street": "12 Example Lane",
+        "city": "Example City",
+        "postal": "12345",
+        "country": "US"
+      }
+    },
+    "notice": null
+  }
+}

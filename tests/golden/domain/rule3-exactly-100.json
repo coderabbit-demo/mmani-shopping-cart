@@ -1,0 +1,44 @@
+{
+  "state": {
+    "cart": [
+      {
+        "productId": "arc-desk-lamp",
+        "color": "Terracotta",
+        "quantity": 1,
+        "unitPrice": 68
+      },
+      {
+        "productId": "tidy-desk-organizer",
+        "color": "Natural oak",
+        "quantity": 1,
+        "unitPrice": 32
+      }
+    ],
+    "wishlist": [],
+    "user": null,
+    "coupon": {
+      "code": "DESK15"
+    },
+    "delivery": "standard",
+    "orders": [],
+    "lastOrder": null,
+    "notice": null
+  },
+  "lineTotals": [
+    68,
+    32
+  ],
+  "subtotal": 100,
+  "totals": {
+    "subtotal": 100,
+    "discount": 15,
+    "shipping": 0,
+    "total": 85
+  },
+  "formattedTotals": {
+    "subtotal": "$100",
+    "discount": "$15",
+    "shipping": "$0",
+    "total": "$85"
+  }
+}

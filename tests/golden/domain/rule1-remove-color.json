@@ -1,0 +1,35 @@
+{
+  "state": {
+    "cart": [
+      {
+        "productId": "arc-desk-lamp",
+        "color": "Sage",
+        "quantity": 2,
+        "unitPrice": 68
+      }
+    ],
+    "wishlist": [],
+    "user": null,
+    "coupon": null,
+    "delivery": "standard",
+    "orders": [],
+    "lastOrder": null,
+    "notice": null
+  },
+  "lineTotals": [
+    136
+  ],
+  "subtotal": 136,
+  "totals": {
+    "subtotal": 136,
+    "discount": 0,
+    "shipping": 0,
+    "total": 136
+  },
+  "formattedTotals": {
+    "subtotal": "$136",
+    "discount": "$0",
+    "shipping": "$0",
+    "total": "$136"
+  }
+}

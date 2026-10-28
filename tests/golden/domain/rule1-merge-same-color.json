@@ -1,0 +1,86 @@
+{
+  "before": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Sage",
+          "quantity": 2,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      136
+    ],
+    "subtotal": 204,
+    "totals": {
+      "subtotal": 204,
+      "discount": 0,
+      "shipping": 0,
+      "total": 204
+    },
+    "formattedTotals": {
+      "subtotal": "$204",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$204"
+    }
+  },
+  "after": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 4,
+          "unitPrice": 68
+        },
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Sage",
+          "quantity": 2,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      272,
+      136
+    ],
+    "subtotal": 408,
+    "totals": {
+      "subtotal": 408,
+      "discount": 0,
+      "shipping": 0,
+      "total": 408
+    },
+    "formattedTotals": {
+      "subtotal": "$408",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$408"
+    }
+  }
+}

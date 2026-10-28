@@ -1,0 +1,6 @@
+{
+  "error": {
+    "name": "Error",
+    "message": "Cannot place an order with an empty cart."
+  }
+}

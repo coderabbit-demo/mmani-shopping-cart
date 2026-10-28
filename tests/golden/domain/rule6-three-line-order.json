@@ -1,0 +1,153 @@
+{
+  "before": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        },
+        {
+          "productId": "little-green-companion",
+          "color": "Sand",
+          "quantity": 1,
+          "unitPrice": 24
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "express",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94,
+      24
+    ],
+    "subtotal": 186,
+    "totals": {
+      "subtotal": 186,
+      "discount": 27.9,
+      "shipping": 12,
+      "total": 170.1
+    },
+    "formattedTotals": {
+      "subtotal": "$186",
+      "discount": "$27.90",
+      "shipping": "$12",
+      "total": "$170.10"
+    }
+  },
+  "after": {
+    "state": {
+      "cart": [],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [
+        {
+          "id": "DD-GOLDEN1",
+          "createdAt": "2026-10-28T12:00:00.000Z",
+          "items": [
+            {
+              "productId": "arc-desk-lamp",
+              "color": "Terracotta",
+              "quantity": 1,
+              "unitPrice": 68
+            },
+            {
+              "productId": "form-mechanical-keyboard",
+              "color": "Cloud",
+              "quantity": 1,
+              "unitPrice": 94
+            },
+            {
+              "productId": "little-green-companion",
+              "color": "Sand",
+              "quantity": 1,
+              "unitPrice": 24
+            }
+          ],
+          "subtotal": 186,
+          "discount": 27.9,
+          "shipping": 12,
+          "total": 170.1,
+          "delivery": "express",
+          "address": {
+            "name": "Taylor Example",
+            "email": "taylor@example.test",
+            "street": "12 Example Lane",
+            "city": "Example City",
+            "postal": "12345",
+            "country": "US"
+          }
+        }
+      ],
+      "lastOrder": {
+        "id": "DD-GOLDEN1",
+        "createdAt": "2026-10-28T12:00:00.000Z",
+        "items": [
+          {
+            "productId": "arc-desk-lamp",
+            "color": "Terracotta",
+            "quantity": 1,
+            "unitPrice": 68
+          },
+          {
+            "productId": "form-mechanical-keyboard",
+            "color": "Cloud",
+            "quantity": 1,
+            "unitPrice": 94
+          },
+          {
+            "productId": "little-green-companion",
+            "color": "Sand",
+            "quantity": 1,
+            "unitPrice": 24
+          }
+        ],
+        "subtotal": 186,
+        "discount": 27.9,
+        "shipping": 12,
+        "total": 170.1,
+        "delivery": "express",
+        "address": {
+          "name": "Taylor Example",
+          "email": "taylor@example.test",
+          "street": "12 Example Lane",
+          "city": "Example City",
+          "postal": "12345",
+          "country": "US"
+        }
+      },
+      "notice": null
+    },
+    "lineTotals": [],
+    "subtotal": 0,
+    "totals": {
+      "subtotal": 0,
+      "discount": 0,
+      "shipping": 0,
+      "total": 0
+    },
+    "formattedTotals": {
+      "subtotal": "$0",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$0"
+    }
+  }
+}

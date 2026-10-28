@@ -1,0 +1,112 @@
+{
+  "cases": [
+    {
+      "label": "NaN",
+      "add": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "merge": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "change": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "missing": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      }
+    },
+    {
+      "label": "Infinity",
+      "add": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "merge": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "change": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "missing": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      }
+    },
+    {
+      "label": "fraction",
+      "add": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "merge": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "change": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "missing": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      }
+    },
+    {
+      "label": "string",
+      "add": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "merge": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "change": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      },
+      "missing": {
+        "error": {
+          "name": "RangeError",
+          "message": "Quantity must be a whole number."
+        }
+      }
+    }
+  ]
+}
