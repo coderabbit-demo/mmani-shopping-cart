@@ -8,7 +8,7 @@
 
 | Actor | Who |
 | --- | --- |
-| Maintainer | Mahesh. Approves this plan, each brief, any golden change, any skipped Critical/Major |
+| Maintainer | Mahesh. Approves this plan, each brief, any golden change, any skipped Critical/Major, and each merge. PRs open automatically |
 | Orchestrator | Claude Code. Writes briefs, validates findings, runs gates. Writes no product code |
 | Author | CodeRabbit Coding Agent: `coderabbit code new` / `resume` / `push`. One task per step, one fix task per review round |
 | Judges | 4 read-only subagents (Opus, a different model from the author): scope, behavior/goldens, tests, security/hygiene |
@@ -56,6 +56,9 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 - `scripts/golden/`: `scope-gate.sh` (deny list + `ALLOW:` globs), `red-green.sh`, `strict-gate.sh`, `judges/` (one brief per judge).
 - Maintainer action: turn on the CodeRabbit Security check with Block on = Major+; add a branch ruleset that requires CI and CodeRabbit Security.
 
+### PR 0b — `chore: automatic PR opening`
+- `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`). From PR 1 on, every PR is opened by this script once verification is green.
+
 ### PR 1 — `feat: catalog + cart domain`
 - `lib/catalog.ts` (8 products, categories, `money`), `lib/store.ts` (pure state functions: add/change/remove, coupon, totals with shipping, sign-in, place order).
 - `tests/store.test.mjs`: acceptance tests from the spec, including cart rules 1–6. Red is meaningful because the tests assert behavior, not imports.
@@ -95,13 +98,19 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 ## Per-step loop (what the orchestrator runs)
 
 1. Write the brief in `docs/briefs/NN-*.md`: scope, `ALLOW:` globs, acceptance tests, required checks, what to report.
-2. `coderabbit code new "<brief>"`. Large steps ask for a plan first: `coderabbit code plan`, then approve.
-3. `coderabbit code push` to a step branch → `scope-gate.sh` → deterministic fixers (format, safe lint) as a labeled commit.
-4. Verify in parallel: CI on the branch, plus 4 judges. Red-then-green for every new test (against `main`, or the previous head in a fix round).
-5. Open the PR with validation results and any skipped findings; comment `@coderabbitai test`.
-6. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once.
+2. `coderabbit code new` with the brief, as a **normal task** that starts by asking for a plan ("write a plan, make no code changes until I approve"). Do not use `--plan`: a plan-mode task cannot be continued as a coding task. After the maintainer approves the plan, continue in the same task with `coderabbit code resume -m`.
+3. `coderabbit code push` to the task's working branch → `scope-gate.sh` → deterministic fixers (format, safe lint) as a labeled commit.
+4. Verify in parallel: the required checks on the orchestrator's machine (macOS) and in CI, the 4 judges, and red-then-green for every new test (against `main`, or the previous head in a fix round). Any failure → a fix round (step 6) before the PR exists.
+5. **Open the PR automatically.** When step 4 is all green, `scripts/golden/open-pr.sh` opens the PR with no maintainer prompt:
+   - title from the brief;
+   - body with the validation results, judge verdicts, red-then-green lists and skipped findings;
+   - then a `@coderabbitai test` comment.
+   Until that script lands, the orchestrator runs the same `gh` commands.
+6. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. After a fix round on an open PR, re-verify (step 4) and push; the PR updates itself.
 7. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI + CodeRabbit Security + Security Gate green. Then merge.
 8. Log the stage times; QA sweep.
+
+**Maintainer checkpoints:** the plan and each brief (scope), the Coding Agent's plan for each step, any golden change, any skipped Critical/Major finding, and the merge. Opening a PR is not a checkpoint.
 
 ## Done when
 
