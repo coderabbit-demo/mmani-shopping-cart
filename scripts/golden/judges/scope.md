@@ -6,6 +6,10 @@ Apply `preamble.md`. Check only scope and intent:
 - No intent drift: no new public API, option or dependency that the brief did not ask for.
 - The PR stays within the size limit (under 30 changed files, excluding goldens).
 - A fix round addresses every listed finding and nothing else.
+- Check the brief itself: every outside fact in its Assumptions section or implied
+  by its deliverables must hold in the repository and target environment. Verify
+  check names, CLI flags, platforms, and CodeRabbit settings against evidence.
+  A wrong assumption is a FAIL; cite the assumption and the contradicting evidence.
 
 ## Validation note
 
