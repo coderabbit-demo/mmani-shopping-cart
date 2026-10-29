@@ -366,6 +366,7 @@ svg { flex-shrink: 0; }
 .checkout-summary { min-width: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 24px; }
 .checkout-summary .primary-button { margin-top: 20px; }
 .checkout-summary .primary-button:disabled { cursor: wait; }
+.checkout-submit-error { color: var(--color-danger); font-size: 13px; margin-top: 12px; }
 .summary-items, .receipt-items { list-style: none; padding: 0; margin: 0; }
 .summary-items li, .receipt-items li { display: flex; justify-content: space-between; gap: 20px; padding-block: 18px; border-bottom: 1px solid var(--color-border); }
 .summary-items li > div, .receipt-items li > div { min-width: 0; }

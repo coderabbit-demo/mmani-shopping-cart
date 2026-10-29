@@ -29,6 +29,7 @@ export function Checkout() {
   const submitted = useRef(false);
   const erroredFields = useRef(new Set<Field>());
   const [pending, setPending] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [values, setValues] = useState<Address>(() => ({ email: state.user?.email ?? "", name: state.user?.name ?? "", street: "", city: "", postal: "", country: "United States" }));
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
 
@@ -47,6 +48,7 @@ export function Checkout() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitError("");
     if (submitted.current || state.cart.length === 0) return;
     const address: Address = { name: values.name.trim(), email: values.email.trim(), street: values.street.trim(), city: values.city.trim(), postal: values.postal.trim(), country: values.country.trim() };
     const nextErrors: Partial<Record<Field, string>> = {};
@@ -73,6 +75,7 @@ export function Checkout() {
     } catch {
       submitted.current = false;
       setPending(false);
+      setSubmitError("We couldn’t place your order. Please try again.");
       return;
     }
     router.push("/checkout/success");
@@ -91,7 +94,7 @@ export function Checkout() {
         </fieldset>
         <fieldset className="demo-payment"><legend>A practice payment</legend><p>Demo payment •••• 4242</p><p>This is a test store. No card details or real payment needed.</p></fieldset>
       </div>
-      <aside className="checkout-summary" aria-label="Checkout summary"><OrderSummary state={state} showLines /><p className="checkout-note">Your details stay in this browser. Use a fictional address for your demo.</p><button className="primary-button checkout-link" type="submit" disabled={pending}>Place demo order <ArrowRight size={18} aria-hidden="true" /></button></aside>
+      <aside className="checkout-summary" aria-label="Checkout summary"><OrderSummary state={state} showLines /><p className="checkout-note">Your details stay in this browser. Use a fictional address for your demo.</p><button className="primary-button checkout-link" type="submit" disabled={pending}>Place demo order <ArrowRight size={18} aria-hidden="true" /></button>{submitError && <p className="checkout-submit-error" role="alert">{submitError}</p>}</aside>
     </form>}
   </main>;
 }

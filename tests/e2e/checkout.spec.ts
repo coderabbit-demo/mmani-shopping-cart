@@ -280,7 +280,30 @@ for (const stage of ["random bytes", "timestamp"] as const) {
     await expect(page).toHaveURL("/checkout");
     await expect(button).toBeEnabled();
     await expect(bag(page)).toHaveAccessibleName("Shopping bag, 1 items");
-    await submit(page);
+    const alert = page.getByRole("complementary", { name: "Checkout summary" }).getByRole("alert");
+    await expect(alert).toHaveText("We couldn’t place your order. Please try again.");
+    await page.getByLabel("Email address", { exact: true }).fill("");
+    await button.click();
+    await expect(alert).toHaveCount(0);
+    await expect(page.getByText("Enter your email address.", { exact: true })).toBeVisible();
+    await page.getByLabel("Email address", { exact: true }).fill(address.email);
+    let releaseNavigation!: () => void;
+    const navigationGate = new Promise<void>((resolve) => { releaseNavigation = resolve; });
+    await page.route("**/checkout/success**", async (route) => {
+      await navigationGate;
+      await route.continue();
+    });
+    const navigationRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/checkout/success");
+    try {
+      await button.click();
+      await navigationRequest;
+      await expect(page).toHaveURL("/checkout");
+      await expect(alert).toHaveCount(0);
+    } finally {
+      releaseNavigation();
+    }
+    await expect(page).toHaveURL("/checkout/success");
+    await expect(page.getByRole("heading", { name: "Your desk says thanks.", exact: true })).toBeVisible();
     await expect(receipt(page).getByRole("heading", { level: 2 })).toHaveText(/^ORDER DD-[0-9A-F]{8}$/);
     await history(page);
     await expect(receipt(page)).toHaveCount(1);
