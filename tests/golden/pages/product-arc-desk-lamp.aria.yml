@@ -1,0 +1,137 @@
+- link "Skip to content":
+  - /url: "#main-content"
+- banner:
+  - link "DeskDrop home":
+    - /url: /
+    - text: ""
+  - navigation "Main navigation":
+    - link "Shop all":
+      - /url: /
+    - link "Desk essentials":
+      - /url: /?category=Desk%20essentials
+    - link "New arrivals":
+      - /url: /?new=1
+  - search:
+    - text: Search products
+    - searchbox "Search products"
+    - button "Search"
+  - link "Wishlist, 0 items":
+    - /url: /wishlist
+    - text: ""
+  - link "My account":
+    - /url: /account
+  - link "Shopping bag, 0 items":
+    - /url: /cart
+    - text: ""
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Home":
+          - /url: /
+      - listitem:
+        - link "The collection":
+          - /url: /#collection
+      - listitem: Arc desk lamp
+  - paragraph: Lighting
+  - heading "Arc desk lamp" [level=1]
+  - paragraph: A little light. A lot of focus.
+  - paragraph: 4.9 out of 5 stars
+  - paragraph: /\$\d+/
+  - paragraph: Meet your brightest desk companion. A sculptural silhouette, a warm, adjustable glow, and just the right amount of personality. Made for early starts and one-more-chapter nights.
+  - group "Color":
+    - text: ""
+    - paragraph: Terracotta
+    - button "Select Terracotta" [pressed]
+    - button "Select Sage"
+    - button "Select Cream"
+  - group "Quantity of Arc desk lamp":
+    - button "Decrease quantity of Arc desk lamp" [disabled]
+    - text: "1"
+    - button "Increase quantity of Arc desk lamp"
+  - button "Add to bag"
+  - paragraph: In stock and ready for your desk
+  - button "Save to wishlist"
+  - heading "The thoughtful details" [level=2]
+  - list:
+    - listitem: Warm, dimmable LED light
+    - listitem: /Adjustable shade · \d+ cm tall/
+    - listitem: Powder-coated recycled aluminum
+    - listitem: USB-C cable included
+  - region "A few more desk companions.":
+    - heading "A few more desk companions." [level=2]
+    - article "Form mechanical keyboard":
+      - link "View Form mechanical keyboard":
+        - /url: /products/form-mechanical-keyboard
+      - text: New arrival
+      - button "Save Form mechanical keyboard to wishlist"
+      - heading "Form mechanical keyboard" [level=3]:
+        - link "Form mechanical keyboard":
+          - /url: /products/form-mechanical-keyboard
+      - text: /\$\d+/
+      - paragraph: Make every word feel good.
+      - group "Form mechanical keyboard colors":
+        - img "Cloud"
+        - img "Forest"
+        - img "Clay"
+      - text: 4.8 out of 5 stars
+      - button "Add Form mechanical keyboard to bag": Add to bag
+    - article "Hush wireless headphones":
+      - link "View Hush wireless headphones":
+        - /url: /products/hush-wireless-headphones
+      - button "Save Hush wireless headphones to wishlist"
+      - heading "Hush wireless headphones" [level=3]:
+        - link "Hush wireless headphones":
+          - /url: /products/hush-wireless-headphones
+      - text: /\$\d+/
+      - paragraph: Find your own little world.
+      - group "Hush wireless headphones colors":
+        - img "Oat"
+        - img "Ink"
+      - text: 4.9 out of 5 stars
+      - button "Add Hush wireless headphones to bag": Add to bag
+    - article "Little green companion":
+      - link "View Little green companion":
+        - /url: /products/little-green-companion
+      - text: A fan favorite
+      - button "Save Little green companion to wishlist"
+      - heading "Little green companion" [level=3]:
+        - link "Little green companion":
+          - /url: /products/little-green-companion
+      - text: /\$\d+/
+      - paragraph: Room for something living.
+      - group "Little green companion colors":
+        - img "Sand"
+        - img "Chalk"
+      - text: 4.7 out of 5 stars
+      - button "Add Little green companion to bag": Add to bag
+    - article "Rise laptop stand":
+      - link "View Rise laptop stand":
+        - /url: /products/rise-laptop-stand
+      - button "Save Rise laptop stand to wishlist"
+      - heading "Rise laptop stand" [level=3]:
+        - link "Rise laptop stand":
+          - /url: /products/rise-laptop-stand
+      - text: /\$\d+/
+      - paragraph: A fresh perspective on work.
+      - group "Rise laptop stand colors":
+        - img "Silver"
+        - img "Midnight"
+      - text: 4.8 out of 5 stars
+      - button "Add Rise laptop stand to bag": Add to bag
+- contentinfo:
+  - link "DeskDrop":
+    - /url: /
+  - paragraph: Thoughtful objects. A better place to do your thing.
+  - navigation "Footer navigation":
+    - link "Explore the collection":
+      - /url: /
+    - link "Your orders":
+      - /url: /orders
+  - paragraph: Demo storefront · No real payments or deliveries
+  - link "Built with CodeRabbit":
+    - /url: https://www.coderabbit.ai
+    - text: ""
+    - img "CodeRabbit"
+- status
+- alert
