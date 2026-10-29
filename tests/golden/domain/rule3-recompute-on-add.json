@@ -1,0 +1,97 @@
+{
+  "before": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94
+    ],
+    "subtotal": 162,
+    "totals": {
+      "subtotal": 162,
+      "discount": 24.3,
+      "shipping": 0,
+      "total": 137.7
+    },
+    "formattedTotals": {
+      "subtotal": "$162",
+      "discount": "$24.30",
+      "shipping": "$0",
+      "total": "$137.70"
+    }
+  },
+  "after": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        },
+        {
+          "productId": "little-green-companion",
+          "color": "Sand",
+          "quantity": 1,
+          "unitPrice": 24
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94,
+      24
+    ],
+    "subtotal": 186,
+    "totals": {
+      "subtotal": 186,
+      "discount": 27.9,
+      "shipping": 0,
+      "total": 158.1
+    },
+    "formattedTotals": {
+      "subtotal": "$186",
+      "discount": "$27.90",
+      "shipping": "$0",
+      "total": "$158.10"
+    }
+  }
+}

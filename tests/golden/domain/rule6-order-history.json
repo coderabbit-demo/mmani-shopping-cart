@@ -1,0 +1,165 @@
+{
+  "first": {
+    "cart": [],
+    "wishlist": [],
+    "user": null,
+    "coupon": null,
+    "delivery": "standard",
+    "orders": [
+      {
+        "id": "DD-GOLDEN1",
+        "createdAt": "2026-10-28T12:00:00.000Z",
+        "items": [
+          {
+            "productId": "arc-desk-lamp",
+            "color": "Sage",
+            "quantity": 2,
+            "unitPrice": 68
+          },
+          {
+            "productId": "arc-desk-lamp",
+            "color": "Cream",
+            "quantity": 3,
+            "unitPrice": 68
+          }
+        ],
+        "subtotal": 340,
+        "discount": 0,
+        "shipping": 0,
+        "total": 340,
+        "delivery": "standard",
+        "address": {
+          "name": "Taylor Example",
+          "email": "taylor@example.test",
+          "street": "12 Example Lane",
+          "city": "Example City",
+          "postal": "12345",
+          "country": "US"
+        }
+      }
+    ],
+    "lastOrder": {
+      "id": "DD-GOLDEN1",
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "items": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Sage",
+          "quantity": 2,
+          "unitPrice": 68
+        },
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Cream",
+          "quantity": 3,
+          "unitPrice": 68
+        }
+      ],
+      "subtotal": 340,
+      "discount": 0,
+      "shipping": 0,
+      "total": 340,
+      "delivery": "standard",
+      "address": {
+        "name": "Taylor Example",
+        "email": "taylor@example.test",
+        "street": "12 Example Lane",
+        "city": "Example City",
+        "postal": "12345",
+        "country": "US"
+      }
+    },
+    "notice": null
+  },
+  "second": {
+    "cart": [],
+    "wishlist": [],
+    "user": null,
+    "coupon": null,
+    "delivery": "standard",
+    "orders": [
+      {
+        "id": "DD-GOLDEN2",
+        "createdAt": "2026-10-29T12:00:00.000Z",
+        "items": [
+          {
+            "productId": "little-green-companion",
+            "color": "Sand",
+            "quantity": 1,
+            "unitPrice": 24
+          }
+        ],
+        "subtotal": 24,
+        "discount": 0,
+        "shipping": 0,
+        "total": 24,
+        "delivery": "standard",
+        "address": {
+          "name": "Taylor Example",
+          "email": "taylor@example.test",
+          "street": "12 Example Lane",
+          "city": "Example City",
+          "postal": "12345",
+          "country": "US"
+        }
+      },
+      {
+        "id": "DD-GOLDEN1",
+        "createdAt": "2026-10-28T12:00:00.000Z",
+        "items": [
+          {
+            "productId": "arc-desk-lamp",
+            "color": "Sage",
+            "quantity": 2,
+            "unitPrice": 68
+          },
+          {
+            "productId": "arc-desk-lamp",
+            "color": "Cream",
+            "quantity": 3,
+            "unitPrice": 68
+          }
+        ],
+        "subtotal": 340,
+        "discount": 0,
+        "shipping": 0,
+        "total": 340,
+        "delivery": "standard",
+        "address": {
+          "name": "Taylor Example",
+          "email": "taylor@example.test",
+          "street": "12 Example Lane",
+          "city": "Example City",
+          "postal": "12345",
+          "country": "US"
+        }
+      }
+    ],
+    "lastOrder": {
+      "id": "DD-GOLDEN2",
+      "createdAt": "2026-10-29T12:00:00.000Z",
+      "items": [
+        {
+          "productId": "little-green-companion",
+          "color": "Sand",
+          "quantity": 1,
+          "unitPrice": 24
+        }
+      ],
+      "subtotal": 24,
+      "discount": 0,
+      "shipping": 0,
+      "total": 24,
+      "delivery": "standard",
+      "address": {
+        "name": "Taylor Example",
+        "email": "taylor@example.test",
+        "street": "12 Example Lane",
+        "city": "Example City",
+        "postal": "12345",
+        "country": "US"
+      }
+    },
+    "notice": null
+  }
+}

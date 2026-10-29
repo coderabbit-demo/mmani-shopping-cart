@@ -1,0 +1,90 @@
+{
+  "standard": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94
+    ],
+    "subtotal": 162,
+    "totals": {
+      "subtotal": 162,
+      "discount": 24.3,
+      "shipping": 0,
+      "total": 137.7
+    },
+    "formattedTotals": {
+      "subtotal": "$162",
+      "discount": "$24.30",
+      "shipping": "$0",
+      "total": "$137.70"
+    }
+  },
+  "express": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "express",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94
+    ],
+    "subtotal": 162,
+    "totals": {
+      "subtotal": 162,
+      "discount": 24.3,
+      "shipping": 12,
+      "total": 149.7
+    },
+    "formattedTotals": {
+      "subtotal": "$162",
+      "discount": "$24.30",
+      "shipping": "$12",
+      "total": "$149.70"
+    }
+  }
+}

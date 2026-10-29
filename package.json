@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:e2e": "node -e \"console.log('no e2e tests yet (Playwright arrives in PR 3)')\"",
-    "golden:check": "node -e \"console.log('no goldens yet')\""
+    "golden:check": "node --experimental-strip-types scripts/golden/capture.mjs --check",
+    "golden:capture": "node --experimental-strip-types scripts/golden/capture.mjs"
   },
   "dependencies": {
     "next": "^16.4.3",

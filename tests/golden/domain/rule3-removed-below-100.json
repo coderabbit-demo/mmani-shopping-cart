@@ -1,0 +1,116 @@
+{
+  "before": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": {
+        "code": "DESK15"
+      },
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94
+    ],
+    "subtotal": 162,
+    "totals": {
+      "subtotal": 162,
+      "discount": 24.3,
+      "shipping": 0,
+      "total": 137.7
+    },
+    "formattedTotals": {
+      "subtotal": "$162",
+      "discount": "$24.30",
+      "shipping": "$0",
+      "total": "$137.70"
+    }
+  },
+  "after": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": "DESK15 was removed because your subtotal dropped below $100."
+    },
+    "lineTotals": [
+      68
+    ],
+    "subtotal": 68,
+    "totals": {
+      "subtotal": 68,
+      "discount": 0,
+      "shipping": 0,
+      "total": 68
+    },
+    "formattedTotals": {
+      "subtotal": "$68",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$68"
+    }
+  },
+  "quantityDrop": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": "DESK15 was removed because your subtotal dropped below $100."
+    },
+    "lineTotals": [
+      68
+    ],
+    "subtotal": 68,
+    "totals": {
+      "subtotal": 68,
+      "discount": 0,
+      "shipping": 0,
+      "total": 68
+    },
+    "formattedTotals": {
+      "subtotal": "$68",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$68"
+    }
+  }
+}

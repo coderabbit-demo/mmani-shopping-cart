@@ -1,0 +1,226 @@
+{
+  "changeLow": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68,
+      94
+    ],
+    "subtotal": 162,
+    "totals": {
+      "subtotal": 162,
+      "discount": 0,
+      "shipping": 0,
+      "total": 162
+    },
+    "formattedTotals": {
+      "subtotal": "$162",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$162"
+    }
+  },
+  "changeHigh": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 10,
+          "unitPrice": 68
+        },
+        {
+          "productId": "form-mechanical-keyboard",
+          "color": "Cloud",
+          "quantity": 1,
+          "unitPrice": 94
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      680,
+      94
+    ],
+    "subtotal": 774,
+    "totals": {
+      "subtotal": 774,
+      "discount": 0,
+      "shipping": 0,
+      "total": 774
+    },
+    "formattedTotals": {
+      "subtotal": "$774",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$774"
+    }
+  },
+  "addLow": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68
+    ],
+    "subtotal": 68,
+    "totals": {
+      "subtotal": 68,
+      "discount": 0,
+      "shipping": 0,
+      "total": 68
+    },
+    "formattedTotals": {
+      "subtotal": "$68",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$68"
+    }
+  },
+  "addHigh": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 10,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      680
+    ],
+    "subtotal": 680,
+    "totals": {
+      "subtotal": 680,
+      "discount": 0,
+      "shipping": 0,
+      "total": 680
+    },
+    "formattedTotals": {
+      "subtotal": "$680",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$680"
+    }
+  },
+  "mergeHigh": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 10,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      680
+    ],
+    "subtotal": 680,
+    "totals": {
+      "subtotal": 680,
+      "discount": 0,
+      "shipping": 0,
+      "total": 680
+    },
+    "formattedTotals": {
+      "subtotal": "$680",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$680"
+    }
+  },
+  "mergeLow": {
+    "state": {
+      "cart": [
+        {
+          "productId": "arc-desk-lamp",
+          "color": "Terracotta",
+          "quantity": 1,
+          "unitPrice": 68
+        }
+      ],
+      "wishlist": [],
+      "user": null,
+      "coupon": null,
+      "delivery": "standard",
+      "orders": [],
+      "lastOrder": null,
+      "notice": null
+    },
+    "lineTotals": [
+      68
+    ],
+    "subtotal": 68,
+    "totals": {
+      "subtotal": 68,
+      "discount": 0,
+      "shipping": 0,
+      "total": 68
+    },
+    "formattedTotals": {
+      "subtotal": "$68",
+      "discount": "$0",
+      "shipping": "$0",
+      "total": "$68"
+    }
+  }
+}
