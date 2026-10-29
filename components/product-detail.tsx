@@ -31,8 +31,15 @@ export function ProductDetail({ product }: { product: Product }) {
         <p className="detail-description">{product.description}</p>
         <fieldset className="color-selector"><legend>Color</legend><p className="selected-color">{color}</p><div className="color-options">{product.colors.map((option) => <button type="button" key={option.name} aria-label={`Select ${option.name}`} aria-pressed={color === option.name} onClick={() => setColor(option.name)}><span className="color-swatch" style={{ backgroundColor: swatchToken(option.name) }} /><span>{option.name}</span></button>)}</div></fieldset>
         <div className="detail-purchase"><Quantity value={quantity} onChange={setQuantity} label={product.name} /><button type="button" className="primary-button" disabled={!product.inStock} onClick={() => {
-          update((current) => addItem(current, product, color, quantity));
-          notify(`${product.name} added to your bag`);
+          const room = 10 - (state.cart.find((item) => item.productId === product.id && item.color === color)?.quantity ?? 0);
+          if (room === 0) {
+            notify(`Your bag already holds the maximum of 10 ${product.name} (${color}).`);
+          } else {
+            update((current) => addItem(current, product, color, Math.min(quantity, room)));
+            notify(room < quantity
+              ? `Only ${room} more fit. Your bag now holds 10 ${product.name} (${color}).`
+              : `${product.name} added to your bag`);
+          }
           setAdded(true);
         }}>{product.inStock ? "Add to bag" : "Back soon"}<ArrowRight size={18} aria-hidden="true" /></button></div>
         <p className={`stock-note ${product.inStock ? "in-stock" : ""}`}>{product.inStock ? "In stock and ready for your desk" : "Taking a little break. Check back soon."}</p>

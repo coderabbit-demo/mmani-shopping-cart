@@ -131,7 +131,10 @@ test("remove coupon restores subtotal and standard shipping is free", async ({ p
   await expect(page.getByTestId("total")).toHaveText("$100");
   await expect(page.getByTestId("subtotal")).toHaveText("$100");
   await expect(page.getByTestId("shipping")).toHaveText("Free");
-  await expect(page.getByRole("link", { name: "On to checkout", exact: true })).toHaveAttribute("href", "/checkout");
+  await expect(page.getByRole("link", { name: /checkout/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /checkout/i })).toHaveCount(0);
+  await expect(page.locator('[href="/checkout"], [formaction="/checkout"], [action="/checkout"], [data-target="/checkout"]')).toHaveCount(0);
+  await expect(page.getByText("Checkout opens in the next update.", { exact: true })).toBeVisible();
   await expect(page.getByText("Simulated checkout. No payment required.", { exact: true })).toBeVisible();
 });
 
@@ -176,6 +179,48 @@ test("product detail has metadata, content, quantity selection, wishlist and rel
   await page.getByRole("button", { name: "Add to bag", exact: true }).click();
   await page.getByRole("link", { name: "In your bag. Take a look", exact: true }).click();
   await expect(line(page).getByTestId("quantity")).toHaveText("2");
+});
+
+test("a full Sage line announces its maximum without adding another item", async ({ page }) => {
+  await page.goto("/products/arc-desk-lamp");
+  await page.getByRole("button", { name: "Select Sage", exact: true }).click();
+  const increase = page.getByRole("button", { name: `Increase quantity of ${lamp}`, exact: true });
+  const decrease = page.getByRole("button", { name: `Decrease quantity of ${lamp}`, exact: true });
+  const add = page.getByRole("button", { name: "Add to bag", exact: true });
+  const confirmation = page.getByRole("link", { name: "In your bag. Take a look", exact: true });
+  for (let quantity = 1; quantity < 10; quantity++) await increase.click();
+  await add.click();
+  await expect(page.getByRole("status")).toHaveText("Arc desk lamp added to your bag");
+  await expect(confirmation).toBeVisible();
+  for (let quantity = 10; quantity > 1; quantity--) await decrease.click();
+  await add.click();
+  await expect(page.getByRole("status")).toHaveText("Your bag already holds the maximum of 10 Arc desk lamp (Sage).");
+  await expect(confirmation).toBeVisible();
+  await confirmation.click();
+  await expect(line(page, "Sage").getByTestId("quantity")).toHaveText("10");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByTestId("subtotal")).toHaveText("$680");
+});
+
+test("only the available room on the Sage line is added and announced", async ({ page }) => {
+  await addLamp(page);
+  await page.getByRole("button", { name: "Select Sage", exact: true }).click();
+  const increase = page.getByRole("button", { name: `Increase quantity of ${lamp}`, exact: true });
+  const decrease = page.getByRole("button", { name: `Decrease quantity of ${lamp}`, exact: true });
+  const add = page.getByRole("button", { name: "Add to bag", exact: true });
+  const confirmation = page.getByRole("link", { name: "In your bag. Take a look", exact: true });
+  for (let quantity = 1; quantity < 8; quantity++) await increase.click();
+  await add.click();
+  await expect(page.getByRole("status")).toHaveText("Arc desk lamp added to your bag");
+  await expect(confirmation).toBeVisible();
+  for (let quantity = 8; quantity > 5; quantity--) await decrease.click();
+  await add.click();
+  await expect(page.getByRole("status")).toHaveText("Only 2 more fit. Your bag now holds 10 Arc desk lamp (Sage).");
+  await expect(confirmation).toBeVisible();
+  await confirmation.click();
+  await expect(line(page, "Sage").getByTestId("quantity")).toHaveText("10");
+  await expect(line(page).getByTestId("quantity")).toHaveText("1");
+  await expect(page.getByRole("article")).toHaveCount(2);
 });
 
 test("out of stock product cannot be added", async ({ page }) => {
