@@ -1,0 +1,189 @@
+- link "Skip to content":
+  - /url: "#main-content"
+- banner:
+  - link "DeskDrop home":
+    - /url: /
+    - text: ""
+  - navigation "Main navigation":
+    - link "Shop all":
+      - /url: /
+    - link "Desk essentials":
+      - /url: /?category=Desk%20essentials
+    - link "New arrivals":
+      - /url: /?new=1
+  - search:
+    - text: Search products
+    - searchbox "Search products"
+    - button "Search"
+  - link "Wishlist, 0 items":
+    - /url: /wishlist
+    - text: ""
+  - link "My account":
+    - /url: /account
+  - link "Shopping bag, 0 items":
+    - /url: /cart
+    - text: ""
+- main:
+  - region "Your desk. Your little happy place.":
+    - paragraph: MAKE SPACE FOR A GOOD DAY
+    - heading "Your desk. Your little happy place." [level=1]
+    - paragraph: Thoughtful essentials for the place where your best ideas happen.
+    - link "Find your desk favorites":
+      - /url: "#collection"
+    - paragraph: Good objects. Everyday joy.
+    - link "MEET YOUR DESK FAVORITES":
+      - /url: "#collection"
+  - region "A little something for your space.":
+    - paragraph: THE GOOD STUFF
+    - heading "A little something for your space." [level=2]
+    - paragraph: Small upgrades. A whole new kind of everyday.
+    - group "Product categories":
+      - button "All objects 8" [pressed]
+      - button "Desk essentials"
+      - button "Lighting"
+      - button "Tech accessories"
+      - button "Little extras"
+    - paragraph: 8 thoughtful objects
+    - checkbox "In stock only"
+    - text: In stock only Sort products
+    - combobox "Sort products":
+      - option "Featured" [selected]
+      - 'option "Price: low to high"'
+      - 'option "Price: high to low"'
+      - option "Top rated"
+    - article "Arc desk lamp":
+      - link "View Arc desk lamp":
+        - /url: /products/arc-desk-lamp
+      - text: Bestseller
+      - button "Save Arc desk lamp to wishlist"
+      - heading "Arc desk lamp" [level=3]:
+        - link "Arc desk lamp":
+          - /url: /products/arc-desk-lamp
+      - text: /\$\d+/
+      - paragraph: A little light. A lot of focus.
+      - group "Arc desk lamp colors":
+        - img "Terracotta"
+        - img "Sage"
+        - img "Cream"
+      - text: 4.9 out of 5 stars
+      - button "Add Arc desk lamp to bag": Add to bag
+    - article "Form mechanical keyboard":
+      - link "View Form mechanical keyboard":
+        - /url: /products/form-mechanical-keyboard
+      - text: New arrival
+      - button "Save Form mechanical keyboard to wishlist"
+      - heading "Form mechanical keyboard" [level=3]:
+        - link "Form mechanical keyboard":
+          - /url: /products/form-mechanical-keyboard
+      - text: /\$\d+/
+      - paragraph: Make every word feel good.
+      - group "Form mechanical keyboard colors":
+        - img "Cloud"
+        - img "Forest"
+        - img "Clay"
+      - text: 4.8 out of 5 stars
+      - button "Add Form mechanical keyboard to bag": Add to bag
+    - article "Hush wireless headphones":
+      - link "View Hush wireless headphones":
+        - /url: /products/hush-wireless-headphones
+      - button "Save Hush wireless headphones to wishlist"
+      - heading "Hush wireless headphones" [level=3]:
+        - link "Hush wireless headphones":
+          - /url: /products/hush-wireless-headphones
+      - text: /\$\d+/
+      - paragraph: Find your own little world.
+      - group "Hush wireless headphones colors":
+        - img "Oat"
+        - img "Ink"
+      - text: 4.9 out of 5 stars
+      - button "Add Hush wireless headphones to bag": Add to bag
+    - article "Little green companion":
+      - link "View Little green companion":
+        - /url: /products/little-green-companion
+      - text: A fan favorite
+      - button "Save Little green companion to wishlist"
+      - heading "Little green companion" [level=3]:
+        - link "Little green companion":
+          - /url: /products/little-green-companion
+      - text: /\$\d+/
+      - paragraph: Room for something living.
+      - group "Little green companion colors":
+        - img "Sand"
+        - img "Chalk"
+      - text: 4.7 out of 5 stars
+      - button "Add Little green companion to bag": Add to bag
+    - article "Rise laptop stand":
+      - link "View Rise laptop stand":
+        - /url: /products/rise-laptop-stand
+      - button "Save Rise laptop stand to wishlist"
+      - heading "Rise laptop stand" [level=3]:
+        - link "Rise laptop stand":
+          - /url: /products/rise-laptop-stand
+      - text: /\$\d+/
+      - paragraph: A fresh perspective on work.
+      - group "Rise laptop stand colors":
+        - img "Silver"
+        - img "Midnight"
+      - text: 4.8 out of 5 stars
+      - button "Add Rise laptop stand to bag": Add to bag
+    - article "Everyday desk mat":
+      - link "View Everyday desk mat":
+        - /url: /products/everyday-desk-mat
+      - button "Save Everyday desk mat to wishlist"
+      - heading "Everyday desk mat" [level=3]:
+        - link "Everyday desk mat":
+          - /url: /products/everyday-desk-mat
+      - text: /\$\d+/
+      - paragraph: Set the tone for your day.
+      - group "Everyday desk mat colors":
+        - img "Cognac"
+        - img "Olive"
+        - img "Charcoal"
+      - text: 4.8 out of 5 stars
+      - button "Add Everyday desk mat to bag": Add to bag
+    - article "Tidy desk organizer":
+      - link "View Tidy desk organizer":
+        - /url: /products/tidy-desk-organizer
+      - button "Save Tidy desk organizer to wishlist"
+      - heading "Tidy desk organizer" [level=3]:
+        - link "Tidy desk organizer":
+          - /url: /products/tidy-desk-organizer
+      - text: /\$\d+/
+      - paragraph: A home for the small things.
+      - group "Tidy desk organizer colors":
+        - img "Natural oak"
+        - img "Walnut"
+      - text: 4.6 out of 5 stars
+      - button "Add Tidy desk organizer to bag": Add to bag
+    - article "Slow time clock":
+      - link "View Slow time clock":
+        - /url: /products/slow-time-clock
+      - text: Back soon
+      - button "Save Slow time clock to wishlist"
+      - heading "Slow time clock" [level=3]:
+        - link "Slow time clock":
+          - /url: /products/slow-time-clock
+      - text: /\$\d+/
+      - paragraph: Time, at a gentler pace.
+      - group "Slow time clock colors":
+        - img "Moss"
+        - img "Rust"
+      - text: 4.9 out of 5 stars
+      - link "View details":
+        - /url: /products/slow-time-clock
+- contentinfo:
+  - link "DeskDrop":
+    - /url: /
+  - paragraph: Thoughtful objects. A better place to do your thing.
+  - navigation "Footer navigation":
+    - link "Explore the collection":
+      - /url: /
+    - link "Your orders":
+      - /url: /orders
+  - paragraph: Demo storefront · No real payments or deliveries
+  - link "Built with CodeRabbit":
+    - /url: https://www.coderabbit.ai
+    - text: ""
+    - img "CodeRabbit"
+- status
+- alert
