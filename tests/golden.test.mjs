@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,6 +129,68 @@ test("capture preserves non-JSON files, nested files, directories, and symlinks"
   await rm(join(domain, "notes.txt"));
   fails(run(root), /Extra golden: domain\/sub\/x\.json/);
 });
+
+async function snapshotLinks(root, directory) {
+  const entries = {};
+  for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
+    const path = directory + entry.name;
+    if (entry.isSymbolicLink()) entries[path] = { link: await readlink(join(root, path)) };
+    else if (entry.isDirectory()) {
+      entries[path] = { directory: true };
+      Object.assign(entries, await snapshotLinks(root, path + "/"));
+    } else entries[path] = { bytes: (await readFile(join(root, path))).toString("hex") };
+  }
+  return entries;
+}
+
+for (const [path, directory] of [
+  ["tests/golden/domain/catalog.json", false],
+  ["tests/golden/MANIFEST.sha256", false],
+  ["tests/golden/BASELINE", false],
+  ["tests/golden/domain", true],
+  ["tests/golden", true],
+]) {
+  for (const mode of ["capture", "check"]) {
+    test(`${mode} refuses symlink target ${path} without changes`, async (t) => {
+      const root = await fixture(t);
+      const outside = join(root, "outside");
+      await mkdir(outside);
+      const target = join(outside, "target");
+      await cp(join(root, path), target, { recursive: true });
+      await rm(join(root, path), { recursive: true });
+      await symlink(target, join(root, path), directory ? "dir" : "file");
+      if (mode === "capture") {
+        await writeFile(join(root, golden, "domain/money-format.json"), "preserve these existing bytes\n");
+        await writeFile(join(root, golden, "domain/obsolete.json"), "preserve this obsolete file\n");
+      }
+      const before = {
+        goldens: await snapshotLinks(root, "tests/"), outside: await snapshotLinks(root, "outside/"),
+      };
+      const result = run(root, mode === "capture" ? [] : ["--check"]);
+      const action = mode === "capture" ? "write" : "read";
+      fails(result, new RegExp(`FAIL: refusing to ${action} through symlink: ${path.replaceAll(".", "\\.")}(?:\\n|$)`));
+      assert.deepEqual({
+        goldens: await snapshotLinks(root, "tests/"), outside: await snapshotLinks(root, "outside/"),
+      }, before);
+    });
+  }
+}
+
+for (const mode of ["capture", "check"]) {
+  test(`${mode} refuses a dangling golden symlink without changes`, async (t) => {
+    const root = await fixture(t);
+    const path = join(root, golden, "domain/catalog.json");
+    await rm(path);
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    await symlink(join(outside, "missing.json"), path);
+    const before = { goldens: await snapshotLinks(root, "tests/"), outside: await snapshotLinks(root, "outside/") };
+    const action = mode === "capture" ? "write" : "read";
+    fails(run(root, mode === "capture" ? [] : ["--check"]),
+      new RegExp(`FAIL: refusing to ${action} through symlink: tests/golden/domain/catalog\\.json`));
+    assert.deepEqual({ goldens: await snapshotLinks(root, "tests/"), outside: await snapshotLinks(root, "outside/") }, before);
+  });
+}
 
 test("manifest hash mismatch fails", async (t) => {
   const root = await fixture(t);

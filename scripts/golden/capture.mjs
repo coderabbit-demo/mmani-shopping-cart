@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { scenarios } from "./scenarios.mjs";
@@ -13,6 +13,18 @@ const serialize = (value) => JSON.stringify(value, null, 2) + "\n";
 async function read(path) {
   try { return await readFile(new URL(path, goldenRoot)); }
   catch (error) { throw new Error(`Cannot read ${path}: ${error.message}`); }
+}
+
+async function rejectSymlinks(paths, action) {
+  for (const path of paths) {
+    let stat;
+    try { stat = await lstat(join(root, path)); }
+    catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (stat.isSymbolicLink()) throw new Error(`refusing to ${action} through symlink: ${path}`);
+  }
 }
 
 async function inventory(directory = "domain/") {
@@ -47,6 +59,11 @@ async function main() {
   }
   if (outputs.size === 0) throw new Error("No scenarios defined.");
   const paths = [...outputs.keys()].sort();
+  await rejectSymlinks([
+    "tests/golden", "tests/golden/domain",
+    ...paths.map((path) => `tests/golden/${path}`),
+    "tests/golden/MANIFEST.sha256", "tests/golden/BASELINE",
+  ], check ? "read" : "write");
   if (check) {
     const actual = await inventory();
     for (const path of paths) if (!actual.includes(path)) throw new Error(`Missing golden: ${path}`);
