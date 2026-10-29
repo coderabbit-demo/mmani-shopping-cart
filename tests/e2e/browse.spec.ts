@@ -214,3 +214,29 @@ test("regression: swatches use tokens and retain catalog colors in both themes",
     }
   }
 });
+
+test("regression: toast dismisses and newer messages restart its timer", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/");
+  const status = page.getByRole("status");
+  const region = await status.elementHandle();
+  const add = page.getByRole("button", { name: "Add Arc desk lamp to bag", exact: true });
+  await add.click();
+  await expect(status).toHaveText("Arc desk lamp added to your bag");
+  await expect(status).toHaveClass("notification");
+  await page.clock.fastForward(4500);
+  await expect(status).toBeEmpty();
+  await expect(status).toHaveCount(1);
+  expect(await region!.evaluate((element) => element.isConnected)).toBe(true);
+
+  await add.click();
+  await page.clock.fastForward(3000);
+  await page.getByRole("button", { name: "Save Arc desk lamp to wishlist", exact: true }).click();
+  await expect(status).toHaveText("Saved for a little later");
+  await page.clock.fastForward(3000);
+  await expect(status).toHaveText("Saved for a little later");
+  await expect(status).toHaveClass("notification");
+  await page.clock.fastForward(1500);
+  await expect(status).toBeEmpty();
+  expect(await region!.evaluate((element) => element.isConnected)).toBe(true);
+});

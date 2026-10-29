@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { initialState, type StoreState } from "../lib/store";
 
 type StoreContextValue = {
@@ -14,6 +14,13 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<StoreState>(() => ({ ...initialState }));
   const [notice, setNotice] = useState({ message: "", sequence: 0 });
+  useEffect(() => {
+    if (!notice.message) return;
+    const timer = window.setTimeout(() => {
+      setNotice((current) => current.sequence === notice.sequence ? { ...current, message: "" } : current);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   function notify(message: string) {
     setNotice((previous) => ({ message, sequence: previous.sequence + 1 }));
   }
