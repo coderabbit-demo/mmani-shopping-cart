@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +91,44 @@ for (const extra of ["extra.json", "nested/extra.txt"]) {
     fails(run(root), new RegExp(`Extra golden: domain/${extra.replaceAll(".", "\\.")}`));
   });
 }
+
+test("capture removes obsolete JSON goldens and refreshes the manifest", async (t) => {
+  const root = await fixture(t);
+  const obsolete = join(root, golden, "domain/obsolete.json");
+  await writeFile(obsolete, "{}\n");
+  const result = run(root, []);
+  passes(result, /^Captured 29 goldens$/m);
+  assert.match(result.output, /^removed obsolete golden: domain\/obsolete\.json$/m);
+  await assert.rejects(lstat(obsolete), { code: "ENOENT" });
+  assert.doesNotMatch(await readFile(join(root, golden, "MANIFEST.sha256"), "utf8"), /obsolete\.json/);
+  passes(run(root));
+});
+
+test("capture preserves non-JSON files, nested files, directories, and symlinks", async (t) => {
+  const root = await fixture(t);
+  const domain = join(root, golden, "domain");
+  await writeFile(join(domain, "obsolete.json"), "{}\n");
+  await writeFile(join(domain, "notes.txt"), "notes\n");
+  await mkdir(join(domain, "sub"));
+  await writeFile(join(domain, "sub/x.json"), "nested\n");
+  await mkdir(join(domain, "directory.json"));
+  const target = join(root, "outside.json");
+  await writeFile(target, "outside\n");
+  await symlink(target, join(domain, "linked.json"));
+  const result = run(root, []);
+  passes(result, /^Captured 29 goldens$/m);
+  assert.match(result.output, /^removed obsolete golden: domain\/obsolete\.json$/m);
+  assert.equal(await readFile(join(domain, "notes.txt"), "utf8"), "notes\n");
+  assert.equal(await readFile(join(domain, "sub/x.json"), "utf8"), "nested\n");
+  assert.ok((await lstat(join(domain, "directory.json"))).isDirectory());
+  assert.ok((await lstat(join(domain, "linked.json"))).isSymbolicLink());
+  assert.equal(await readFile(target, "utf8"), "outside\n");
+  assert.doesNotMatch(result.output, /removed obsolete golden: domain\/(?:notes|sub|directory|linked)/);
+  await rm(join(domain, "linked.json"));
+  fails(run(root), /Extra golden: domain\/notes\.txt/);
+  await rm(join(domain, "notes.txt"));
+  fails(run(root), /Extra golden: domain\/sub\/x\.json/);
+});
 
 test("manifest hash mismatch fails", async (t) => {
   const root = await fixture(t);

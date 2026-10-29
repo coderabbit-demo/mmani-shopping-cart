@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { scenarios } from "./scenarios.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -68,7 +69,15 @@ async function main() {
   if (!/^[a-fA-F0-9]{40}$/.test(baseline)) throw new Error("Git HEAD is not a 40-hex commit SHA.");
   await mkdir(new URL("domain/", goldenRoot), { recursive: true });
   for (const [path, bytes] of outputs) await writeFile(new URL(path, goldenRoot), bytes);
-  await writeFile(new URL("MANIFEST.sha256", goldenRoot), paths.map((path) => `${hash(outputs.get(path))}  ${path}\n`).join(""));
+  const domain = fileURLToPath(new URL("domain/", goldenRoot));
+  for (const entry of await readdir(domain, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".json") && !outputs.has(`domain/${entry.name}`)) {
+      await unlink(join(domain, entry.name));
+      console.log(`removed obsolete golden: domain/${entry.name}`);
+    }
+  }
+  const manifest = await Promise.all(paths.map(async (path) => `${hash(await read(path))}  ${path}\n`));
+  await writeFile(new URL("MANIFEST.sha256", goldenRoot), manifest.join(""));
   await writeFile(new URL("BASELINE", goldenRoot), baseline + "\n");
   console.log(`Captured ${outputs.size} goldens`);
 }
