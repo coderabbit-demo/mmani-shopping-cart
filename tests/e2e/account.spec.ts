@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, errors, type Page } from "@playwright/test";
 
 const wishlist = (page: Page) => page.getByRole("link", { name: /^Wishlist, \d+ items$/ });
 async function signIn(page: Page, password = "deskdrop123") {
@@ -41,10 +41,27 @@ for (const [next, destination] of [["wishlist", "/wishlist"], ["checkout", "/che
   test(`next=${next} uses only the exact redirect allow-list`, async ({ page }) => {
     const path = `/account?next=${encodeURIComponent(next)}`;
     await page.goto(path);
+    const navigations: string[] = [];
+    const externalRequests: string[] = [];
+    if (!destination) {
+      const appHost = new URL(page.url()).host;
+      page.on("framenavigated", (frame) => {
+        if (frame === page.mainFrame()) navigations.push(frame.url());
+      });
+      page.on("request", (request) => {
+        if (new URL(request.url()).host !== appHost) externalRequests.push(request.url());
+      });
+    }
     await signIn(page);
     if (destination) await expect(page).toHaveURL(destination);
     else {
       await expect(page.getByRole("heading", { name: "Good to see you, Alex.", exact: true })).toBeVisible();
+      await expect(page.getByRole("status")).toHaveText("Welcome back, Alex. Make yourself at home.");
+      await expect(page.getByRole("status")).toBeVisible();
+      await expect(page.waitForURL((url) => url.pathname !== "/account", { timeout: 2000 })).rejects.toThrow(errors.TimeoutError);
+      expect(navigations.filter((url) => new URL(url).pathname !== "/account")).toEqual([]);
+      expect(await page.evaluate(() => location.pathname)).toBe("/account");
+      expect(externalRequests.filter((url) => new URL(url).hostname === "example.test")).toEqual([]);
       await expect(page).toHaveURL(path);
     }
   });
