@@ -82,7 +82,7 @@ A shopper can check out with a validated address, choose standard or express del
    - **rule 4:** bag with the lamp ($68). At checkout, the summary shipping reads "Free" and the total $68. Choose Express → shipping $12, total $80. Place the order → the receipt shipping is $12 and the total $80, and `/orders` shows the same;
    - **rule 4 with coupon:** lamp + organizer ($100), apply DESK15 in the cart, express at checkout → discount −$15, shipping $12, total $97 in the summary, receipt and orders;
    - **rule 6:** lamp in Sage and Terracotta, plus the keyboard, ordered → the receipt and `/orders` list all three lines with their colors and quantities. Place a second order → `/orders` lists both, newest first, each complete;
-   - **validation:** submitting an empty form shows all six required messages, focuses Email, keeps the URL at `/checkout`, and creates no order. A whitespace-only name and a bad email each show their message;
+   - **validation:** submitting an empty form shows the five required-field messages (Country has a default), focuses Email, keeps the URL at `/checkout`, and creates no order. A whitespace-only name and a bad email each show their message;
    - **after the order:** the bag count is 0, and `/checkout` shows the empty-bag state;
    - **the URL never carries form data:** after placing an order, `page.url()` has no `?` and no field value. No console messages are emitted during checkout (`page.on("console")` collects nothing);
    - **benign markers render as text:** name `<b>marker</b>` and street `<i>x</i>` appear literally on the receipt and on `/orders`, and no `b` or `i` element is created from them;
