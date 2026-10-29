@@ -131,10 +131,7 @@ test("remove coupon restores subtotal and standard shipping is free", async ({ p
   await expect(page.getByTestId("total")).toHaveText("$100");
   await expect(page.getByTestId("subtotal")).toHaveText("$100");
   await expect(page.getByTestId("shipping")).toHaveText("Free");
-  await expect(page.getByRole("link", { name: /checkout/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /checkout/i })).toHaveCount(0);
-  await expect(page.locator('[href="/checkout"], [formaction="/checkout"], [action="/checkout"], [data-target="/checkout"]')).toHaveCount(0);
-  await expect(page.getByText("Checkout opens in the next update.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "On to checkout", exact: true })).toHaveAttribute("href", "/checkout");
   await expect(page.getByText("Simulated checkout. No payment required.", { exact: true })).toBeVisible();
 });
 
