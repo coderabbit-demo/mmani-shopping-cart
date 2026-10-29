@@ -1,1 +1,17 @@
 pr,stage,start_utc,end_utc,notes
+PR 0 (#1),build,2026-10-28T18:36:54Z,2026-10-28T18:49:10Z,first agent commit to PR open
+PR 0 (#1),review-to-merge,2026-10-28T18:49:10Z,2026-10-28T21:37:18Z,5 fix rounds; scope-gate fail-open on bash 3.2; brief errors (test:e2e placeholder; Security check not yet published)
+PR 0b (#2),build,2026-10-28T22:17:31Z,2026-10-28T22:22:02Z,
+PR 0b (#2),review-to-merge,2026-10-28T22:22:02Z,2026-10-28T22:48:35Z,1 fix round
+PR 1 (#3),build,2026-10-28T23:19:57Z,2026-10-28T23:39:00Z,
+PR 1 (#3),review-to-merge,2026-10-28T23:39:00Z,2026-10-28T23:47:51Z,2 fix rounds
+PR 2 (#4),build,2026-10-28T23:55:43Z,2026-10-29T00:09:59Z,1 pre-PR round (CLI review)
+PR 2 (#4),review-to-merge,2026-10-29T00:09:59Z,2026-10-29T02:07:18Z,1 post-PR round (symlink writes); includes a wait for maintainer merge approval
+PR 3 (#5),build,2026-10-29T02:26:17Z,2026-10-29T02:53:38Z,2 pre-PR rounds (Codex behavior judge and CLI review)
+PR 3 (#5),review-to-merge,2026-10-29T02:53:38Z,2026-10-29T03:15:45Z,1 post-PR round (contrast; Hack 700 metrics)
+PR 4 (#6),build,2026-10-29T03:26:36Z,2026-10-29T15:38:36Z,1 pre-PR round (tests judge); includes an overnight stall when the orchestrator session ended
+PR 4 (#6),review-to-merge,2026-10-29T15:38:36Z,2026-10-29T16:00:58Z,1 post-PR round (checkout link 404; full-line add notice)
+PR 5 (#7),build,2026-10-29T18:25:06Z,2026-10-29T18:44:27Z,1 pre-PR round (CLI review and tests judge); 1 approved scope extension (shell prefetch)
+PR 5 (#7),review-to-merge,2026-10-29T18:44:27Z,2026-10-29T19:26:01Z,2 post-PR rounds (randomUUID in insecure contexts; silent submit failure)
+PR 6 (#8),build,2026-10-29T19:46:17Z,2026-10-29T20:04:12Z,1 pre-PR round (tests judge: open-redirect guard)
+PR 6 (#8),review-to-merge,2026-10-29T20:04:12Z,2026-10-29T20:22:10Z,1 post-PR round (out-of-stock lines restored)
