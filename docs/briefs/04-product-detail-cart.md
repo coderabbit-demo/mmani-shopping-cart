@@ -73,9 +73,9 @@ A shopper can open a product, choose a color and quantity, add it to the bag, an
 6. **Playwright:**
    - `tests/e2e/cart.spec.ts`, journeys:
      - **rule 1:** on `/products/arc-desk-lamp`, select Sage, add → `/cart` shows one line "Sage". Go back, add Terracotta → two lines (Sage, Terracotta), and the bag count is 2;
-     - **rule 2:** lamp quantity 1 → 3 with "Increase" → the line total reads $204.00 and the subtotal reads $204.00. At 10, "Increase" is disabled; at 1, "Decrease" is disabled;
+     - **rule 2:** lamp quantity 1 → 3 with "Increase" → the line total reads $204 and the subtotal reads $204. At 10, "Increase" is disabled; at 1, "Decrease" is disabled;
      - **rule 2, per line:** with two colors of the lamp, changing one line's quantity leaves the other line unchanged;
-     - **rule 3:** lamp + tidy-desk-organizer ($100.00), apply `desk15` (lowercase) → discount −$15.00, total $85.00. Remove the organizer → the coupon is gone, the notice "DESK15 was removed because your subtotal dropped below $100." is visible, and the total is $68.00;
+     - **rule 3:** lamp + tidy-desk-organizer ($100), apply `desk15` (lowercase) → discount −$15, total $85. Remove the organizer → the coupon is gone, the notice "DESK15 was removed because your subtotal dropped below $100." is visible, and the total is $68;
      - **coupon errors:** `NOPE` shows "That code isn't valid."; DESK15 on a $68 bag shows "DESK15 needs a subtotal of at least $100.";
      - **remove coupon:** applied, then "Remove coupon" → no discount line, and the total equals the subtotal;
      - **shipping:** the summary shows "Free" with standard delivery (express arrives with checkout in PR 5);
