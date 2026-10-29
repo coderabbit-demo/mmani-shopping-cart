@@ -34,6 +34,15 @@ test("cart restores catalog prices even for missing or tampered stored prices", 
   for (const unitPrice of [undefined, 0, -5, "free", 9999]) assert.deepEqual(parse({ cart: [{ ...line, unitPrice }] }).cart, [line]);
 });
 
+test("out-of-stock products stay in past orders but are dropped from the live cart", () => {
+  const clock = { productId: "slow-time-clock", color: "Moss", quantity: 1, unitPrice: 35 };
+  const historical = { ...validOrder, items: [clock, line], subtotal: 171, total: 183 };
+  const state = parse({ cart: [clock, line], orders: [historical], lastOrder: historical });
+  assert.deepEqual(state.orders, [historical]);
+  assert.deepEqual(state.lastOrder, historical);
+  assert.deepEqual(state.cart, [line]);
+});
+
 test("duplicate cart lines merge and clamp at ten; different colors remain separate", () => {
   assert.deepEqual(parse({ cart: [line, { ...line, quantity: 9 }, { ...line, color: "Terracotta", quantity: 1 }] }).cart,
     [{ ...line, quantity: 10 }, { ...line, color: "Terracotta", quantity: 1 }]);

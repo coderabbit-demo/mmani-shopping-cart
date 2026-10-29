@@ -107,6 +107,22 @@ test("corrupt JSON loads an empty bag without page errors", async ({ page }) => 
   expect(errors).toEqual([]);
 });
 
+test("stored out-of-stock cart lines are excluded from the bag and its count", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("deskdrop-demo-v1", JSON.stringify({
+    cart: [
+      { productId: "slow-time-clock", color: "Moss", quantity: 1, unitPrice: 42 },
+      { productId: "arc-desk-lamp", color: "Sage", quantity: 2, unitPrice: 68 },
+    ],
+  })));
+  await page.goto("/cart");
+  const lamp = page.getByRole("article", { name: "Arc desk lamp (Sage)", exact: true });
+  await expect(lamp).toBeVisible();
+  await expect(lamp.getByTestId("quantity")).toHaveText("2");
+  await expect.soft(page.getByRole("article", { name: "Slow time clock (Moss)", exact: true })).toHaveCount(0);
+  await expect.soft(bag(page)).toHaveAccessibleName("Shopping bag, 2 items");
+  await expect(page.getByRole("main").getByRole("article")).toHaveCount(1);
+});
+
 test("hostile storage drops invalid parts, keeps a valid line and cannot inject markup or identity", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

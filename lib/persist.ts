@@ -19,6 +19,7 @@ function item(value: unknown, historical: boolean): CartItem | null {
   if (!record(value) || typeof value.productId !== "string") return null;
   const product = productById(value.productId);
   if (!product || typeof value.color !== "string" || !product.colors.some((color) => color.name === value.color)) return null;
+  if (!historical && !product.inStock) return null;
   if (typeof value.quantity !== "number" || !Number.isInteger(value.quantity) || value.quantity < 1 || value.quantity > 10) return null;
   if (historical && !nonnegative(value.unitPrice)) return null;
   return { productId: product.id, color: value.color, quantity: value.quantity, unitPrice: historical ? value.unitPrice as number : product.price };
