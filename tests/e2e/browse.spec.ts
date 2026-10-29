@@ -240,3 +240,31 @@ test("regression: toast dismisses and newer messages restart its timer", async (
   await expect(status).toBeEmpty();
   expect(await region!.evaluate((element) => element.isConnected)).toBe(true);
 });
+
+for (const colorScheme of ["dark", "light"] as const) {
+  test(`regression: ${colorScheme} utility metrics and control styles follow tokens`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto("/");
+    for (const metric of [page.locator(".results-count"), page.locator(".rating").first()]) {
+      await expect.soft(metric).toHaveCSS("font-family", /^Hack(?:,|$)/);
+      await expect.soft(metric).toHaveCSS("font-weight", "700");
+    }
+    const border = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--color-control-border").trim());
+    expect.soft(border, "control border token").toMatch(/^#[0-9a-fA-F]{6}$/);
+    if (/^#[0-9a-fA-F]{6}$/.test(border)) {
+      const channels = border.slice(1).match(/.{2}/g)!.map((part) => parseInt(part, 16));
+      const color = `rgb(${channels.join(", ")})`;
+      for (const control of [page.getByRole("searchbox", { name: "Search products" }), page.getByRole("combobox", { name: "Sort products" }), page.getByRole("checkbox", { name: "In stock only" })]) {
+        await expect(control).toHaveCSS("border-color", color);
+        expect(await control.evaluate((element) => parseFloat(getComputedStyle(element).borderTopWidth))).toBeGreaterThan(0);
+        await expect(control).toHaveCSS("border-top-style", "solid");
+      }
+      await page.getByRole("checkbox", { name: "In stock only" }).check();
+      await expect(page.getByRole("checkbox", { name: "In stock only" })).toHaveCSS("border-color", color);
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.getByRole("button", { name: "Open menu", exact: true }).click();
+      await expect(page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("searchbox", { name: "Search products" })).toHaveCSS("border-color", color);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+  });
+}
