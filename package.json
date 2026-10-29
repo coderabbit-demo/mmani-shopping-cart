@@ -12,9 +12,10 @@
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "test:e2e": "node -e \"console.log('no e2e tests yet (Playwright arrives in PR 3)')\"",
+    "test:e2e": "playwright test",
     "golden:check": "node --experimental-strip-types scripts/golden/capture.mjs --check",
-    "golden:capture": "node --experimental-strip-types scripts/golden/capture.mjs"
+    "golden:capture": "node --experimental-strip-types scripts/golden/capture.mjs",
+    "golden:capture:pages": "playwright test tests/e2e/pages.spec.ts --update-snapshots"
   },
   "dependencies": {
     "next": "^16.4.3",
