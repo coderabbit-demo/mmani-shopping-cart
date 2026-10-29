@@ -146,9 +146,12 @@ ALLOW: public/fonts/*
 ALLOW: tests/golden/pages/*.aria.yml
 ALLOW: package.json
 ALLOW: .github/workflows/ci.yml
+ALLOW: tests/smoke.test.mjs
 ```
 
-Do not modify `lib/catalog.ts`, `lib/store.ts`, existing tests, existing goldens, `scripts/`, `.coderabbit.yaml`, `AGENTS.md` or `docs/`.
+`tests/smoke.test.mjs` has a test pinning the `test:e2e` placeholder ("test:e2e is a successful placeholder until PR 3"). Replace only that test with one asserting `test:e2e` is `playwright test` and `golden:capture:pages` is as above, without spawning Playwright. Leave every other smoke test unchanged.
+
+Do not modify `lib/catalog.ts`, `lib/store.ts`, other existing tests, existing goldens, `scripts/`, `.coderabbit.yaml`, `AGENTS.md` or `docs/`.
 
 ## Required checks
 
