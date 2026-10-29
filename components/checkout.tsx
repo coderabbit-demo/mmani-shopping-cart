@@ -17,10 +17,17 @@ const fields: Record<Field, { label: string; autoComplete: string; maxLength: nu
   postal: { label: "ZIP / postal code", autoComplete: "postal-code", maxLength: 20, error: "Enter your ZIP or postal code." },
 };
 
+function fieldError(key: Field, value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return fields[key].error;
+  if (key === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "Enter a valid email address.";
+}
+
 export function Checkout() {
   const { state, update } = useStore();
   const router = useRouter();
   const submitted = useRef(false);
+  const erroredFields = useRef(new Set<Field>());
   const [pending, setPending] = useState(false);
   const [values, setValues] = useState<Address>(() => ({ email: state.user?.email ?? "", name: state.user?.name ?? "", street: "", city: "", postal: "", country: "United States" }));
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
@@ -29,7 +36,11 @@ export function Checkout() {
     const options = fields[key];
     return <div className="checkout-field" key={key}>
       <label htmlFor={`checkout-${key}`}>{options.label}</label>
-      <input id={`checkout-${key}`} name={key} type={key === "email" ? "email" : "text"} autoComplete={options.autoComplete} maxLength={options.maxLength} required value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} aria-invalid={errors[key] ? "true" : undefined} aria-describedby={errors[key] ? `checkout-${key}-error` : undefined} />
+      <input id={`checkout-${key}`} name={key} type={key === "email" ? "email" : "text"} autoComplete={options.autoComplete} maxLength={options.maxLength} required value={values[key]} onChange={(event) => {
+        const value = event.target.value;
+        setValues((current) => ({ ...current, [key]: value }));
+        if (erroredFields.current.has(key)) setErrors((current) => ({ ...current, [key]: fieldError(key, value) }));
+      }} aria-invalid={errors[key] ? "true" : undefined} aria-describedby={errors[key] ? `checkout-${key}-error` : undefined} />
       {errors[key] && <p className="field-error" id={`checkout-${key}-error`}>{errors[key]}</p>}
     </div>;
   }
@@ -40,9 +51,12 @@ export function Checkout() {
     const address: Address = { name: values.name.trim(), email: values.email.trim(), street: values.street.trim(), city: values.city.trim(), postal: values.postal.trim(), country: values.country.trim() };
     const nextErrors: Partial<Record<Field, string>> = {};
     for (const key of Object.keys(fields) as Field[]) {
-      if (!address[key]) nextErrors[key] = fields[key].error;
+      const error = fieldError(key, address[key]);
+      if (error) {
+        nextErrors[key] = error;
+        erroredFields.current.add(key);
+      }
     }
-    if (address.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email)) nextErrors.email = "Enter a valid email address.";
     setErrors(nextErrors);
     const firstInvalid = (Object.keys(fields) as Field[]).find((key) => nextErrors[key]);
     if (firstInvalid) {

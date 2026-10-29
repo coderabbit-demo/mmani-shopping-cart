@@ -146,6 +146,75 @@ test("validation: whitespace-only values and invalid email use distinct messages
   await amounts(receipt(page), "Free", "$68");
 });
 
+test("regression: errored fields revalidate on every change without clearing other errors", async ({ page }) => {
+  await addProduct(page);
+  await checkout(page);
+  await page.getByRole("button", { name: "Place demo order", exact: true }).click();
+  const email = page.getByLabel("Email address", { exact: true });
+  await expect(email).toHaveAccessibleDescription("Enter your email address.");
+  await email.fill("alex");
+  await expect(email).toHaveAccessibleDescription("Enter a valid email address.");
+  await expect(email).toHaveAttribute("aria-invalid", "true");
+  await email.fill("alex@example.com");
+  await expect(email).toHaveAccessibleDescription("");
+  await expect(email).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Enter a valid email address.", { exact: true })).toHaveCount(0);
+  await email.fill("");
+  await expect(email).toHaveAccessibleDescription("Enter your email address.");
+  await expect(email).toHaveAttribute("aria-invalid", "true");
+  await email.fill("alex@example.com");
+  await expect(email).not.toHaveAttribute("aria-invalid", "true");
+  const messages = { name: "Enter your full name.", street: "Enter your street address.", city: "Enter your city.", postal: "Enter your ZIP or postal code." };
+  for (const key of Object.keys(messages) as (keyof typeof messages)[]) {
+    await expect(page.getByLabel(labels[key], { exact: true })).toHaveAccessibleDescription(messages[key]);
+    await expect(page.getByLabel(labels[key], { exact: true })).toHaveAttribute("aria-invalid", "true");
+  }
+  for (const key of Object.keys(messages) as (keyof typeof messages)[]) {
+    const field = page.getByLabel(labels[key], { exact: true });
+    await field.fill("   ");
+    await expect(field).toHaveAccessibleDescription(messages[key]);
+    await field.fill(`  ${address[key]}  `);
+    await expect(field).not.toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAccessibleDescription("");
+    await expect(page.getByText(messages[key], { exact: true })).toHaveCount(0);
+  }
+  await page.getByLabel("Full name", { exact: true }).fill("   ");
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveAccessibleDescription(messages.name);
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveAttribute("aria-invalid", "true");
+  await expect(page).toHaveURL("/checkout");
+});
+
+test("regression: pristine fields stay quiet while typing before submission", async ({ page }) => {
+  await addProduct(page);
+  await checkout(page);
+  for (const key of Object.keys(labels) as (keyof typeof labels)[]) {
+    const field = page.getByLabel(labels[key], { exact: true });
+    await field.fill(key === "email" ? "alex" : "   ");
+    await expect(field).not.toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAccessibleDescription("");
+    await field.fill("");
+    await expect(field).not.toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAccessibleDescription("");
+  }
+});
+
+test("regression: field attributes guard length limits and autofill tokens", async ({ page }) => {
+  await addProduct(page);
+  await checkout(page);
+  for (const [label, maxLength, autoComplete] of [
+    ["Email address", "254", "email"],
+    ["Full name", "100", "name"],
+    ["Street address", "200", "street-address"],
+    ["City", "100", "address-level2"],
+    ["ZIP / postal code", "20", "postal-code"],
+  ]) {
+    const field = page.getByLabel(label, { exact: true });
+    await expect(field).toHaveAttribute("maxlength", maxLength);
+    await expect(field).toHaveAttribute("autocomplete", autoComplete);
+  }
+  await expect(page.getByLabel("Country", { exact: true })).toHaveAttribute("autocomplete", "country-name");
+});
+
 test("trimmed address, ID, UTC date, no URL data, logs or storage, and duplicate-submit guard", async ({ page }) => {
   await addProduct(page);
   const logs: string[] = [];
