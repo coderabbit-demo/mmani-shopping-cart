@@ -46,7 +46,7 @@ export function Cart() {
           setError(undefined);
         }}>Remove coupon</button></div> : <form onSubmit={submitCoupon}><label htmlFor="discount-code">Discount code</label><div className="coupon-input"><input id="discount-code" name="discount-code" value={code} onChange={(event) => { setCode(event.target.value); setError(undefined); }} aria-invalid={!!error} aria-describedby={error ? "coupon-error" : undefined} /><button type="submit">Apply</button></div>{error && <p id="coupon-error" className="coupon-error" role="alert">{error}</p>}</form>}</div>
         <OrderSummary state={state} />
-        <p className="checkout-note">Checkout opens in the next update.</p><p className="checkout-note">Simulated checkout. No payment required.</p>
+        <Link className="primary-button checkout-link" href="/checkout">On to checkout <ArrowRight size={18} aria-hidden="true" /></Link><p className="checkout-note">Simulated checkout. No payment required.</p>
       </aside>
     </div>}
   </main>;

@@ -36,10 +36,10 @@ export function Header() {
         </nav>
         <div className="desktop-search"><SearchForm /></div>
         <div className="header-actions">
-          <Link className="icon-link" href="/wishlist" aria-label={`Wishlist, ${state.wishlist.length} items`}>
+          <Link className="icon-link" href="/wishlist" prefetch={false} aria-label={`Wishlist, ${state.wishlist.length} items`}>
             <Heart size={20} aria-hidden="true" /><span className="count">{state.wishlist.length}</span>
           </Link>
-          <Link className="icon-link account-link" href="/account" aria-label="My account"><UserRound size={20} aria-hidden="true" /></Link>
+          <Link className="icon-link account-link" href="/account" prefetch={false} aria-label="My account"><UserRound size={20} aria-hidden="true" /></Link>
           <Link className="icon-link" href="/cart" aria-label={`Shopping bag, ${quantity} items`}>
             <ShoppingBag size={20} aria-hidden="true" /><span className="count">{quantity}</span>
           </Link>
@@ -50,7 +50,7 @@ export function Header() {
       </div>
       {open && <nav id="mobile-navigation" className="mobile-nav wrap" aria-label="Mobile navigation">
         {navigation.map(({ href, label }) => <Link onClick={() => setOpen(false)} key={label} href={href}>{label}</Link>)}
-        <Link href="/account" onClick={() => setOpen(false)}>My account</Link>
+        <Link href="/account" prefetch={false} onClick={() => setOpen(false)}>My account</Link>
         <SearchForm mobile onSubmit={() => setOpen(false)} />
       </nav>}
     </header>

@@ -1,0 +1,53 @@
+- link "Skip to content":
+  - /url: "#main-content"
+- banner:
+  - link "DeskDrop home":
+    - /url: /
+    - text: ""
+  - navigation "Main navigation":
+    - link "Shop all":
+      - /url: /
+    - link "Desk essentials":
+      - /url: /?category=Desk%20essentials
+    - link "New arrivals":
+      - /url: /?new=1
+  - search:
+    - text: Search products
+    - searchbox "Search products"
+    - button "Search"
+  - link "Wishlist, 0 items":
+    - /url: /wishlist
+    - text: ""
+  - link "My account":
+    - /url: /account
+  - link "Shopping bag, 0 items":
+    - /url: /cart
+    - text: ""
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Home":
+          - /url: /
+      - listitem: Your orders
+  - paragraph: GOOD THINGS, ON THEIR WAY
+  - heading "Your orders." [level=1]
+  - heading "Your story starts here." [level=2]
+  - link "Explore the collection":
+    - /url: /
+- contentinfo:
+  - link "DeskDrop":
+    - /url: /
+  - paragraph: Thoughtful objects. A better place to do your thing.
+  - navigation "Footer navigation":
+    - link "Explore the collection":
+      - /url: /
+    - link "Your orders":
+      - /url: /orders
+  - paragraph: Demo storefront · No real payments or deliveries
+  - link "Built with CodeRabbit":
+    - /url: https://www.coderabbit.ai
+    - text: ""
+    - img "CodeRabbit"
+- status
+- alert

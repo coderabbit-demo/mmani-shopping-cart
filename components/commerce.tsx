@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { Minus, Plus } from "lucide-react";
-import { money } from "../lib/catalog";
-import { totals, type StoreState } from "../lib/store";
+import { money, productById } from "../lib/catalog";
+import { lineTotal, totals, type StoreState } from "../lib/store";
 
 export function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
   return <nav className="breadcrumb" aria-label="Breadcrumb"><ol>{items.map((item, index) => <li key={`${index}:${item.label}`}>
@@ -20,9 +20,9 @@ export function Quantity({ value, onChange, label }: { value: number; onChange: 
   </div>;
 }
 
-export function OrderSummary({ state }: { state: StoreState }) {
+export function OrderSummary({ state, showLines = false }: { state: StoreState; showLines?: boolean }) {
   const amounts = totals(state);
-  return <section className="order-summary" aria-label="Order summary"><dl>
+  return <section className="order-summary" aria-label="Order summary">{showLines && <ul className="summary-items">{state.cart.map((item) => <li key={`${item.productId}:${item.color}`}><div><span>{productById(item.productId)!.name}</span><p>{item.color} · Qty {item.quantity}</p></div><span className="price">{money(lineTotal(item))}</span></li>)}</ul>}<dl>
     <div><dt>Subtotal</dt><dd data-testid="subtotal">{money(amounts.subtotal)}</dd></div>
     <div><dt>Shipping{state.delivery === "express" && <span className="delivery-label">Express</span>}</dt><dd data-testid="shipping">{state.delivery === "standard" ? "Free" : money(amounts.shipping)}</dd></div>
     {state.coupon && <div className="discount-row"><dt>DESK15 (15% off)</dt><dd data-testid="discount">−{money(amounts.discount)}</dd></div>}
