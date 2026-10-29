@@ -88,7 +88,7 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 - `AGENTS.md`: the framework's author rules (stack, no new deps, test per behavior, no TODO/debug artifacts).
 - `docs/BRAND.md` (rules above). `.coderabbit.yaml` lists it as a code guideline for `app/**` and `components/**`, plus a path instruction that flags a raw hex color outside the token block in `globals.css`.
 - `scripts/golden/`: `scope-gate.sh` (deny list + `ALLOW:` globs), `red-green.sh`, `strict-gate.sh`, `judges/` (one brief per judge).
-- Maintainer action: publish the CodeRabbit Security GitHub check (done 2026-10-28; see "CodeRabbit setup"). Add a branch ruleset on `main` that requires CI and `CodeRabbit Security`.
+- Maintainer action: publish the CodeRabbit Security GitHub check (done 2026-10-28; see "CodeRabbit setup"). A branch ruleset on `main` (requiring CI and `CodeRabbit Security`) is out of scope for run 1 (maintainer decision, 2026-10-29). `strict-gate.sh` is the only enforcement.
 
 ### PR 0b — `chore: automatic PR opening` · SC-3
 - `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`). From PR 1 on, every PR is opened by this script once verification is green.
