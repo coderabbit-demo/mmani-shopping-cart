@@ -24,6 +24,12 @@ function fieldError(key: Field, value: string): string | undefined {
 }
 
 export function Checkout() {
+  const { ready } = useStore();
+  if (!ready) return <main className="loading-state wrap"><p>Getting things ready…</p></main>;
+  return <CheckoutForm />;
+}
+
+function CheckoutForm() {
   const { state, update } = useStore();
   const router = useRouter();
   const submitted = useRef(false);
@@ -84,7 +90,7 @@ export function Checkout() {
   return <main className="checkout-page wrap">
     <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Your bag", href: "/cart" }, { label: "Checkout" }]} />
     <header className="commerce-heading"><p className="eyebrow">ALMOST AT YOUR DESK</p><h1>Make it yours.</h1><p>Just a few details, and we’ll take it from here.</p></header>
-    {state.cart.length === 0 ? <section className="commerce-empty"><ShoppingBag size={36} aria-hidden="true" /><h2>Your bag needs a little something.</h2><p>Add an object to your bag before checking out.</p><Link className="primary-button" href="/">Explore the collection <ArrowRight size={18} aria-hidden="true" /></Link></section> : <form className="checkout-layout" noValidate onSubmit={submit}>
+    {state.cart.length === 0 ? <section className="commerce-empty"><ShoppingBag size={36} aria-hidden="true" /><h2>Your bag needs a little something.</h2><p>Add an object to your bag before checking out.</p><Link className="primary-button" href="/">Explore the collection <ArrowRight size={18} aria-hidden="true" /></Link></section> : <>{!state.user && <p className="checkout-sign-in">Already part of the desk club? <Link className="text-link" href="/account?next=checkout">Sign in</Link></p>}<form className="checkout-layout" noValidate onSubmit={submit}>
       <div className="checkout-sections">
         <fieldset><legend>Your details</legend>{field("email")}{field("name")}</fieldset>
         <fieldset><legend>Your happy place</legend>{field("street")}<div className="checkout-field-pair">{field("city")}{field("postal")}</div><div className="checkout-field"><label htmlFor="checkout-country">Country</label><select id="checkout-country" name="country" autoComplete="country-name" required value={values.country} onChange={(event) => setValues((current) => ({ ...current, country: event.target.value }))}>{["United States", "United Kingdom", "Canada", "India", "Australia"].map((country) => <option key={country}>{country}</option>)}</select></div></fieldset>
@@ -95,6 +101,6 @@ export function Checkout() {
         <fieldset className="demo-payment"><legend>A practice payment</legend><p>Demo payment •••• 4242</p><p>This is a test store. No card details or real payment needed.</p></fieldset>
       </div>
       <aside className="checkout-summary" aria-label="Checkout summary"><OrderSummary state={state} showLines /><p className="checkout-note">Your details stay in this browser. Use a fictional address for your demo.</p><button className="primary-button checkout-link" type="submit" disabled={pending}>Place demo order <ArrowRight size={18} aria-hidden="true" /></button>{submitError && <p className="checkout-submit-error" role="alert">{submitError}</p>}</aside>
-    </form>}
+    </form></>}
   </main>;
 }

@@ -10,7 +10,7 @@ import { ProductArt } from "./product-art";
 import { Breadcrumb, OrderSummary, Quantity } from "./commerce";
 
 export function Cart() {
-  const { state, update, notify } = useStore();
+  const { state, update, notify, ready } = useStore();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string>();
   const quantity = state.cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -23,6 +23,7 @@ export function Cart() {
       notify("A little treat: 15% off applied.");
     }
   }
+  if (!ready) return <main className="loading-state wrap"><p>Getting things ready…</p></main>;
   return <main className="cart-page wrap">
     <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Your bag" }]} />
     <h1>Your bag <span className="bag-quantity">({quantity})</span></h1>

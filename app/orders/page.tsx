@@ -6,7 +6,8 @@ import { OrderReceipt } from "../../components/receipt";
 import { useStore } from "../../components/store-provider";
 
 export default function OrdersPage() {
-  const { state } = useStore();
+  const { state, ready } = useStore();
+  if (!ready) return <main className="loading-state wrap"><p>Getting things ready…</p></main>;
   return <main className="orders-page wrap">
     <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Your orders" }]} />
     <header className="commerce-heading"><p className="eyebrow">GOOD THINGS, ON THEIR WAY</p><h1>Your orders.</h1></header>
