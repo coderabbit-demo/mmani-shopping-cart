@@ -215,7 +215,7 @@ test("regression: field attributes guard length limits and autofill tokens", asy
   await expect(page.getByLabel("Country", { exact: true })).toHaveAttribute("autocomplete", "country-name");
 });
 
-test("trimmed address, ID, UTC date, no URL data, logs or storage, and duplicate-submit guard", async ({ page }) => {
+test("trimmed address, ID, UTC date, no URL data or logs, safe persistence, and duplicate-submit guard", async ({ page }) => {
   await addProduct(page);
   const logs: string[] = [];
   page.on("console", (message) => logs.push(message.text()));
@@ -235,7 +235,12 @@ test("trimmed address, ID, UTC date, no URL data, logs or storage, and duplicate
   for (const value of Object.values(address)) expect(decodeURIComponent(page.url())).not.toContain(value);
   await history(page);
   await expect(receipt(page)).toHaveCount(1);
-  expect(await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } }))).toEqual({ local: {}, session: {} });
+  const storage = await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  expect(Object.keys(storage.local)).toEqual(["deskdrop-demo-v1"]);
+  const placedId = (await receipt(page).getAttribute("aria-label"))!.replace("Order ", "");
+  expect(storage.local["deskdrop-demo-v1"]).toContain(placedId);
+  expect(storage.local["deskdrop-demo-v1"]).not.toContain("deskdrop123");
+  expect(storage.session).toEqual({});
   expect(logs).toEqual([]);
 });
 

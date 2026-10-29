@@ -5,7 +5,8 @@ import { OrderReceipt } from "../../../components/receipt";
 import { useStore } from "../../../components/store-provider";
 
 export default function SuccessPage() {
-  const { state } = useStore();
+  const { state, ready } = useStore();
+  if (!ready) return <main className="loading-state wrap"><p>Getting things ready…</p></main>;
   const order = state.lastOrder;
   if (!order) return <main className="success-page wrap"><section className="commerce-empty"><h1>Nothing on its way just yet.</h1><Link className="primary-button" href="/">Explore the collection</Link></section></main>;
   const firstName = order.address.name.split(/\s+/)[0];

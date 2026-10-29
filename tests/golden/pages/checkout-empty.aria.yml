@@ -49,6 +49,8 @@
       - /url: /
     - link "Your orders":
       - /url: /orders
+    - link "Reset demo":
+      - /url: /demo
   - paragraph: Demo storefront · No real payments or deliveries
   - link "Built with CodeRabbit":
     - /url: https://www.coderabbit.ai
