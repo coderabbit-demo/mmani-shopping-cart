@@ -105,14 +105,14 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 - **Deep Scan baseline** after merge.
 
 ### PR 3 — `feat: storefront shell + browse` · SC-6
-- `app/layout.tsx` (Geist + Hack fonts), `globals.css` (brand tokens, dark + light), `components/shell.tsx` (header, mobile nav, bag/wishlist counts, footer with the "Built with CodeRabbit" credit), `product-art.tsx`, `product-card.tsx`, `shop.tsx`.
+- `app/layout.tsx` (Geist + Hack fonts), `globals.css` (brand tokens, dark + light), `components/shell.tsx` (header, mobile nav, bag/wishlist counts, footer with the "Built with CodeRabbit" credit), `product-art.tsx`, `product-card.tsx`, `shop.tsx`, `store-provider.tsx` (in-memory state; quick-add and the counts need it), `lib/browse.ts` (pure filter and sort).
 - `/` with search, category filter, in-stock filter, sort, quick-add; `not-found.tsx`.
-- Playwright config + journey: search, filter, 404, mobile viewport fit.
-- Goldens extended: server-rendered HTML snapshots of `/` and 404.
+- Playwright config + journey: search, filter, 404, mobile viewport fit. CI gains an `e2e` job.
+- Goldens extended: Playwright aria snapshots of `/` and 404 in `tests/golden/pages/` (raw server HTML carries build hashes, so it is not deterministic). Refresh with `npm run golden:capture:pages`.
 - e2e: a contrast check on the key text and CTA tokens in both color schemes.
 
 ### PR 4 — `feat: product detail + cart page` · SC-7
-- `/products/[slug]` (color + quantity selection, add to bag), `/cart` (quantity, remove, apply/remove coupon), `store-provider.tsx` (in-memory state).
+- `/products/[slug]` (color + quantity selection, add to bag), `/cart` (quantity, remove, apply/remove coupon), built on PR 3's `store-provider.tsx`.
 - e2e: choose a non-default color → cart shows that color (rule 1); change quantity → line total updates (rule 2); drop below $100 → coupon is removed (rule 3).
 
 ### PR 5 — `feat: checkout, receipt, orders` · SC-8
