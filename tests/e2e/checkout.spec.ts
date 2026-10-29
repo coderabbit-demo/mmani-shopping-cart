@@ -239,6 +239,55 @@ test("trimmed address, ID, UTC date, no URL data, logs or storage, and duplicate
   expect(logs).toEqual([]);
 });
 
+test("regression: checkout succeeds without randomUUID and emits no pageerror", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => { delete Object.getPrototypeOf(crypto).randomUUID; });
+  await page.reload();
+  expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
+  await addProduct(page);
+  await checkout(page);
+  await fillAddress(page);
+  await submit(page);
+  await expect(receipt(page).getByRole("heading", { level: 2 })).toHaveText(/^ORDER DD-[0-9A-F]{8}$/);
+  expect(errors).toEqual([]);
+});
+
+for (const stage of ["random bytes", "timestamp"] as const) {
+  test(`regression: checkout can retry after ${stage} preparation throws`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await addProduct(page);
+    await checkout(page);
+    await fillAddress(page);
+    await page.evaluate((failureStage) => {
+      if (failureStage === "random bytes") {
+        const original = crypto.getRandomValues.bind(crypto);
+        Object.defineProperty(crypto, "getRandomValues", { configurable: true, value: () => {
+          Object.defineProperty(crypto, "getRandomValues", { configurable: true, value: original });
+          throw new Error("Synthetic random generation failure");
+        } });
+      } else {
+        const original = Date.prototype.toISOString;
+        Date.prototype.toISOString = function () {
+          Date.prototype.toISOString = original;
+          throw new Error("Synthetic timestamp failure");
+        };
+      }
+    }, stage);
+    const button = page.getByRole("button", { name: "Place demo order", exact: true });
+    await button.click();
+    await expect(page).toHaveURL("/checkout");
+    await expect(button).toBeEnabled();
+    await expect(bag(page)).toHaveAccessibleName("Shopping bag, 1 items");
+    await submit(page);
+    await expect(receipt(page).getByRole("heading", { level: 2 })).toHaveText(/^ORDER DD-[0-9A-F]{8}$/);
+    await history(page);
+    await expect(receipt(page)).toHaveCount(1);
+    expect(errors).toEqual([]);
+  });
+}
+
 test("after ordering the bag is empty and the checkout empty state returns", async ({ page }) => {
   await addProduct(page);
   await checkout(page);

@@ -63,11 +63,18 @@ export function Checkout() {
       event.currentTarget.querySelector<HTMLInputElement>(`#checkout-${firstInvalid}`)?.focus();
       return;
     }
-    submitted.current = true;
-    setPending(true);
-    const id = `DD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-    const createdAt = new Date().toISOString();
-    update((current) => placeOrder(current, address, id, createdAt));
+    try {
+      const bytes = crypto.getRandomValues(new Uint8Array(4));
+      const id = `DD-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+      const createdAt = new Date().toISOString();
+      submitted.current = true;
+      setPending(true);
+      update((current) => placeOrder(current, address, id, createdAt));
+    } catch {
+      submitted.current = false;
+      setPending(false);
+      return;
+    }
     router.push("/checkout/success");
   }
 
