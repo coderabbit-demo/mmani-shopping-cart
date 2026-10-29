@@ -35,6 +35,6 @@ PR 3 defines these tokens:
 
 - [ ] Keep the store name DeskDrop, set in Geist.
 - [ ] Use the footer's small “Built with CodeRabbit” credit as the only CodeRabbit mark. The header must never show a CodeRabbit mark.
-- [ ] Use the official logotype unmodified, with clear space: white in the dark theme and orange in the light theme.
+- [ ] Use the official logotype unmodified, with clear space: the white logotype (`white-typemark.svg`) in the dark theme and the light-background logotype (`orange-typemark.svg`: a dark wordmark with the orange mark) in the light theme.
 - [ ] Commit official files from the brand site to `public/brand/` in PR 3. Never redraw the rabbit or pair its mark with substitute text.
 - [ ] Recolor built-in product SVGs using brand tokens: mauve backgrounds with orange and supporting accent details.
