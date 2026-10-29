@@ -163,10 +163,11 @@ ALLOW: app/globals.css
 ALLOW: tests/e2e/account.spec.ts
 ALLOW: tests/e2e/persistence.spec.ts
 ALLOW: tests/e2e/pages.spec.ts
+ALLOW: tests/e2e/checkout.spec.ts
 ALLOW: tests/golden/pages/*.aria.yml
 ```
 
-`components/cart.tsx`, `components/checkout.tsx`, `app/checkout/success/page.tsx` and `app/orders/page.tsx` may change only for the `ready` gate, plus the checkout sign-in prompt. Do not modify `lib/store.ts`, `lib/catalog.ts`, other existing tests, `package.json`, CI, `scripts/` or `docs/`.
+`components/cart.tsx`, `components/checkout.tsx`, `app/checkout/success/page.tsx` and `app/orders/page.tsx` may change only for the `ready` gate, plus the checkout sign-in prompt. In `tests/e2e/checkout.spec.ts`, change only the assertion (and its title) that localStorage is empty after checkout. Assert instead that localStorage holds only the `deskdrop-demo-v1` key with the placed order, no password, and that sessionStorage is empty. Keep the URL, console, marker and double-submit assertions. Do not modify `lib/store.ts`, `lib/catalog.ts`, other existing tests, `package.json`, CI, `scripts/` or `docs/`.
 
 ## Required checks
 
