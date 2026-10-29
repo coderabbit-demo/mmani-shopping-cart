@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import * as browse from "../lib/browse.ts";
 import { products } from "../lib/catalog.ts";
 import { filterProducts, sortProducts } from "../lib/browse.ts";
 
@@ -58,4 +60,19 @@ test("filtering and sorting leave frozen inputs unchanged", () => {
   assert.deepEqual(frozen, before);
   assert.deepEqual(filterProducts([], {}), []);
   assert.deepEqual(sortProducts([], "rating"), []);
+});
+
+
+test("catalog swatch tokens preserve every product color", () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const darkTokens = css.match(/:root\s*\{([^}]+)\}/)[1];
+  for (const product of products) {
+    for (const color of product.colors) {
+      const slug = color.name.toLowerCase().replaceAll(" ", "-");
+      const declaration = darkTokens.match(new RegExp(`--swatch-${slug}:\\s*([^;]+);`));
+      assert.equal(declaration?.[1], color.hex, `${color.name} token must preserve the catalog hex`);
+      assert.equal(browse.swatchToken(color.name), `var(--swatch-${slug})`);
+    }
+  }
+  assert.equal(browse.swatchToken("Natural oak"), "var(--swatch-natural-oak)");
 });

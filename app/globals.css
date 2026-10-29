@@ -23,6 +23,25 @@
   --art-accent: #25e2a8;
   --art-highlight: #ffb899;
   --art-shadow: #121014;
+  --swatch-terracotta: #bd6549;
+  --swatch-sage: #7c8d76;
+  --swatch-cream: #d8cdb7;
+  --swatch-cloud: #e0ded1;
+  --swatch-forest: #426253;
+  --swatch-clay: #bc806b;
+  --swatch-oat: #c4b69d;
+  --swatch-ink: #3e4545;
+  --swatch-sand: #cbb692;
+  --swatch-chalk: #e0ded4;
+  --swatch-silver: #aeb7b5;
+  --swatch-midnight: #475758;
+  --swatch-cognac: #a77552;
+  --swatch-olive: #717b5c;
+  --swatch-charcoal: #515451;
+  --swatch-natural-oak: #b38b57;
+  --swatch-walnut: #70513c;
+  --swatch-moss: #667969;
+  --swatch-rust: #ae6855;
 }
 @media (prefers-color-scheme: light) {
   :root {

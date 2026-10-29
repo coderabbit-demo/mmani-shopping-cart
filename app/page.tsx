@@ -10,5 +10,5 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   const category = categories.includes(requestedCategory as Category) ? requestedCategory as Category : "All objects";
   const query = (first(params.q) ?? "").trim();
   const newOnly = first(params.new) === "1";
-  return <Shop key={JSON.stringify([category, query, newOnly])} category={category} query={query} newOnly={newOnly} />;
+  return <Shop category={category} query={query} newOnly={newOnly} />;
 }

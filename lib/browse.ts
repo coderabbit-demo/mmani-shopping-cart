@@ -26,3 +26,8 @@ export function sortProducts(products: readonly Product[], sort: string): Produc
     default: return result;
   }
 }
+
+
+export function swatchToken(name: string): string {
+  return `var(--swatch-${name.toLowerCase().replaceAll(" ", "-")})`;
+}

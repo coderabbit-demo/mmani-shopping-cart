@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));

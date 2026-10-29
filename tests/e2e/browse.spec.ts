@@ -137,3 +137,80 @@ test("tablet keeps header search available", async ({ page }) => {
   await expect(cards(page)).toHaveCount(1);
   await expect(page.getByRole("heading", { name: "Results for “lamp”", exact: true })).toBeVisible();
 });
+
+for (const mobile of [false, true]) {
+  test(`regression: ${mobile ? "mobile" : "desktop"} search preserves bag and wishlist`, async ({ page }) => {
+    if (mobile) await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Add Arc desk lamp to bag", exact: true }).click();
+    await page.getByRole("button", { name: "Save Arc desk lamp to wishlist", exact: true }).click();
+    if (mobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+    const search = mobile
+      ? page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("searchbox", { name: "Search products" })
+      : page.getByRole("searchbox", { name: "Search products" });
+    await search.fill("lamp");
+    await search.press("Enter");
+    await expect(page.getByRole("heading", { name: "Results for “lamp”", exact: true })).toBeVisible();
+    await expect(cards(page)).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "Shopping bag, 1 items", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Wishlist, 1 items", exact: true })).toBeVisible();
+  });
+}
+
+test("regression: empty-state recovery preserves bag and wishlist", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add Arc desk lamp to bag", exact: true }).click();
+  await page.getByRole("button", { name: "Save Arc desk lamp to wishlist", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Search products" }).fill("no-object-matches-this");
+  await page.getByRole("searchbox").press("Enter");
+  await expect(page.getByRole("heading", { name: "No objects found.", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Explore all objects", exact: true }).click();
+  await expect(cards(page)).toHaveCount(8);
+  await expect(page.getByRole("link", { name: "Shopping bag, 1 items", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Wishlist, 1 items", exact: true })).toBeVisible();
+});
+
+test("regression: Shop all resets a chosen category from the URL", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lighting", exact: true }).click();
+  await expect(cards(page)).toHaveCount(1);
+  await page.getByRole("link", { name: "Shop all", exact: true }).click();
+  await expect(cards(page)).toHaveCount(8);
+  await expect(page.getByRole("button", { name: "All objects 8", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(new URL(page.url()).searchParams.has("category")).toBe(false);
+});
+
+test("regression: category navigation retains q and new in the URL", async ({ page }) => {
+  await page.goto("/?q=tech&new=1");
+  await page.getByRole("button", { name: "Lighting", exact: true }).click();
+  await expect(page).toHaveURL(/category=Lighting/);
+  const params = new URL(page.url()).searchParams;
+  expect(params.get("category")).toBe("Lighting");
+  expect(params.get("q")).toBe("tech");
+  expect(params.get("new")).toBe("1");
+  await page.getByRole("combobox", { name: "Sort products" }).selectOption("price-low");
+  await page.getByRole("checkbox", { name: "In stock only" }).check();
+  await expect(page.getByRole("button", { name: "Lighting", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(new URL(page.url()).searchParams.toString()).toBe(params.toString());
+  await page.getByRole("button", { name: "All objects 8", exact: true }).click();
+  await expect(page).not.toHaveURL(/category=/);
+  expect(new URL(page.url()).searchParams.get("q")).toBe("tech");
+  expect(new URL(page.url()).searchParams.get("new")).toBe("1");
+});
+
+test("regression: swatches use tokens and retain catalog colors in both themes", async ({ page }) => {
+  await page.goto("/");
+  for (const colorScheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (const product of products) {
+      const card = page.getByRole("article", { name: product.name, exact: true });
+      for (const color of product.colors) {
+        const swatch = card.getByRole("img", { name: color.name, exact: true });
+        const slug = color.name.toLowerCase().replaceAll(" ", "-");
+        const channels = color.hex.slice(1).match(/.{2}/g)!.map((part) => parseInt(part, 16));
+        await expect(swatch).toHaveCSS("background-color", `rgb(${channels.join(", ")})`);
+        expect(await swatch.evaluate((element) => (element as HTMLElement).style.backgroundColor)).toBe(`var(--swatch-${slug})`);
+      }
+    }
+  }
+});

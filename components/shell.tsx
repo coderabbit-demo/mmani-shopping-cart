@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Form from "next/form";
 import { useState } from "react";
 import { Heart, Menu, Search, ShoppingBag, UserRound, X, ArrowUpRight } from "lucide-react";
 import { useStore } from "./store-provider";
@@ -11,14 +12,14 @@ const navigation = [
   { label: "New arrivals", href: "/?new=1" },
 ];
 
-function SearchForm({ mobile = false }: { mobile?: boolean }) {
+function SearchForm({ mobile = false, onSubmit }: { mobile?: boolean; onSubmit?: () => void }) {
   const id = mobile ? "mobile-search" : "header-search";
   return (
-    <form action="/" method="get" className="search-form" role="search">
+    <Form action="/" className="search-form" role="search" onSubmit={onSubmit}>
       <label className="sr-only" htmlFor={id}>Search products</label>
       <input id={id} name="q" type="search" placeholder="Find your next favorite" />
       <button type="submit" aria-label="Search"><Search size={18} aria-hidden="true" /></button>
-    </form>
+    </Form>
   );
 }
 
@@ -50,7 +51,7 @@ export function Header() {
       {open && <nav id="mobile-navigation" className="mobile-nav wrap" aria-label="Mobile navigation">
         {navigation.map(({ href, label }) => <Link onClick={() => setOpen(false)} key={label} href={href}>{label}</Link>)}
         <Link href="/account" onClick={() => setOpen(false)}>My account</Link>
-        <SearchForm mobile />
+        <SearchForm mobile onSubmit={() => setOpen(false)} />
       </nav>}
     </header>
   );
