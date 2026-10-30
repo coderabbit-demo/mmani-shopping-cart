@@ -1,6 +1,6 @@
 # Automation: post-merge QA sweep + Jira update
 
-> **Status: being set up (2026-10-29).** Automations creation is now available in the CodeRabbit app. Until the trigger is enabled, the orchestrator does these steps by hand after each merge (`docs/PLAN.md`, per-step loop, step 10).
+> **Status: live (2026-10-29).** The trigger is active in the CodeRabbit app; SC-19 is its first real test. Before it was enabled, the orchestrator does these steps by hand after each merge (`docs/PLAN.md`, per-step loop, step 10).
 
 A CodeRabbit **workspace automation**, created in the web app under **Automations → Triggers**. When a PR merges into `main`, it:
 - moves the PR's Jira issue in the ShoppingCart (`SC`) project to Done, with a comment;
