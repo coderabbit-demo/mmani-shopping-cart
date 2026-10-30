@@ -1,6 +1,6 @@
 # Automation: post-merge QA sweep + Jira update
 
-> **Status: deferred (2026-10-28).** It isn't set up in the CodeRabbit app yet. Until it is, the orchestrator does these steps by hand after each merge (`docs/PLAN.md`, per-step loop, step 10).
+> **Status: being set up (2026-10-29).** Automations creation is now available in the CodeRabbit app. Until the trigger is enabled, the orchestrator does these steps by hand after each merge (`docs/PLAN.md`, per-step loop, step 10).
 
 A CodeRabbit **workspace automation**, created in the web app under **Automations → Triggers**. When a PR merges into `main`, it:
 - moves the PR's Jira issue in the ShoppingCart (`SC`) project to Done, with a comment;
@@ -88,7 +88,31 @@ Do nothing else.
 ## Test before enabling
 
 1. Save as a **paused draft**.
-2. Pick an already-merged PR, such as PR #1, `chore: scaffold + framework contract`, which has `Jira: SC-2`. Run the trigger once with that PR's `pull_request.closed` payload, or enable the trigger briefly and re-deliver the webhook from GitHub → Settings → Webhooks → Recent deliveries.
+2. Run it once against an already-merged PR, using PR #1 (`chore: scaffold + framework contract`, `Jira: SC-2`):
+   - **If the trigger editor has a test or run option with a custom payload,** paste the payload below.
+   - **If it doesn't,** enable the trigger and wait for the next real merge into `main`.
+
+   GitHub → Settings → Webhooks can't re-deliver the event: CodeRabbit receives events through its GitHub App, and the repo has no webhooks of its own.
+
+   ```json
+   {
+     "action": "closed",
+     "number": 1,
+     "repository": { "full_name": "coderabbit-demo/mmani-shopping-cart" },
+     "pull_request": {
+       "number": 1,
+       "title": "chore: scaffold + framework contract",
+       "html_url": "https://github.com/coderabbit-demo/mmani-shopping-cart/pull/1",
+       "merged": true,
+       "merged_at": "2026-10-28T21:37:18Z",
+       "merge_commit_sha": "e408fddb01685a0d95963adc9ba9070efd9e95d9",
+       "base": { "ref": "main" },
+       "head": { "ref": "coderabbit/plan-scaffold-framework-contract/0742321f" },
+       "body": "Jira: SC-2"
+     }
+   }
+   ```
+
 3. Expect:
    - SC-2 is already Done and already linked, so the status and link stay as they are;
    - one `[post-merge-sweep PR #1]` comment, with QA "not requested", since PR #1 had no QA run;
