@@ -164,6 +164,10 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 
 **Why these rules (lessons from PR 0):** CodeRabbit raised 5 Major findings across three reviews of PR 0. Of those, 2 traced to errors in the brief, 1 to a judge note the orchestrator downgraded, and 1 to a judge prompt that steered attention elsewhere; the fifth was invalid and was withdrawn. A third brief error ("Security Gate" described as a GitHub check) surfaced when the strict gate first ran. The pre-PR CLI review, the brief-assumption check, the no-silent-drop rule and unprompted, mixed-model judges each target one of those causes.
 
+## Accepted risks
+
+- **Deep Scan finding 349719c6 (CWE-407, Low), `scripts/golden/scope-gate.sh:43-45`:** the recursive `**` matcher costs combinatorial CPU for an ALLOW pattern with several `**` segments matched against a deep, non-matching path. Measured worst case: 0.41 s at a depth of 24. Only the orchestrator writes ALLOW patterns, and briefs use at most one `**`. The maintainer accepted the risk on 2026-10-29. Revisit it if briefs ever need several `**` segments in one pattern.
+
 ## Done when
 
 - All 6 PRs merged through the strict gate, with no hand-written product code by the orchestrator.
