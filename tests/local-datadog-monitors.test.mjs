@@ -530,3 +530,83 @@ test('monitor detail requests all groups and healthy guard rejects missing or un
     assert.deepEqual(new Set(observed.map(({ path }) => path)), new Set(state.monitors.map(({ id }) => `/api/v1/monitor/${id}?group_states=all`)));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('new suppression waits for delayed ID match without another create', async () => {
+  const { createSuppressed, ensureSuppressed } = await import('../scripts/demo/datadog-monitors.mjs');
+  const fixture = service(), state = { owner }, saves = [], delays = [];
+  const save = async value => saves.push(structuredClone(value));
+  await createSuppressed({ api: fixture.api, owner, definitions: templates, expectedInventory: inventoryHash([]), state, save });
+  const entry = state.monitors[0], old = entry.downtime, before = fixture.calls.length;
+  fixture.downtimes.get(old).data.attributes.status = 'canceled';
+  const matches = fixture.api.matches; let reads = 0;
+  fixture.api.matches = async id => {
+    if (id === entry.id && entry.downtime !== old) { reads++; if (reads < 3) return []; }
+    return matches(id);
+  };
+  await ensureSuppressed({ api: fixture.api, state, definitions: templates, save, allowCreate: true, sleep: async ms => delays.push(ms) });
+  assert.deepEqual(delays, [1000, 1000]);
+  assert.equal(reads, 4);
+  assert.notEqual(entry.downtime, old);
+  assert.deepEqual(fixture.calls.slice(before), [`create:${entry.downtime}`]);
+  assert.ok(saves.some(snapshot => snapshot.pending === `suppress:${entry.id}`));
+  assert.equal(state.pending, null);
+  assert.equal(fixture.downtimes.get(entry.downtime).data.attributes.status, 'active');
+});
+
+test('new suppression with a persistent missing match fails closed without retrying writes', async () => {
+  const { createSuppressed, ensureSuppressed } = await import('../scripts/demo/datadog-monitors.mjs');
+  const fixture = service(), state = { owner }, delays = [], snapshots = [];
+  const save = async value => snapshots.push(structuredClone(value));
+  await createSuppressed({ api: fixture.api, owner, definitions: templates, expectedInventory: inventoryHash([]), state, save });
+  const entry = state.monitors[0], old = entry.downtime, before = fixture.calls.length;
+  fixture.downtimes.get(old).data.attributes.status = 'canceled';
+  const matches = fixture.api.matches; let reads = 0;
+  fixture.api.matches = async id => { if (id === entry.id && entry.downtime !== old) { reads++; return []; } return matches(id); };
+  const args = { api: fixture.api, state, definitions: templates, save, allowCreate: true, sleep: async ms => delays.push(ms) };
+  await assert.rejects(ensureSuppressed(args), /Suppression not effective/);
+  assert.equal(reads, 4);
+  assert.deepEqual(delays, [1000, 1000, 1000]);
+  assert.deepEqual(fixture.calls.slice(before), [`create:${entry.downtime}`]);
+  assert.notEqual(entry.downtime, old);
+  assert.equal(state.pending, null);
+  assert.ok(snapshots.some(snapshot => snapshot.pending === `suppress:${entry.id}`));
+  assert.equal(fixture.downtimes.get(entry.downtime).data.attributes.status, 'active');
+  await assert.rejects(ensureSuppressed(args), /Suppression not effective/);
+  assert.equal(reads, 5);
+  assert.deepEqual(delays, [1000, 1000, 1000]);
+  assert.deepEqual(fixture.calls.slice(before), [`create:${entry.downtime}`]);
+});
+
+test('existing active suppression fails immediately if its match disappears', async () => {
+  const { createSuppressed, ensureSuppressed } = await import('../scripts/demo/datadog-monitors.mjs');
+  const fixture = service(), state = { owner }, delays = [], save = async () => {};
+  await createSuppressed({ api: fixture.api, owner, definitions: templates, expectedInventory: inventoryHash([]), state, save });
+  const before = fixture.calls.length; let reads = 0;
+  fixture.api.matches = async () => { reads++; return []; };
+  await assert.rejects(ensureSuppressed({ api: fixture.api, state, definitions: templates, save, allowCreate: true, sleep: async ms => delays.push(ms) }), /Suppression not effective/);
+  assert.equal(reads, 1);
+  assert.deepEqual(delays, []);
+  assert.equal(fixture.calls.length, before);
+});
+
+test('new suppression does not retry failed reads or unknown writes', async () => {
+  const { createSuppressed, ensureSuppressed } = await import('../scripts/demo/datadog-monitors.mjs');
+  for (const fail of ['read', 'write']) {
+    const fixture = service(), state = { owner }, delays = [], save = async () => {};
+    await createSuppressed({ api: fixture.api, owner, definitions: templates, expectedInventory: inventoryHash([]), state, save });
+    const entry = state.monitors[0], old = entry.downtime;
+    fixture.downtimes.get(old).data.attributes.status = 'canceled';
+    let attempts = 0;
+    if (fail === 'read') fixture.api.matches = async () => { attempts++; throw new Error('read failed'); };
+    else fixture.api.createDowntime = async () => { attempts++; throw new Error('unknown write'); };
+    const args = { api: fixture.api, state, definitions: templates, save, allowCreate: true, sleep: async ms => delays.push(ms) };
+    await assert.rejects(ensureSuppressed(args), fail === 'read' ? /read failed/ : /unknown write/);
+    assert.equal(attempts, 1);
+    assert.deepEqual(delays, []);
+    if (fail === 'write') {
+      assert.equal(state.pending, `suppress:${entry.id}`);
+      await assert.rejects(ensureSuppressed(args), /Monitor reconciliation required/);
+      assert.equal(attempts, 1);
+    } else assert.equal(state.pending, null);
+  }
+});

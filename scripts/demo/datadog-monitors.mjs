@@ -319,14 +319,14 @@ async function requireNoMonitorLock() {
   try { await lstat(path.join(stateDir, 'monitor.lock')); throw new Error('Monitor operation in progress'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
-export async function ensureSuppressed({ api, state, definitions, save, allowCreate = false }) {
+export async function ensureSuppressed({ api, state, definitions, save, allowCreate = false, sleep = normalSleep }) {
   if (state.pending || state.transition || state.tagDowntime || !ownerPattern.test(state.owner ?? '') || !Array.isArray(state.monitors) || state.monitors.length !== 3 || new Set(state.monitors.map(x => x.id)).size !== 3 || new Set(state.monitors.map(x => x.name)).size !== 3) throw new Error('Monitor reconciliation required');
   const wanted = monitorDefinitions(definitions, state.owner);
   for (const item of wanted) {
     const entry = state.monitors.find(m => m.name === item.name);
     if (!entry) throw new Error('Monitor ownership changed');
     ownedMonitor(await api.getMonitor(entry.id), item);
-    let existing;
+    let existing, created = false;
     if (entry.downtime) existing = await api.getDowntime(entry.downtime);
     if (!existing || existing.data?.attributes?.status !== 'active') {
       if (existing && (existing.data?.id !== entry.downtime || existing.data?.type !== 'downtime' || !['canceled', 'ended'].includes(existing.data?.attributes?.status) || existing.data?.attributes?.monitor_identifier?.monitor_id !== entry.id || Object.keys(existing.data?.attributes?.monitor_identifier ?? {}).length !== 1)) throw new Error('Downtime ownership or status unknown');
@@ -336,10 +336,13 @@ export async function ensureSuppressed({ api, state, definitions, save, allowCre
       if (!result?.data?.id) throw new Error('Downtime outcome unknown');
       entry.downtime = result.data.id; state.pending = null; await save(state);
       existing = await api.getDowntime(entry.downtime);
+      created = true;
     }
-    if (verifyDowntime(existing, idDowntime(entry.id)) !== entry.downtime || !(await api.matches(entry.id)).includes(entry.downtime)) throw new Error('Suppression not effective');
+    if (verifyDowntime(existing, idDowntime(entry.id)) !== entry.downtime) throw new Error('Suppression not effective');
+    if (created) await matched(api, entry.id, entry.downtime, 'Suppression not effective', sleep);
+    else if (!(await api.matches(entry.id)).includes(entry.downtime)) throw new Error('Suppression not effective');
   }
-  if (allowCreate) await ensureSuppressed({ api, state, definitions, save, allowCreate: false });
+  if (allowCreate) await ensureSuppressed({ api, state, definitions, save, allowCreate: false, sleep });
   return true;
 }
 export async function enableOwned({ api, state, definitions, save, approval, now = Date.now() }) {

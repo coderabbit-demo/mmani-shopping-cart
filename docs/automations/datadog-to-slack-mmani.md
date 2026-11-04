@@ -4,9 +4,17 @@
 
 ## Operator preparation
 
-These are reviewable instructions for the existing [automation](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). As last reported it is active, sends to a saved CodeRabbit DM, allows a PR during initial triage and has no runs. It must be deliberately aligned before rehearsal. This document does not authorize changing it or sending an event.
+<!-- coderabbit-ai-generated:v1 -->
 
-An authorized operator should review its trigger, destination, Agent scope, connections, author identity, budget and failure reporting. Select CodeRabbit Demo workspace `T0AU433PG75` and `#mmani-shopping-cart` (`C0CEPB2LURY`); verify actual channel membership and access to this repository, US3 Datadog and Jira SC. The webhook wizard supplies an authenticated endpoint and required header. Keep both out of examples, logs, repository files and evidence. Its `monitor.alert` and `incident.triggered` event filters are CodeRabbit event types, not Datadog `$EVENT_TYPE` substitutions.
+<!-- coderabbit-ai-generated-section:v1:c9f0ba84c18637a7a3ba180a7298deafd0631653c7e5697131800db609aabb5d -->
+
+These are reviewable instructions for the existing [automation](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). The Mac operator's read-only browser check on 2026-11-04 found it Active with no active runs and its saved Slack destination set to Existing Channel `#mmani-shopping-cart`. The target channel `C0CEPB2LURY` exists in CodeRabbit Demo workspace `T0AU433PG75`; CodeRabbit had joined and a welcome message was present. This establishes the observed channel and saved destination, not an automation delivery or posting capability test.
+
+The same check found the saved Agent instructions contain no button instructions, no `Create Jira Ticket` action and no `Debug and Create PR` action. They allow an automatic PR during generic triage if a fix is known. Channel routing is configured, while the requested button workflow remains unconfigured. Aligning the automation requires separate explicit approval; this document does not authorize changing it or sending an event.
+
+An authorized operator should review its trigger, saved destination, Agent scope, connections, author identity, budget and failure reporting, and verify effective access to this repository, US3 Datadog and Jira SC. Recheck the channel and membership before rehearsal. The webhook wizard supplies an authenticated endpoint and required header. Keep both out of examples, logs, repository files and evidence. Its `monitor.alert` and `incident.triggered` event filters are CodeRabbit event types, not Datadog `$EVENT_TYPE` substitutions.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated:v1 -->
 
@@ -26,7 +34,13 @@ Mahesh approved the local runtime tags on 2026-11-04: `service:deskdrop`, `env:l
 
 <!-- /coderabbit-ai-generated:v1 -->
 
-The existing destination remains CodeRabbit Demo workspace `T0AU433PG75`, channel `C0CEPB2LURY`. Native event fields, filter enforcement, representative payloads and matching/unrelated-event tests remain pending actual evidence and separate approval. Do not infer that a diagnostic failure class is automatically present in the native Datadog webhook payload. Initial triage remains button-gated as described below; the existing reuse, concurrency and failure-reporting requirements remain unchanged.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1e9ae3629d1aa47a56d070286a45b5b674c50ed69dee568940da9f965cfb5ad4 -->
+
+The intended destination is CodeRabbit Demo workspace `T0AU433PG75`, channel `C0CEPB2LURY`, as observed in the saved channel selection above. Native event fields, filter enforcement, representative payloads and matching/unrelated-event tests remain pending actual evidence and separate approval. Do not infer that a diagnostic failure class is automatically present in the native Datadog webhook payload. The proposed workflow below requires button-gated initial triage; the currently saved instructions do not implement it. Reuse, concurrency and failure-reporting requirements remain unchanged.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Scope record required before activation
 
