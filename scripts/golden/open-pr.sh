@@ -92,10 +92,19 @@ try {
   const title = heading?.match(/`([^`\r\n]+)`/)?.[1];
   const issues = [...brief.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)];
   if (!title?.trim() || issues.length !== 1) fail('Brief must contain a backticked title in its first # heading and one valid **Jira:** field');
-  let fenced = false;
+  let fence = null;
   const metadata = brief.split(/\r?\n/).map((line) => {
-    if (/^\s*(`{3,}|~{3,})/.test(line)) { fenced = !fenced; return ''; }
-    return fenced ? '' : line.replace(/`[^`]*`/g, '');
+    if (fence) {
+      const closing = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
+      return '';
+    }
+    const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (opening && (opening[1][0] !== '`' || !opening[2].includes('`'))) {
+      fence = opening[1];
+      return '';
+    }
+    return line.replace(/`[^`]*`/g, '');
   }).join('\n');
   const githubFields = [...metadata.matchAll(/(?:^|[ \t])\*\*GitHub:\*\*[ \t]*([^\r\n]*)/gm)];
   if (githubFields.length > 1) fail('Brief must contain at most one GitHub field');

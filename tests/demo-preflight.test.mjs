@@ -181,3 +181,67 @@ test('help and invalid arguments perform no preflight', () => {
     assert.doesNotMatch(child.stdout + child.stderr, new RegExp(marker));
   }
 });
+
+test('regression: observed CodeRabbit currentOrg enables repository access', async () => {
+  const f = fixture();
+  f.replies.set('coderabbit auth org --agent', JSON.stringify({ type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbit-demo' }, organizations: [{ name: 'coderabbit-demo' }, { name: 'coderabbitai' }, { name: 'manimahesh' }] }));
+  const summary = await run(f);
+  assert.equal(summary.checks.coderabbit_org.status, 'pass');
+  assert.equal(summary.checks.coderabbit_repo.status, 'pass');
+  assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), true);
+  assert.doesNotMatch(JSON.stringify(summary), new RegExp(marker));
+});
+
+test('regression: a different currentOrg fails and does not check repository access', async () => {
+  const f = fixture();
+  f.replies.set('coderabbit auth org --agent', JSON.stringify({ type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbitai' }, organizations: [{ name: 'coderabbit-demo' }, { name: 'coderabbitai' }] }));
+  const summary = await run(f);
+  assert.equal(summary.checks.coderabbit_org.status, 'fail');
+  assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+  assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), false);
+});
+
+test('regression: absent, malformed or ambiguous current organization remains blocked', async () => {
+  const cases = [
+    { type: 'org_list', phase: 'auth', organizations: [{ name: 'coderabbit-demo' }] },
+    { type: 'org_list', phase: 'auth', currentOrg: null, organizations: [{ name: 'coderabbit-demo', selected: true }] },
+    { type: 'org_list', phase: 'auth', currentOrg: { name: '' }, organizations: [] },
+    { type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbit-demo' }, organizations: [{ name: 'coderabbit-demo' }, null] },
+    { type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbit-demo' }, organizations: [{ name: 'coderabbit-demo' }, { name: 'coderabbit-demo' }] },
+    { type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbit-demo' }, organizations: [{ name: 'coderabbit-demo' }, { name: 'other', selected: true }] },
+  ];
+  for (const data of cases) {
+    const f = fixture();
+    f.replies.set('coderabbit auth org --agent', JSON.stringify(data));
+    const summary = await run(f);
+    assert.equal(summary.checks.coderabbit_org.status, 'blocked');
+    assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+    assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), false);
+  }
+  const f = fixture();
+  const event = { type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbit-demo' }, organizations: [{ name: 'coderabbit-demo' }] };
+  f.replies.set('coderabbit auth org --agent', `${JSON.stringify(event)}\n${JSON.stringify(event)}`);
+  const summary = await run(f);
+  assert.equal(summary.checks.coderabbit_org.status, 'blocked');
+  assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+  assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), false);
+});
+
+test('regression: Terraform v-prefixed version retains its major number', async () => {
+  const f = fixture();
+  const versions = {
+    npm: ['11.6.2', '11.6.2'],
+    bash: ['GNU bash, version 3.2.57(1)-release', '3.2.57'],
+    git: ['git version 2.50.1', '2.50.1'],
+    gh: ['gh version 2.100.0 (2026-01-01)', '2.100.0'],
+    gcloud: ['Google Cloud SDK 590.0.0\nbq 2.1.0', '590.0.0'],
+    coderabbit: ['0.9.2', '0.9.2'],
+    docker: ['Docker version 29.5.3, build abc', '29.5.3'],
+  };
+  for (const [name, [output]] of Object.entries(versions)) f.replies.set(`${name} --version`, output);
+  f.replies.set('terraform --version', 'Terraform v1.15.3\non darwin_arm64\n');
+  const summary = await run(f);
+  assert.equal(summary.checks.tool_terraform.status, 'pass');
+  assert.equal(summary.checks.tool_terraform.version, '1.15.3');
+  for (const [name, [, expected]] of Object.entries(versions)) assert.equal(summary.checks[`tool_${name}`].version, expected);
+});

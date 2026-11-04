@@ -58,7 +58,7 @@ export async function preflight({ run = command, http = validateKeys, env = proc
   });
   for (const [name, args] of Object.entries({ npm: ['--version'], bash: ['--version'], git: ['--version'], gh: ['--version'], gcloud: ['--version'], terraform: ['--version'], coderabbit: ['--version'], docker: ['--version'] })) {
     await check(`tool_${name}`, `Install or repair ${name}.`, async () => {
-      const version = (await call(name, ...args)).match(/\b\d+\.\d+(?:\.\d+)?\b/)?.[0];
+      const version = (await call(name, ...args)).match(/\bv?(\d+\.\d+(?:\.\d+)?)\b/)?.[1];
       if (!version) return fail(`Check ${name} version output.`);
       const [major, minor = 0] = version.split('.').map(Number);
       if (name === 'bash' && (major < 3 || (major === 3 && minor < 2))) return fail('Use Bash 3.2 or later.');
@@ -91,6 +91,19 @@ export async function preflight({ run = command, http = validateKeys, env = proc
   });
   await check('coderabbit_org', 'Check the selected CodeRabbit organization.', async () => {
     const events = eventLines(await call('coderabbit', 'auth', 'org', '--agent'));
+    const currentEvents = events.filter((x) => x && typeof x === 'object' && (x.type === 'org_list' || Object.hasOwn(x, 'currentOrg')));
+    if (currentEvents.length) {
+      const event = currentEvents[0];
+      const current = event.currentOrg;
+      if (currentEvents.length !== 1 || events.some((x) => x?.type === 'error' || x?.type === 'action_required') || event.type !== 'org_list' || event.phase !== 'auth' ||
+          !current || typeof current !== 'object' || Array.isArray(current) ||
+          typeof current.name !== 'string' || !current.name.trim() || current.name !== current.name.trim() ||
+          !Array.isArray(event.organizations) || !event.organizations.every((x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x.name === 'string' && x.name.trim() && x.name === x.name.trim())) return blocked('Confirm the active CodeRabbit organization manually.');
+      const matches = event.organizations.filter((x) => x && typeof x === 'object' && x.name === current.name);
+      const selected = event.organizations.filter((x) => x && typeof x === 'object' && (x.selected === true || x.isSelected === true || x.active === true));
+      if (matches.length !== 1 || selected.length > 1 || (selected.length === 1 && selected[0].name !== current.name)) return blocked('Confirm the active CodeRabbit organization manually.');
+      return current.name === 'coderabbit-demo' ? pass() : fail('Select coderabbit-demo manually.');
+    }
     const orgs = events.flatMap((x) => Array.isArray(x.organizations) ? x.organizations : []);
     const selected = orgs.filter((x) => x.selected === true || x.isSelected === true || x.active === true);
     if (selected.length !== 1) return blocked('Confirm the active CodeRabbit organization manually.');

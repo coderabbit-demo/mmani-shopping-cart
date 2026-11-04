@@ -816,12 +816,56 @@ test("open-pr recognizes inline metadata and ignores code examples", (t) => {
   assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
 });
 
-test("open-pr reads the approved brief without treating the parent or prose as metadata", (t) => {
+test("open-pr handles the approved brief layout without treating the parent or prose as metadata", (t) => {
   const f = openPrFixture(t);
-  const source = readFileSync(new URL('../docs/briefs/07-demo-preflight.md', import.meta.url), 'utf8')
-    .replaceAll('github.com/coderabbit-demo/mmani-shopping-cart', 'github.com/fixture/repo');
+  const source = [
+    '# Brief 07 — `chore: demo preflight and incident handoff`',
+    '',
+    '**Mode:** Brownfield, operational tooling and documentation. **Jira:** SC-35',
+    '**GitHub:** https://github.com/fixture/repo/issues/11',
+    '**Parent tracker:** https://github.com/fixture/repo/issues/10',
+    '**Status:** Approved by Mahesh.',
+    '',
+    '## GitHub issue linkage in the PR helper',
+    'Extend `scripts/golden/open-pr.sh` to recognize one optional `**GitHub:**` issue URL in a brief.',
+    '',
+    '```text',
+    'Fixes https://github.com/fixture/repo/issues/11',
+    'Jira: SC-35',
+    '```',
+    '',
+  ].join('\n');
   write(f.directory, f.brief, source);
   assertOpened(f.run());
   assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-35\n'));
   assert.equal(f.data.body.includes('Fixes https://github.com/fixture/repo/issues/10'), false);
+});
+
+for (const [name, fenced] of [
+  ['shorter backticks', '````markdown\n```\n**GitHub:** https://github.com/other/repo/issues/9\n```\n````'],
+  ['shorter tildes', '~~~~markdown\n~~~\n**GitHub:** https://github.com/other/repo/issues/9\n~~~\n~~~~'],
+  ['mixed fence characters', '````markdown\n~~~\n**GitHub:** https://github.com/other/repo/issues/9\n~~~\n````'],
+  ['closing fence with trailing text', '````markdown\n````not-a-close\n**GitHub:** https://github.com/other/repo/issues/9\n````'],
+]) {
+  test(`regression: open-pr ignores metadata inside ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}**GitHub:** https://github.com/fixture/repo/issues/11\n\n${fenced}\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+  });
+}
+
+test('regression: open-pr accepts metadata after the matching longer fence closes', (t) => {
+  const f = openPrFixture(t);
+  const content = '  ````markdown\n~~~\n**GitHub:** https://github.com/other/repo/issues/9\n````not-a-close\n**GitHub:** https://github.com/other/repo/issues/10\n  ````` \t\n**GitHub:** https://github.com/fixture/repo/issues/11\n';
+  write(f.directory, f.brief, `${f.source}\n${content}`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+test('regression: open-pr keeps legacy Jira-first body when GitHub appears only in a fence', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\n~~~~markdown\n\`\`\`\n**GitHub:** https://github.com/fixture/repo/issues/11\n\`\`\`\n~~~~\n`);
+  assertOpened(f.run());
+  assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
 });
