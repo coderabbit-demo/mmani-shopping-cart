@@ -449,13 +449,14 @@ process.stdout.write(typeof result === 'string' ? result + '\\n' : JSON.stringif
   chmodSync(join(directory, "bin/gh"), 0o755);
   return {
     directory, brief, results, title, source, report, data,
-    run(args = ["feature/sc-3", brief, results], script = join(scripts, "open-pr.sh")) {
+    run(args = ["feature/sc-3", brief, results], script = join(scripts, "open-pr.sh"), extraEnv = {}) {
       writeFileSync(stateFile, JSON.stringify(data));
       const result = command(directory, "bash", [script, ...args], {
         ...gitEnv,
         PATH: `${join(directory, "bin")}:${process.env.PATH}`,
         OPEN_PR_FIXTURE: stateFile,
         TMPDIR: directory,
+        ...extraEnv,
       });
       Object.assign(data, JSON.parse(readFileSync(stateFile, "utf8")));
       return result;
@@ -989,4 +990,49 @@ test('regression: open-pr ignores an inline code span after a real field', (t) =
   write(f.directory, f.brief, `${f.source}\n**GitHub:** https://github.com/fixture/repo/issues/12 \`example\`\n`);
   assertOpened(f.run());
   assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});
+
+for (const [name, example] of [
+  ['HTML pre block', '<pre>\n**GitHub:** https://github.com/fixture/repo/issues/9\n</pre>'],
+  ['HTML comment block', '<!--\n**GitHub:** https://github.com/fixture/repo/issues/9\n-->'],
+]) {
+  test(`regression: open-pr keeps the legacy body for an ${name} example`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  });
+
+  test(`regression: open-pr accepts a real field after an ${name} example`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+  });
+}
+
+for (const [name, field] of [
+  ['legacy Jira-only', ''],
+  ['GitHub-linked', '**GitHub:** https://github.com/fixture/repo/issues/11\n'],
+]) {
+  test(`open-pr reports missing parser installation for ${name} briefs before gh calls`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, f.source + field);
+    rmSync(join(f.directory, 'node_modules'));
+    const result = f.run(undefined, undefined, { DD_API_KEY: 'synthetic-parser-secret' });
+    assertOpenFailed(result, /npm ci/);
+    assert.equal(result.stderr, 'FAIL: CommonMark parser unavailable; run npm ci in the repository.\n');
+    assert.doesNotMatch(result.stderr, /synthetic-parser-secret/);
+    assert.deepEqual(f.data.calls, []);
+  });
+}
+
+test('open-pr help works without the parser dependency', (t) => {
+  const f = openPrFixture(t);
+  rmSync(join(f.directory, 'node_modules'));
+  const result = f.run(['--help']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /npm ci/);
+  assert.equal(result.stderr, '');
+  assert.deepEqual(f.data.calls, []);
 });

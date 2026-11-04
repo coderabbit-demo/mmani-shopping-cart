@@ -115,8 +115,13 @@ ALLOW: tests/scripts.test.mjs
 ALLOW: package.json
 ALLOW: package-lock.json
 ALLOW: tests/smoke.test.mjs
-ALLOW: dependency commonmark@0.31.2
 ```
+
+**Dependency authorization:**
+
+> ALLOW: dependency commonmark@0.31.2
+
+The scope gate enforces file paths. Direct dependency contents are constrained by the strict approved-manifest test and comparison and review of prior lock records.
 
 ## Author, review and Verify
 

@@ -6,7 +6,7 @@ usage() {
 Usage: open-pr.sh <branch> <brief-file> <results-file>
 Create a PR against main or update an open PR for the branch, then request
 @coderabbitai test once per PR. The brief must be under docs/briefs/.
-Requires authenticated gh, Git, Node >=22.6.0, and Bash >=3.2.
+Requires authenticated gh, Git, Node >=22.6.0, Bash >=3.2, and dependencies installed with npm ci.
 After every operation succeeds, print the PR URL as the last stdout line.
 HELP
 }
@@ -93,7 +93,13 @@ try {
   const title = heading?.match(/`([^`\r\n]+)`/)?.[1];
   const issues = [...brief.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)];
   if (!title?.trim() || issues.length !== 1) fail('Brief must contain a backticked title in its first # heading and one valid **Jira:** field');
-  const { Parser } = createRequire(join(repoRoot, 'package.json'))('commonmark');
+  let Parser;
+  try {
+    ({ Parser } = createRequire(join(repoRoot, 'package.json'))('commonmark'));
+    if (typeof Parser !== 'function') throw new Error();
+  } catch {
+    fail('CommonMark parser unavailable; run npm ci in the repository.');
+  }
   const parser = new Parser();
   const document = parser.parse(brief);
   const lineStarts = [0];
@@ -102,7 +108,7 @@ try {
   const walker = document.walker();
   let event;
   while ((event = walker.next())) {
-    if (event.entering && ['code_block', 'paragraph', 'heading'].includes(event.node.type)) blocks.push(event.node);
+    if (event.entering && ['code_block', 'html_block', 'paragraph', 'heading'].includes(event.node.type)) blocks.push(event.node);
   }
   let marker = 'CommonmarkInlineCodeProbe';
   while (brief.includes(marker)) marker += 'X';
@@ -150,7 +156,7 @@ try {
     const start = lineStarts[startLine - 1] + (block.type === 'code_block' ? 0 : startColumn - 1);
     const end = block.type === 'code_block' ? (lineStarts[endLine] ?? brief.length) : lineStarts[endLine - 1] + endColumn;
     const text = metadata.slice(start, end);
-    const masked = block.type === 'code_block' ? text.replace(/[^\r\n]/g, ' ') : maskInlineCode(text, start);
+    const masked = ['code_block', 'html_block'].includes(block.type) ? text.replace(/[^\r\n]/g, ' ') : maskInlineCode(text, start);
     metadata = metadata.slice(0, start) + masked + metadata.slice(end);
   }
   const githubFields = [...metadata.matchAll(/(?:^|[ \t])\*\*GitHub:\*\*[ \t]*([^\r\n]*)/gm)];

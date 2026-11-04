@@ -10,9 +10,11 @@ import { preflight } from '../scripts/demo/preflight.mjs';
 
 const marker = 'synthetic-secret-marker';
 const env = { DD_API_KEY: `${marker}-api`, DD_APP_KEY: `${marker}-app` };
+const versionProbes = new Set(['npm', 'bash', 'git', 'gh', 'gcloud', 'terraform', 'coderabbit', 'docker'].map((tool) => `${tool} --version`));
 
 function fixture() {
   const calls = [];
+  const invocations = [];
   const replies = new Map([
     ['bash --version', 'GNU bash, version 3.2.57'],
     ['git remote get-url origin', 'https://github.com/coderabbit-demo/mmani-shopping-cart.git'],
@@ -30,25 +32,51 @@ function fixture() {
   ]);
   const httpCalls = [];
   return {
-    calls, replies, httpCalls,
+    calls, invocations, replies, httpCalls,
     async run(file, args) {
-      const key = [file, ...args].join(' ');
+      const invocation = [file, ...args];
+      const key = invocation.join(' ');
       calls.push(key);
+      invocations.push(invocation);
       if (replies.has(key)) {
         const value = replies.get(key);
         if (value instanceof Error) throw value;
         return value;
       }
-      if (args.includes('--version')) return '1.0';
+      if (versionProbes.has(key)) return '1.0';
       throw new Error(`${marker} unexpected command ${key}`);
     },
     async http(url, headers) { httpCalls.push({ url, headers }); return { status: 200, body: '{"status":"ok"}' }; },
   };
 }
 
-async function run(f, overrides = {}) {
-  return preflight({ run: f.run, http: f.http, env, nodeVersion: '24.13.0', ...overrides });
+function assertReadOnlyCalls(f) {
+  for (const invocation of f.invocations) {
+    const command = invocation.join(' ');
+    assert.ok((f.replies.has(command) || versionProbes.has(command)) &&
+      JSON.stringify(invocation) === JSON.stringify(command.split(' ')), `Unexpected fixture command: ${command}`);
+  }
 }
+
+async function run(f, overrides = {}) {
+  try {
+    return await preflight({ run: f.run, http: f.http, env, nodeVersion: '24.13.0', ...overrides });
+  } finally {
+    assertReadOnlyCalls(f);
+  }
+}
+
+test('fixture call guard detects unexpected commands even when their errors are caught', async () => {
+  const f = fixture();
+  let injected = false;
+  await assert.rejects(run(f, { run: async (file, args) => {
+    if (!injected) {
+      injected = true;
+      return f.run('gh', ['issue', 'create', '--version']);
+    }
+    return f.run(file, args);
+  } }), /Unexpected fixture command: gh issue create --version/);
+});
 
 test('successful preflight reports only safe statuses and uses fixed US3 validation', async () => {
   const f = fixture();
@@ -142,6 +170,7 @@ test('production HTTPS adapter sends keys only to US3 and does not follow redire
     return request;
   });
   const summary = await preflight({ run: f.run, env, nodeVersion: '24.13.0' });
+  assertReadOnlyCalls(f);
   stdout.mock.restore();
   stderr.mock.restore();
   assert.equal(summary.checks.datadog_keys.status, 'blocked');
