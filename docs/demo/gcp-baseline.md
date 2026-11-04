@@ -13,7 +13,19 @@ This document prepares human-controlled operations. A passing mock test or local
 - Record state custody: encrypted storage outside the checkout, owner, access and tested recovery copy for bootstrap local state. Confirm the proposed bucket name is available and owned by the intended project. Complete and obtain approval for [the cost worksheet](gcp-costs.md), owner, spend limit, rehearsal and teardown window. A budget alert is not a spending cap.
 - Review every resource, principal, role, firewall rule, destructive action and saved plan. Plans, state, local tfvars, approval files, Docker credentials and runtime secret material are sensitive operational data: keep them out of Git and secure the storage and backups. No secret value belongs in tfvars, Terraform state, metadata, startup scripts or command arguments.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:0e1fb614b4e882cf7fc33a36c090e361faaddfa08a081f4a397b82a0b98e4650 -->
+
+### Mac image-store prerequisite
+
+Before building or publishing, the Mac Docker daemon must use the containerd image store. Run the read-only check `docker info --format '{{json .DriverStatus}}'` and confirm a `driver-type` entry of `io.containerd.snapshotter.v1`. Stop before build if it is absent or the check fails. Build records OCI exporter manifest digests and loads images into the daemon; publication pushes those images from the daemon and must still fail if a pushed digest differs from its reviewed digest. The maintainer independently reported Mac `DriverStatus` as `[["driver-type","io.containerd.snapshotter.v1"]]`; that observation is not proof of publication or digest equality.
+
+[Docker Engine guidance](https://docs.docker.com/engine/storage/containerd/) says fresh Engine 29+ installations default to the containerd image store, while upgrades retain legacy drivers until enabled. Switching stores hides existing images and containers until switching back; review [Docker Desktop guidance](https://docs.docker.com/desktop/features/containerd/) before any separately authorized change to the daemon.
+
 ## Permission review
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The previous project probe did not establish these permissions. Verify each with the actual operator and organization policies; do not automatically grant roles.
 

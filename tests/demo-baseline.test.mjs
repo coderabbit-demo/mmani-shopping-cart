@@ -8,6 +8,16 @@ import { Parser } from 'commonmark';
 const script = readFileSync(new URL('../deploy/bootstrap.sh', import.meta.url), 'utf8');
 const python = script.split("<<'PYCODE'\n")[1]?.split('\nPYCODE\n')[0];
 assert.ok(python, 'embedded host authentication source must exist');
+
+test('infrastructure checkout does not persist credentials', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/infra.yml', import.meta.url), 'utf8');
+  const steps = workflow.match(/^jobs:\r?\n  terraform:\r?\n    runs-on: [^\r\n]+\r?\n    timeout-minutes: \d+\r?\n    steps:\r?\n((?:(?: {6,}[^\r\n]*|\s*)\r?\n)*)/m)?.[1];
+  assert.ok(steps, 'terraform job steps must have the expected structure');
+  const firstStep = steps.split(/^      - /m)[1];
+  assert.match(firstStep ?? '', /^uses: actions\/checkout@11d5960a326750d5838078e36cf38b85af677262\r?\n        with:\r?\n          persist-credentials: false\s*$/,
+    'the checkout step itself must disable persisted credentials');
+});
+
 function fixture(code) {
   const wrapped = `import tempfile, os, json, base64, contextlib, types\ng={}\nexec(compile(${JSON.stringify(python)}, 'host-auth', 'exec'), g)\n${code}`;
   const result = spawnSync('python3', ['-c', wrapped], { encoding: 'utf8', timeout: 5000, maxBuffer: 32768 });
