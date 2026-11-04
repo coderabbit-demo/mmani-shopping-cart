@@ -478,3 +478,55 @@ test('a reused monitor ID leaves creation pending and cannot be retried', async 
   await assert.rejects(resumeSuppressed(args), /Reconciliation required/);
   assert.equal(attempts, 1); assert.equal(f.calls.some(x => x.startsWith('cancel:')), false);
 });
+
+test('monitor detail requests all groups and healthy guard rejects missing or unsafe group states', { timeout: 10000 }, async () => {
+  const { makeApi, createSuppressed, enableOwned } = await import('../scripts/demo/datadog-monitors.mjs');
+  const { createServer, request: httpRequest } = await import('node:http');
+  const fixture = service(), state = { owner }, save = async () => {}, now = Date.now();
+  await createSuppressed({ api: fixture.api, owner, definitions: templates, expectedInventory: inventoryHash([]), state, save });
+  const approval = { approved: true, scopeVerified: true, owner: 'demo owner', usageLimit: 10, windowStart: new Date(now - 1000).toISOString(), windowEnd: new Date(now + 60000).toISOString(), healthyObservedAt: new Date(now).toISOString(), evidence: 'synthetic fixture', monitorIds: state.monitors.map(m => m.id) };
+  const observed = [];
+  let groups = { 'host:deskdrop-mmani-local': { status: 'OK' } }, overall = 'OK';
+  const server = createServer((req, res) => {
+    observed.push({ method: req.method, path: req.url });
+    const url = new URL(req.url, 'http://127.0.0.1'), id = Number(url.pathname.split('/').at(-1));
+    const monitor = fixture.monitors.find(m => m.id === id);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ...monitor, overall_state: overall, state: { groups: url.search === '?group_states=all' ? groups : {} } }));
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  try {
+    const request = (options, callback) => {
+      assert.equal(options.protocol, 'https:');
+      assert.equal(options.hostname, 'api.us3.datadoghq.com');
+      return httpRequest({ hostname: '127.0.0.1', port: server.address().port, method: options.method, path: options.path }, callback);
+    };
+    const client = makeApi({ apiKey: 'synthetic', appKey: 'synthetic', request });
+    fixture.api.getMonitor = client.getMonitor;
+    const first = state.monitors[0].id;
+    assert.deepEqual((await client.getMonitor(first)).state.groups, groups);
+    assert.deepEqual(observed, [{ method: 'GET', path: `/api/v1/monitor/${first}?group_states=all` }]);
+    const count = observed.length;
+    for (const bad of ['../../other', `${first}?group_states=all&extra=1`, `${first}?page=0&page_size=100`, `${first}#fragment`]) await assert.rejects(client.getMonitor(bad), /Invalid API operation/);
+    assert.equal(observed.length, count);
+    const before = fixture.calls.filter(call => call.startsWith('cancel:')).length;
+    const pendingBefore = state.pending, transitionBefore = state.transition;
+    for (const [badOverall, badGroups] of [
+      ['OK', undefined], ['OK', null], ['OK', {}], ['OK', { 'host:other': { status: 'OK' } }],
+      ['OK', { 'host:deskdrop-mmani-local': { status: 'Alert' } }],
+      ['OK', { 'host:deskdrop-mmani-local': { status: 'OK' }, 'host:other': { status: 'OK' } }],
+      ['No Data', { 'host:deskdrop-mmani-local': { status: 'OK' } }],
+    ]) {
+      overall = badOverall; groups = badGroups;
+      await assert.rejects(enableOwned({ api: fixture.api, state, definitions: templates, save, approval, now }), /Fresh healthy monitor evidence required/);
+      assert.equal(fixture.calls.filter(call => call.startsWith('cancel:')).length, before);
+      assert.equal(state.pending, pendingBefore);
+      assert.equal(state.transition, transitionBefore);
+    }
+    overall = 'OK'; groups = { 'host:deskdrop-mmani-local': { status: 'OK' } };
+    await enableOwned({ api: fixture.api, state, definitions: templates, save, approval, now });
+    assert.equal(fixture.calls.filter(call => call.startsWith('cancel:')).length, before + 3);
+    assert.ok(observed.every(({ method, path }) => method === 'GET' && /^\/api\/v1\/monitor\/\d+\?group_states=all$/.test(path)));
+    assert.deepEqual(new Set(observed.map(({ path }) => path)), new Set(state.monitors.map(({ id }) => `/api/v1/monitor/${id}?group_states=all`)));
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

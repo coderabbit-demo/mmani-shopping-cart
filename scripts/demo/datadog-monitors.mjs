@@ -82,7 +82,8 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
   if (!apiKey || !appKey) throw new Error('Missing Datadog credentials');
   if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000) throw new Error('Invalid request deadline');
   async function call(method, path, body, requestDeadline = deadlineMs) {
-    if (!/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
+    const groupRead = method === 'GET' && /^\/api\/v1\/monitor\/\d+\?group_states=all$/.test(path);
+    if ((!groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
     return new Promise((resolve, reject) => {
       let size = 0, chunks = [], finished = false, req, response;
       const fail = () => finish('Datadog request outcome unknown');
@@ -119,7 +120,7 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
   return {
     listMonitors: (page, size, remaining = deadlineMs) => call('GET', `/api/v1/monitor?page=${page}&page_size=${size}`, undefined, Math.max(1, Math.min(deadlineMs, remaining))),
     validate: body => call('POST', '/api/v1/monitor/validate', body),
-    getMonitor: id => call('GET', `/api/v1/monitor/${id}`),
+    getMonitor: id => call('GET', `/api/v1/monitor/${id}?group_states=all`),
     createMonitor: body => call('POST', '/api/v1/monitor', body),
     createDowntime: body => call('POST', '/api/v2/downtime', body),
     getDowntime: id => call('GET', `/api/v2/downtime/${id}`),
