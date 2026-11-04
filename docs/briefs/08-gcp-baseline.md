@@ -3,7 +3,7 @@
 **Mode:** Brownfield operational infrastructure. **Jira:** SC-36
 **GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/13
 **Parent:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
-**Status:** Draft for maintainer approval. Mahesh authorized starting Phase 2 planning and tracking. This brief's implementation scope and dependency exceptions, plus CodeRabbit's author plan, still require concrete approval before code changes.
+**Status:** Approved by Mahesh on 2026-11-03. Approval covers this 25-file implementation scope, the exact dependency/runtime exceptions below, and CodeRabbit task 881100be's plan and clarifications at draft commit 46bef75. Continue implementation in that task. Cloud apply, IAM changes, secret population, image publication, deployment and merge remain separate approvals.
 
 Read AGENTS.md, docs/PLAN.md, the linked issues and this brief. CodeRabbit Code authors implementation and fixes; the Mac orchestrates and validates. Preserve every app behavior, test/assertion and golden, the six cart rules and brand. Keep each PR under 30 changed files.
 
@@ -72,7 +72,7 @@ Run npm ci, typecheck, complete unit/golden/build/e2e, appropriate Docker/Compos
 
 Write gcp-baseline and gcp-costs docs with precise bootstrap, role/permission matrix, secure secret population, backend initialization, saved-plan review, registry publication, IAP deployment/verification, recovery, teardown and retained-state inventory. Price the actual proposed resources from dated primary sources: VM, disk, NAT IP/gateway/data, registry, state/storage/logging, Datadog and CodeRabbit. Record variable charges, owner/rehearsal/teardown window and a spend limit approved before apply; do not claim a cap is enforced by Terraform or a budget notification.
 
-## Proposed file scope (25 files; not approved until maintainer accepts this brief)
+## Approved file scope (25 files)
 
 ```text
 ALLOW: docs/briefs/08-gcp-baseline.md
@@ -104,9 +104,9 @@ ALLOW: .github/workflows/infra.yml
 
 No package.json, package-lock.json, smoke guard, application, existing CI, goldens, docs/PLAN.md or live automation changes. Ask for a brief amendment if a concrete plan needs another file/dependency; do not silently broaden scope.
 
-## Proposed dependency/runtime authorization (separate from path globs)
+## Approved dependency/runtime authorization (separate from path globs)
 
-These lines are proposals for maintainer approval, not existing authorization:
+Mahesh approved these exact exceptions for implementation. The scope gate checks file paths; pin verification, provider locks and review constrain dependency contents. No other dependency change is authorized.
 
 > ALLOW: dependency hashicorp/google@8.10.0 (both roots, locked darwin_arm64/linux_amd64)
 > ALLOW: runtime Terraform@1.15.3
@@ -129,7 +129,7 @@ Official Docker package-index SHA256 values: docker-ce c546181f0bc5f1d19085d764a
 
 ### Planning clarifications from CodeRabbit task 881100be
 
-The author plan keeps the 25 paths and proposes no implementation changes before approval. Incorporate these concrete choices when implementing:
+The author confirmed the 25 paths are sufficient and the maintainer approved the plan and these clarifications. Incorporate these concrete choices when implementing:
 
 - Keep bootstrap state in an operator-selected encrypted location outside Git, with an owner and recovery copy recorded before bootstrap. Use the proposed bucket name only after ownership/name validation. Do not add a bucket retention policy that can prevent Terraform lock-object deletion. Versioning, force_destroy=false and prevent_destroy protect ordinary workflows; they do not guarantee protection after configuration removal or privileged out-of-band deletion. Document those limits and recovery.
 - Use the VM runtime identity through fixed metadata/Google API endpoints with a host Python 3 standard-library helper embedded in bootstrap.sh, and Docker authentication through password stdin plus a root-owned temporary DOCKER_CONFIG under /run. Do not add the Google Cloud SDK or a new package/provider. Verify required existing host tools and fail closed if missing; any additional host package beyond the proposed signed-OS dependency exception needs a concrete amendment. Keep tokens in memory/stdin, delete temporary registry auth after pulling, and write the intake secret only into the restricted runtime file. Test timeout, redirect, wrong-target, permission and redaction behavior. Never log API response bodies.
@@ -137,7 +137,7 @@ The author plan keeps the 25 paths and proposes no implementation changes before
 - Document the exact final resource-scoped IAM matrix in the implementation/runbook. The project permission probe does not establish bucket lock-object, registry/secret policy, IAP or OS Login authorization. The maintainer separately approves actual IAM changes, state custody, cost worksheet/spend window and real saved plans before operator apply. Those inputs need not be invented or supplied to the coding sandbox.
 - Proposed version/digest/action/package pins are available, but signature/package-byte, provider-schema and execution compatibility checks remain implementation gates. If a pin fails validation, propose its exact replacement before changing it. Do not equate release/index availability with a tested runtime.
 
-Start a normal CodeRabbit Code task with a plan-only first turn; do not use --plan. Inspect the actual repo and draft a file-by-file implementation/test plan, identify capability gaps, challenge assumptions, and make no repository edits/installations/provider initialization until maintainer approval. Autofix remains off. Do not use extra model judges for this proposed CodeRabbit workflow unless Mahesh requests them.
+The normal CodeRabbit Code task completed its plan-only turns and has maintainer approval to implement this brief and author plan. Continue in that task; do not use --plan. Autofix remains off. Use CodeRabbit CLI and PR/security feedback, without extra model judges unless Mahesh requests them.
 
 After approval, one completed CodeRabbit CLI review is required for this NEW coding task before task completion or PR publication. A completed in-task run counts; Mac is fallback only, without duplicate review. Record task ID, reviewed base/head, completed outcome and every finding disposition. Existing-PR fix tasks/rounds are exempt. No CLI review needed for this plan-only turn.
 
