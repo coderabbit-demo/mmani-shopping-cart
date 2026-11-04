@@ -8,8 +8,19 @@ export function validate({ url, source, image }) {
   if (!imagePattern.test(image ?? '')) throw new Error('An owned immutable image digest is required');
   return { url, source, image };
 }
+export function validateLocal({ url, source, image }) {
+  if (url !== 'http://deskdrop.test:3000') throw new Error('Target must be the private Compose app endpoint');
+  if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('A full source commit is required');
+  if (!/^sha256:[a-f0-9]{64}$/.test(image ?? '')) throw new Error('A local image ID is required');
+  return { url, source, image };
+}
 export async function journey(config, browserType = chromium, assertion = expect) {
-  const { url, source, image } = validate(config);
+  return runJourney(validate(config), browserType, assertion);
+}
+export async function journeyLocal(config, browserType = chromium, assertion = expect) {
+  return runJourney(validateLocal(config), browserType, assertion);
+}
+async function runJourney({ url, source, image }, browserType, assertion) {
   const browser = await browserType.launch({ headless: true, chromiumSandbox: true });
   try {
     const context = await browser.newContext({ baseURL: url });

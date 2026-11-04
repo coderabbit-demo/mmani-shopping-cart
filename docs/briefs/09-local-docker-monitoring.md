@@ -1,10 +1,12 @@
-# Brief 09 — local Docker monitoring and controlled demo
+# `feat: local Docker monitoring and controlled demo`
 
 **Status:** Approved by Mahesh on 2026-11-04. Approval covers the 15-path brief at `53b25cf`, CodeRabbit task 0366976d's original and corrected author plans, and continuation of implementation in that same task. It includes local Docker validation and explicit notification-free creation/readback of the three owned US3 monitors after offline validation. Live notification/automation activation, incident rehearsal, GCP work and merge remain separate approvals. No new dependency, provider, runtime or image-version change is authorized.
 
 **Parent:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
-**GitHub child:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/15
-**Jira:** [SC-37](https://coderabbit-demo.atlassian.net/browse/SC-37); retain historical SC-35/SC-36 completion.
+**GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/15
+**Jira:** SC-37
+
+Track [SC-37](https://coderabbit-demo.atlassian.net/browse/SC-37); retain historical SC-35/SC-36 completion.
 **Base:** merged main `f7a859dfe151a78a71dc8d6e3c5d87385eb6c8e1`.
 **Branch:** `codex/local-docker-monitoring`.
 

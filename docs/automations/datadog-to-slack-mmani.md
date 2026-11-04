@@ -12,9 +12,27 @@ An authorized operator should review its trigger, destination, Agent scope, conn
 
 <!-- coderabbit-ai-generated-section:v1:d6cd96bfa8e686b07a28694aa15109c4a041fe8e3060fc13241a00f9c9d27a54 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e93243393db72bee5982418e382cb534af34749243737ebc76f435c6707716bb -->
+
+## Proposed local scope
+
+The proposed local scope is `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local` and host `deskdrop-mmani-local`. The monitors are `[MMANI local] DeskDrop availability`, `[MMANI local] DeskDrop checkout` and `[MMANI local] DeskDrop checker heartbeat`. Proposed failure classes are `http_unavailable`, `journey_failed` and missing checker data. The local diagnostics include source commit and local image identity as separate sanitized evidence; a local image ID does not establish registry publication.
+
+The existing destination remains CodeRabbit Demo workspace `T0AU433PG75`, channel `C0CEPB2LURY`. Native event fields, filter enforcement, representative payloads and matching/unrelated-event tests remain pending actual evidence and separate approval. Do not infer that a diagnostic failure class is automatically present in the native Datadog webhook payload. Initial triage remains button-gated as described below; the existing reuse, concurrency and failure-reporting requirements remain unchanged.
+
 ## Scope record required before activation
 
-The confirmed native trigger event types are `monitor.alert` and `incident.triggered`. The intended cases are DeskDrop availability, the cart journey and missing checker data in the [parent issue's monitoring contract](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10). These cases are proposed scope, not verified deployed values. Exact service, environment and failure-class values and payload field mappings have not been validated on deployed payloads; no deployment tags are approved or configured by this document.
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:016c7d191dac1285d1a939d9760ef2d2601931f0ed07f094decd467758b3e0e0 -->
+
+The confirmed native trigger event types are `monitor.alert` and `incident.triggered`. The intended cases are DeskDrop availability, the cart journey and missing checker data in the [parent issue's monitoring contract](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10). The local runtime tags above are approved scope; native payload mappings and filter enforcement remain unverified. GCP deployment tags are not approved or configured by this document.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Before activation, the authorized operator must maintain an authoritative, reviewed scope record identifying the exact service and environment values, each permitted failure class and native event type, the actual payload field paths and values used to match them, and the filter configuration and its enforcement capability. Record sanitized representative deployed payload evidence for every case, test results for matching and unrelated events, the approver, approval date and evidence links. Mark each item proposed, verified or pending decision. Do not record webhook credentials. If any value, mapping, approval or evidence is missing, block activation and rehearsal until the record is complete. If native filters cannot enforce the recorded scope, record the gap and block activation; instructions to ignore events are not a trigger filter or access boundary.
 

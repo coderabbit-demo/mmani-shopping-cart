@@ -66,3 +66,13 @@ test('private browser endpoint uses the explicit reserved alias and rejects the 
   assert.deepEqual(validate(endpoint), endpoint);
   assert.throws(() => validate({ ...endpoint, url: 'http://app:3000' }));
 });
+
+test('local identity is explicit and does not relax GCP validation', async () => {
+  const { validateLocal } = await import('../deploy/checker.mjs');
+  const local = { url: good.url, source: good.source, image: `sha256:${'c'.repeat(64)}` };
+  assert.deepEqual(validateLocal(local), local);
+  assert.throws(() => validate(local));
+  assert.throws(() => validateLocal(good));
+  assert.throws(() => validateLocal({ ...local, url: 'http://127.0.0.1:3177' }));
+  assert.throws(() => validateLocal({ ...local, image: 'deskdrop:latest' }));
+});

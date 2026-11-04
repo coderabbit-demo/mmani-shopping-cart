@@ -1,0 +1,135 @@
+name: deskdrop-mmani-local
+services:
+  app:
+    platform: linux/amd64
+    image: ${LOCAL_APP_IMAGE:?required}
+    user: "1000:1000"
+    networks:
+      app:
+        aliases: [deskdrop.test]
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+  forwarder:
+    platform: linux/amd64
+    image: ${LOCAL_APP_IMAGE:?required}
+    user: "1000:1000"
+    read_only: true
+    depends_on: [app]
+    networks: [app, edge]
+    ports: ["127.0.0.1:3177:3000"]
+    command:
+      - node
+      - -e
+      - |
+        const net = require('node:net');
+        const server = net.createServer(client => {
+          const upstream = net.createConnection({host:'deskdrop.test', port:3000});
+          const close = () => { client.destroy(); upstream.destroy(); };
+          for (const socket of [client, upstream]) { socket.setTimeout(30000); socket.on('timeout', close); socket.on('error', close); }
+          client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy());
+          client.pipe(upstream).pipe(client);
+        });
+        server.maxConnections = 128; server.listen(3000, '0.0.0.0');
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: {driver: json-file, options: {max-size: "1m", max-file: "2"}}
+  checker:
+    platform: linux/amd64
+    image: ${LOCAL_CHECKER_IMAGE:?required}
+    profiles: [check]
+    command: ["--journey"]
+    user: "1000:1000"
+    init: true
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,size=256m,mode=1777]
+    networks: [app]
+    environment:
+      CHECKER_URL: http://deskdrop.test:3000
+      SOURCE_COMMIT: ${SOURCE_COMMIT:?required}
+      APP_IMAGE_ID: ${LOCAL_APP_IMAGE_ID:?required}
+    mem_limit: 512m
+    cpus: 0.5
+    shm_size: 512m
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${LOCAL_SECCOMP_PROFILE:?required}
+    cap_drop: [ALL]
+    logging: {driver: json-file, options: {max-size: "1m", max-file: "2"}}
+  runner:
+    platform: linux/amd64
+    image: ${LOCAL_CHECKER_IMAGE:?required}
+    command: ["--relay"]
+    user: "1000:1000"
+    init: true
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,size=256m,mode=1777]
+    networks: [telemetry]
+    environment:
+      CHECKER_URL: http://deskdrop.test:3000
+      SOURCE_COMMIT: ${SOURCE_COMMIT:?required}
+      APP_IMAGE_ID: ${LOCAL_APP_IMAGE_ID:?required}
+    healthcheck:
+      test: [CMD, node, /checker/local-checker.mjs, --health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    mem_limit: 256m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${LOCAL_SECCOMP_PROFILE:?required}
+    cap_drop: [ALL]
+    logging: {driver: json-file, options: {max-size: "1m", max-file: "2"}}
+  agent:
+    platform: linux/amd64
+    image: registry.datadoghq.com/agent:7.85.0@sha256:1e45b8442dbcc297a01eb9ef61b7b909650b30e50f3dd6aa3654d89380bf5cc9
+    networks: [telemetry, edge]
+    environment:
+      DD_SITE: us3.datadoghq.com
+      DD_HOSTNAME: deskdrop-mmani-local
+      DD_API_KEY: "ENC[file@/run/deskdrop/secrets/intake]"
+      DD_SECRET_BACKEND_COMMAND: /readsecret_multiple_providers.sh
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+      DD_APM_ENABLED: "false"
+      DD_PROCESS_AGENT_ENABLED: "false"
+      DD_RUNTIME_SECURITY_CONFIG_ENABLED: "false"
+      DD_LOGS_ENABLED: "true"
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "true"
+      DD_CONTAINER_EXCLUDE: "name:.*"
+      DD_CONTAINER_INCLUDE: "name:^/?deskdrop-mmani-local-(app|forwarder|checker|runner)-1$"
+    volumes:
+      - type: bind
+        source: ${LOCAL_SECRET_DIR:?required}
+        target: /run/deskdrop/secrets
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${LOCAL_DOCKER_SOCKET:?required}
+        target: /var/run/docker.sock
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD, agent, health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 512m
+    cpus: 0.5
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+networks:
+  app: {internal: true}
+  telemetry: {internal: true}
+  edge: {}

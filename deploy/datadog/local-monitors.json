@@ -1,0 +1,66 @@
+[
+  {
+    "name": "[MMANI local] DeskDrop availability",
+    "type": "service check",
+    "query": "\"deskdrop.local.availability\".over(\"service:deskdrop\",\"env:local-demo\",\"demo_id:mmani-shopping-cart-local\",\"host:deskdrop-mmani-local\").by(\"host\").last(2).count_by_status()",
+    "message": "DeskDrop local demo monitor.",
+    "tags": [
+      "service:deskdrop",
+      "env:local-demo",
+      "demo_id:mmani-shopping-cart-local",
+      "managed_by:deskdrop-local-controller"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 2,
+        "ok": 2
+      },
+      "notify_no_data": false,
+      "include_tags": true,
+      "new_group_delay": 0
+    }
+  },
+  {
+    "name": "[MMANI local] DeskDrop checkout",
+    "type": "service check",
+    "query": "\"deskdrop.local.checkout\".over(\"service:deskdrop\",\"env:local-demo\",\"demo_id:mmani-shopping-cart-local\",\"host:deskdrop-mmani-local\").by(\"host\").last(2).count_by_status()",
+    "message": "DeskDrop local demo monitor.",
+    "tags": [
+      "service:deskdrop",
+      "env:local-demo",
+      "demo_id:mmani-shopping-cart-local",
+      "managed_by:deskdrop-local-controller"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 2,
+        "ok": 2
+      },
+      "notify_no_data": false,
+      "include_tags": true,
+      "new_group_delay": 0
+    }
+  },
+  {
+    "name": "[MMANI local] DeskDrop checker heartbeat",
+    "type": "service check",
+    "query": "\"deskdrop.local.heartbeat\".over(\"service:deskdrop\",\"env:local-demo\",\"demo_id:mmani-shopping-cart-local\",\"host:deskdrop-mmani-local\").by(\"host\").last(2).count_by_status()",
+    "message": "DeskDrop local demo monitor.",
+    "tags": [
+      "service:deskdrop",
+      "env:local-demo",
+      "demo_id:mmani-shopping-cart-local",
+      "managed_by:deskdrop-local-controller"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 2,
+        "ok": 2
+      },
+      "notify_no_data": true,
+      "include_tags": true,
+      "new_group_delay": 0,
+      "no_data_timeframe": 2
+    }
+  }
+]
