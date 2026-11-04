@@ -115,3 +115,38 @@ test('checker and runner each resolve one bounded absolute tmpfs mount', async (
     assert.deepEqual(parts[1].split(',').sort(), ['mode=1777', 'nodev', 'nosuid', 'rw', 'size=256m'].sort());
   }
 });
+
+
+test('Agent initializes the pinned image configuration before core-only exec and fails closed', async () => {
+  const { readFile, mkdtemp, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  const agent = /^  agent:\n([\s\S]*?)^networks:/m.exec(yaml)?.[1];
+  assert.ok(agent);
+  const flow = key => JSON.parse(new RegExp(`^    ${key}: (\\[[^\\n]+\\])$`, 'm').exec(agent)?.[1] ?? 'null');
+  assert.deepEqual(flow('entrypoint'), ['/bin/bash', '-ec']);
+  assert.deepEqual(flow('command'), ['bash /opt/entrypoints/init-config; exec agent run']);
+  assert.match(agent, /^    init: true$/m);
+  assert.match(agent, /^    cap_drop: \[ALL\]$/m);
+  assert.match(agent, /^    security_opt: \[no-new-privileges:true\]$/m);
+  assert.doesNotMatch(agent, /^    (?:privileged|cap_add|ports):/m);
+  for (const key of ['DD_APM_ENABLED', 'DD_PROCESS_AGENT_ENABLED', 'DD_RUNTIME_SECURITY_CONFIG_ENABLED']) assert.match(agent, new RegExp(`${key}: "false"`));
+  assert.match(agent, /test: \[CMD, agent, health\]/);
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-agent-core-')));
+  try {
+    const marker = join(dir, 'observed'), init = join(dir, 'init-config');
+    await writeFile(init, 'printf "init\\n" >> "$OBSERVED"\nexit "$INIT_STATUS"\n');
+    await writeFile(join(dir, 'agent'), '#!/bin/bash\nprintf "core %s %s\\n" "$1" "$#" >> "$OBSERVED"\nexit 37\n', { mode: 0o700 });
+    const command = flow('command')[0].replace('/opt/entrypoints/init-config', '"$INIT_FIXTURE"');
+    const run = status => spawnSync(flow('entrypoint')[0], [...flow('entrypoint').slice(1), command], { env: { PATH: `${dir}:/usr/bin:/bin`, OBSERVED: marker, INIT_FIXTURE: init, INIT_STATUS: String(status) }, encoding: 'utf8', timeout: 3000 });
+    const failed = run(19);
+    assert.equal(failed.status, 19);
+    assert.equal(await readFile(marker, 'utf8'), 'init\n');
+    await writeFile(marker, '');
+    const started = run(0);
+    assert.equal(started.status, 37);
+    assert.equal(await readFile(marker, 'utf8'), 'init\ncore run 1\n');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

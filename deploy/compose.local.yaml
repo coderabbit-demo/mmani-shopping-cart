@@ -94,6 +94,9 @@ services:
   agent:
     platform: linux/amd64
     image: registry.datadoghq.com/agent:7.85.0@sha256:1e45b8442dbcc297a01eb9ef61b7b909650b30e50f3dd6aa3654d89380bf5cc9
+    entrypoint: ["/bin/bash", "-ec"]
+    command: ["bash /opt/entrypoints/init-config; exec agent run"]
+    init: true
     networks: [telemetry, edge]
     environment:
       DD_SITE: us3.datadoghq.com

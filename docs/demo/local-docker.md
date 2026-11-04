@@ -10,7 +10,19 @@ This is a Mac Docker Desktop workflow for the fixed `deskdrop-mmani-local` proje
 
 <!-- /coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:256d318f862f406eaecab286cf14770963272651d96171a9207d307f18f62861 -->
+
+## Agent core startup
+
+The pinned 7.85.0 image runs `bash /opt/entrypoints/init-config` followed by `exec agent run`, with Compose `init: true` forwarding signals and reaping children. The shell exits on initialization failure before starting core. This bypasses the default S6 initializer, which the Mac observed failing its chown with all capabilities dropped. The image's configuration helper selects Docker autodiscovery defaults when the mounted socket is present, removes the network check when `/host/proc` is absent, and performs the bundled configuration initialization without starting the additional agents. APM, process and runtime-security remain disabled; all capabilities remain dropped and no-new-privileges remains set. The image pin, socket/secret mounts, collection filters, networks and resource limits are unchanged.
+
+This uses the pinned image's official [initialization helper](https://github.com/DataDog/datadog-agent/blob/7.85.0/Dockerfiles/agent/entrypoint.d/init-config), [core launcher](https://github.com/DataDog/datadog-agent/blob/7.85.0/Dockerfiles/agent/entrypoint.d/agent), [Docker config selection](https://github.com/DataDog/datadog-agent/blob/7.85.0/Dockerfiles/agent/cont-init.d/51-docker.sh) and [host-network check initialization](https://github.com/DataDog/datadog-agent/blob/7.85.0/Dockerfiles/agent/cont-init.d/60-network-check.sh). These source contracts and offline command/Compose checks do not establish the pinned image's actual health or intake on Docker Desktop. The credential-free network-none Mac probe established only that direct core could stay running. After inspecting and reconciling the known failed start journal, the operator must rebuild for the exact source and verify actual `agent health`, protected secret-backend resolution, scoped metrics/log collection, DogStatsD ingestion and continuing US3 suppression. Preserve confirmed protection and stop on a failed or unknown outcome.
+
 ## Before starting
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated:v1 -->
 
