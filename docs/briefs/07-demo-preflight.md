@@ -3,7 +3,7 @@
 **Mode:** Brownfield, operational tooling and documentation. **Jira:** SC-35
 **GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/11
 **Parent tracker:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
-**Status:** Draft for maintainer approval. CodeRabbit must propose a plan first and make no implementation changes until the maintainer approves this brief and the plan.
+**Status:** Approved by Mahesh on 2026-11-03. Implement the amended CodeRabbit plan within this brief's scope.
 
 Read `AGENTS.md`, `docs/PLAN.md`, this brief, and the linked GitHub/Jira acceptance criteria. Preserve all existing product behavior, tests, assertions and goldens. CodeRabbit Code is the implementation author; the Mac runs orchestration and verification.
 
@@ -95,7 +95,7 @@ Add observable cases to `tests/scripts.test.mjs` for the new create/update body 
 
 ## Scope
 
-The following is the proposed allowlist for maintainer approval. It approves no dependency, manifest, lockfile, CI workflow or golden changes. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
+The following allowlist is approved by the maintainer. It approves no dependency, manifest, lockfile, CI workflow or golden changes. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
 
 ```text
 ALLOW: docs/briefs/07-demo-preflight.md
@@ -110,7 +110,7 @@ ALLOW: tests/scripts.test.mjs
 
 ## Author, review and Verify
 
-CodeRabbit Code first reports its plan, file list, test approach, capability gaps and any proposed brief correction without changing files. Wait for explicit maintainer approval before implementing.
+CodeRabbit Code has reported its plan, file list, test approach and capability gaps. The maintainer has approved the brief; proceed with the amended plan within the approved allowlist.
 
 After implementation, complete **one CodeRabbit CLI review for each new coding task** using `coderabbit review --agent --committed --base-commit <merge-base>`, before task completion/PR publication. A completed in-task run satisfies the requirement; the Mac runs a fallback only if none completed. Do not require duplicate author and Mac runs. **PR fixes are exempt**, including a new task created to fix an existing PR; plan-only turns need no review until implementation. An interrupted or failed review does not count. Record the task ID, reviewed commit/base, completed result and every finding as fixed or skipped with a reason. Route valid fixes through CodeRabbit Code within ALLOW, with tests for behavior/security fixes. Mac scope checks, exact-head PR review, security gates and QA remain required.
 
