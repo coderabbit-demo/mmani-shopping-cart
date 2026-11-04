@@ -6,7 +6,15 @@
 
 The operator runs this read-only harness on the Mac from the `coderabbit-demo/mmani-shopping-cart` checkout. Targets are Google Cloud project `se-demos-project`, Datadog US3, Jira ShoppingCart (`SC`), and CodeRabbit Demo Slack workspace `T0AU433PG75`, channel `#mmani-shopping-cart` (`C0CEPB2LURY`). Phase 1 is tracked by [GitHub #11](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/11) and Jira SC-35; [#10](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10) remains the parent tracker for later work.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1ca464ca55c9a44eb142751964129407ccf25a5b137a23197b9fb5417f1a31e3 -->
+
 Use Node 22.6 or later, npm, Git, gh, gcloud, Terraform, Docker Desktop with Buildx, and CodeRabbit CLI. Prepare authentication, project selection and Docker manually before running; the command does not log in, switch configuration, start services, install tools, or create resources. See [automation instructions](../automations/datadog-to-slack-mmani.md) for the separate operator-controlled change and rehearsal.
+
+The PR helper requires development dependencies installed with `npm ci`. The preflight itself uses Node built-ins only.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Secure credentials and execution
 

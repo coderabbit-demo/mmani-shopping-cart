@@ -391,6 +391,7 @@ test("strict gate rejects absent or revoked approval and skipped checks", (t) =>
 
 function openPrFixture(t) {
   const directory = fixture(t);
+  symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(directory, "node_modules"), "dir");
   const brief = "docs/briefs/step with spaces.md";
   const results = "results with spaces.md";
   const title = "chore: automatic PR opening";
@@ -935,3 +936,57 @@ for (const [name, example] of [
     assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
   });
 }
+
+for (const [name, example] of [
+  ['tab-indented quoted fence', '> \t~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/11\n> ~~~'],
+  ['quoted list fence', '> - ~~~text\n>   **GitHub:** https://github.com/fixture/repo/issues/11\n>   ~~~'],
+]) {
+  test(`regression: open-pr ignores same-repository metadata inside a ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  });
+
+  test(`regression: open-pr accepts metadata after exiting a ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+  });
+}
+
+for (const [name, example] of [
+  ['indented code block', '    **GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['nested list and quote fence', '- > ~~~text\n  > **GitHub:** https://github.com/fixture/repo/issues/11\n  > ~~~'],
+  ['quoted multiline code span', '> ``example\n> **GitHub:** https://github.com/fixture/repo/issues/11\n> end``'],
+  ['list code span', '- ``**GitHub:** https://github.com/fixture/repo/issues/11``'],
+]) {
+  test(`regression: open-pr ignores metadata in a ${name} before a real field`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+  });
+}
+
+test('regression: open-pr scopes inline code to parsed text blocks', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\nUnmatched \`\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});
+
+test('regression: open-pr does not treat a backtick in an HTML attribute as an inline code delimiter', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\n<span title="\`">text</span> \`example\` **GitHub:** https://github.com/fixture/repo/issues/12\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});
+
+test('regression: open-pr ignores an inline code span after a real field', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\n**GitHub:** https://github.com/fixture/repo/issues/12 \`example\`\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});

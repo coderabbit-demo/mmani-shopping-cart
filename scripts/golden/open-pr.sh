@@ -38,6 +38,7 @@ tmp=$(mktemp -d)
 node --input-type=module - "$1" "$2" "$3" "$tmp" <<'JS'
 import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
 const [branch, briefFile, resultsFile, directory] = process.argv.slice(2);
@@ -92,7 +93,29 @@ try {
   const title = heading?.match(/`([^`\r\n]+)`/)?.[1];
   const issues = [...brief.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)];
   if (!title?.trim() || issues.length !== 1) fail('Brief must contain a backticked title in its first # heading and one valid **Jira:** field');
-  function maskInlineCode(text) {
+  const { Parser } = createRequire(join(repoRoot, 'package.json'))('commonmark');
+  const parser = new Parser();
+  const document = parser.parse(brief);
+  const lineStarts = [0];
+  for (const match of brief.matchAll(/\r\n|\r|\n/g)) lineStarts.push(match.index + match[0].length);
+  const blocks = [];
+  const walker = document.walker();
+  let event;
+  while ((event = walker.next())) {
+    if (event.entering && ['code_block', 'paragraph', 'heading'].includes(event.node.type)) blocks.push(event.node);
+  }
+  let marker = 'CommonmarkInlineCodeProbe';
+  while (brief.includes(marker)) marker += 'X';
+  function isInlineCode(offset) {
+    const tagged = brief.slice(0, offset) + marker + brief.slice(offset);
+    const probe = parser.parse(tagged).walker();
+    let item;
+    while ((item = probe.next())) {
+      if (item.entering && item.node.type === 'code' && item.node.literal.includes(marker)) return true;
+    }
+    return false;
+  }
+  function maskInlineCode(text, offset) {
     let masked = '';
     let cursor = 0;
     let search = 0;
@@ -114,48 +137,22 @@ try {
         close = closeEnd;
       }
       if (close === -1) { search = end; continue; }
+      if (!isInlineCode(offset + end)) { search = end; continue; }
       masked += text.slice(cursor, start) + text.slice(start, closeEnd).replace(/[^\n]/g, ' ');
       cursor = closeEnd;
       search = closeEnd;
     }
     return masked + text.slice(cursor);
   }
-  let fence = null;
-  let paragraph = [];
-  const metadataLines = [];
-  function flushParagraph() {
-    if (paragraph.length) metadataLines.push(maskInlineCode(paragraph.join('\n')));
-    paragraph = [];
+  let metadata = brief;
+  for (const block of blocks) {
+    const [[startLine, startColumn], [endLine, endColumn]] = block.sourcepos;
+    const start = lineStarts[startLine - 1] + (block.type === 'code_block' ? 0 : startColumn - 1);
+    const end = block.type === 'code_block' ? (lineStarts[endLine] ?? brief.length) : lineStarts[endLine - 1] + endColumn;
+    const text = metadata.slice(start, end);
+    const masked = block.type === 'code_block' ? text.replace(/[^\r\n]/g, ' ') : maskInlineCode(text, start);
+    metadata = metadata.slice(0, start) + masked + metadata.slice(end);
   }
-  for (const line of brief.split(/\r?\n/)) {
-    let content = line;
-    let depth = 0;
-    let quote;
-    while ((quote = content.match(/^ {0,3}>[ \t]?/))) {
-      content = content.slice(quote[0].length);
-      depth++;
-    }
-    if (fence && depth < fence.depth) fence = null;
-    if (fence) {
-      const closing = depth === fence.depth && content.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
-      if (closing && closing[1][0] === fence.marker[0] && closing[1].length >= fence.marker.length) fence = null;
-      metadataLines.push('');
-      continue;
-    }
-    const opening = content.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-    if (opening && (opening[1][0] !== '`' || !opening[2].includes('`'))) {
-      flushParagraph();
-      fence = { marker: opening[1], depth };
-      metadataLines.push('');
-    } else if (/^[ \t]*$/.test(line)) {
-      flushParagraph();
-      metadataLines.push('');
-    } else {
-      paragraph.push(line);
-    }
-  }
-  flushParagraph();
-  const metadata = metadataLines.join('\n');
   const githubFields = [...metadata.matchAll(/(?:^|[ \t])\*\*GitHub:\*\*[ \t]*([^\r\n]*)/gm)];
   if (githubFields.length > 1) fail('Brief must contain at most one GitHub field');
   const githubUrl = githubFields[0]?.[1].trim();

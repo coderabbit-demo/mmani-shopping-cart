@@ -19,6 +19,7 @@ test("the scaffold declares exactly the approved dependencies", () => {
         "@types/node": "^26.6.5",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
+        commonmark: "0.31.2",
         typescript: "^7.0.2",
       },
     },
