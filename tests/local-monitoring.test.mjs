@@ -95,3 +95,23 @@ test('service-check message reaches a local UDP collector without browser or cre
     assert.ok(!packet.includes('shopper@example.test'));
   } finally { collector.close(); sender.close(); }
 });
+
+test('checker and runner each resolve one bounded absolute tmpfs mount', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { posix } = await import('node:path');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  for (const name of ['checker', 'runner']) {
+    const section = new RegExp(`^  ${name}:[ \\t]*\\r?\\n([\\s\\S]*?)(?=^  [a-z][\\w-]*:[ \\t]*$|^networks:)`, 'm').exec(yaml);
+    assert.ok(section, `${name} service must exist`);
+    const lists = [...section[1].matchAll(/^    tmpfs:[ \t]*(\[[^\r\n]*\])[ \t]*$/gm)];
+    assert.equal(lists.length, 1, `${name} must specify one tmpfs list`);
+    const flow = lists[0][1];
+    const mounts = /^\[\s*"/.test(flow) ? JSON.parse(flow) : flow.slice(1, -1).split(',').map(value => value.trim());
+    assert.equal(mounts.length, 1, `${name} must resolve one mount`);
+    const parts = mounts[0].split(':');
+    assert.equal(parts.length, 2);
+    assert.equal(posix.isAbsolute(parts[0]), true);
+    assert.equal(parts[0], '/tmp');
+    assert.deepEqual(parts[1].split(',').sort(), ['mode=1777', 'nodev', 'nosuid', 'rw', 'size=256m'].sort());
+  }
+});

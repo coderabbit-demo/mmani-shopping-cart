@@ -51,7 +51,7 @@ services:
     user: "1000:1000"
     init: true
     read_only: true
-    tmpfs: [/tmp:rw,nosuid,nodev,size=256m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=256m,mode=1777"]
     networks: [app]
     environment:
       CHECKER_URL: http://deskdrop.test:3000
@@ -72,7 +72,7 @@ services:
     user: "1000:1000"
     init: true
     read_only: true
-    tmpfs: [/tmp:rw,nosuid,nodev,size=256m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=256m,mode=1777"]
     networks: [telemetry]
     environment:
       CHECKER_URL: http://deskdrop.test:3000
