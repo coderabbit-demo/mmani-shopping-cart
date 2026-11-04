@@ -1,7 +1,7 @@
 import { parseEnv } from 'node:util';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, open, realpath, rename, unlink, writeFile } from 'node:fs/promises';
+import { access, chmod, lstat, mkdir, open, readlink, realpath, rename, symlink, unlink, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
 import { createServer, createConnection } from 'node:net';
@@ -56,16 +56,26 @@ export async function runCommand(file, args, { input, timeout = 120000, env = ch
   if (!['git', 'docker', 'bash'].includes(file) || !Array.isArray(args)) throw new Error('Invalid command');
   return new Promise((resolve, reject) => {
     if (abortSignal?.aborted) return reject(new Error('Local command failed'));
-    const child = spawn(file, args, { cwd: root, env, stdio: ['pipe', 'pipe', 'ignore'], detached: true });
-    let done = false, output = [], length = 0;
-    const signal = sig => { try { if (child.pid) process.kill(-child.pid, sig); } catch {} };
+    const wrapper = '"$@" <&0 3>&- 4<&- & p=$!; wait "$p"; result=$?; printf "%s\\n" "$result" >&3; IFS= read -r _ <&4 || :';
+    const child = spawn('bash', ['-c', wrapper, 'deskdrop-owned-command', file, ...args], { cwd: root, env, stdio: ['pipe', 'pipe', 'ignore', 'pipe', 'pipe'], detached: true });
+    let done = false, output = [], length = 0, control = '', commandStatus;
+    const signal = sig => {
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) return false;
+      try { process.kill(-child.pid, sig); return true; } catch { return false; }
+    };
     const finish = (bad, result) => { if (done) return; done = true; clearTimeout(timer); process.removeListener('SIGTERM', interrupt); process.removeListener('SIGINT', interrupt); abortSignal?.removeEventListener('abort', interrupt); bad ? reject(new Error('Local command failed')) : resolve(result); };
     const interrupt = () => { signal('SIGKILL'); finish(true); };
     const timer = setTimeout(interrupt, timeout);
     process.once('SIGTERM', interrupt); process.once('SIGINT', interrupt); abortSignal?.addEventListener('abort', interrupt, { once: true }); if (abortSignal?.aborted) interrupt();
     child.once('error', () => finish(true));
+    child.stdio[3].on('data', bytes => {
+      control += bytes.toString();
+      if (control.length > 4 || !/^\d{1,3}\n$/.test(control)) { if (control.length > 4 || control.includes('\n')) interrupt(); return; }
+      commandStatus = Number(control.trim());
+      if (!signal('SIGKILL')) finish(true);
+    });
     child.stdout.on('data', bytes => { length += bytes.length; if (length > maxBytes) interrupt(); else output.push(bytes); });
-    child.once('close', code => finish(code !== 0, Buffer.concat(output)));
+    child.once('close', () => finish(commandStatus !== 0, Buffer.concat(output)));
     child.stdin.on('error', () => {}); child.stdin.end(input);
   });
 }
@@ -80,6 +90,39 @@ async function desktopSocket() {
   const st = await lstat(socket);
   if (!st.isSocket() || st.isSymbolicLink() || st.uid !== process.getuid() || await realpath(socket) !== socket) throw new Error('Invalid Docker Desktop socket');
   return socket;
+}
+export async function prepareDockerPlugins(config, { home = os.homedir(), appDir = '/Applications/Docker.app/Contents/Resources/cli-plugins' } = {}) {
+  await safeDirectory(config, true);
+  try { await lstat(path.join(config, 'config.json')); throw new Error('Isolated Docker config must not contain config.json'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const dir = path.join(config, 'cli-plugins');
+  await safeDirectory(dir, true);
+  for (const name of ['docker-buildx', 'docker-compose']) {
+    const source = path.join(home, '.docker', 'cli-plugins', name), expected = path.join(appDir, name), dest = path.join(dir, name);
+    const sourceStat = await lstat(source);
+    if (!sourceStat.isSymbolicLink() || await realpath(source) !== expected) throw new Error('Docker Desktop plugin identity invalid');
+    const target = await lstat(expected);
+    if (!target.isFile() || target.isSymbolicLink() || (target.mode & 0o022) || ![0, process.getuid()].includes(target.uid)) throw new Error('Docker Desktop plugin identity invalid');
+    await access(expected, constants.X_OK);
+    await symlink(expected, dest).catch(error => { if (error.code !== 'EEXIST') throw error; });
+    const link = await lstat(dest);
+    if (!link.isSymbolicLink() || await readlink(dest) !== expected || await realpath(dest) !== expected) throw new Error('Docker Desktop plugin link invalid');
+  }
+}
+export async function prepareBuild({ socket = desktopSocket, run = runCommand, directory = stateDir, prepare = prepareDockerPlugins } = {}) {
+  const endpoint = await socket();
+  await safeDirectory(directory, true);
+  const dockerConfig = path.join(directory, 'docker-config');
+  try { await prepare(dockerConfig); } catch { throw new Error('Docker Desktop plugin preparation failed before build'); }
+  const env = { ...childEnvironment(), DOCKER_CONFIG: dockerConfig };
+  for (const plugin of ['buildx', 'compose']) {
+    try { await run('docker', ['--host', `unix://${endpoint}`, plugin, 'version'], { env, timeout: 10000 }); }
+    catch { throw new Error(`Docker Desktop ${plugin} unavailable before build`); }
+  }
+}
+export async function guardedBuild({ prepare = prepareBuild, operation = withOperation } = {}) {
+  await prepare();
+  return operation('build', build);
 }
 export async function requireFreePort(port = 3177, serverFactory = createServer) {
   return new Promise((resolve, reject) => {
@@ -263,6 +306,12 @@ export function journeySupervisor(ctx, { runCompose = compose, save = saveJourne
         if (item.State?.Running) await ctx.docker(['kill', actual], { timeout: 5000 });
         const checked = await inspect(actual);
         if (!Array.isArray(checked) || checked.length !== 1 || verifyJourneyContainer(checked[0], name, ctx) !== actual || checked[0].State?.Running !== false) throw new Error('Journey stop unknown');
+        if (!result && created) {
+          try {
+            const { parseJourneyFailure } = await import('../../deploy/local-checker.mjs');
+            task.observation = parseJourneyFailure(await ctx.docker(['logs', actual], { timeout: 5000, maxBytes: 2048 }));
+          } catch { task.observation = { stage: 'journey_result', expected: 'observation', actual: 'unavailable' }; }
+        }
         await ctx.docker(['rm', actual], { timeout: 5000 });
         const remaining = (await ctx.docker(['ps', '-a', '--no-trunc', '--filter', `id=${actual}`, '--format', '{{.ID}}'], { timeout: 5000 })).toString().trim().split('\n').filter(Boolean);
         if (remaining.some(value => !/^[a-f0-9]{64}$/.test(value)) || remaining.includes(actual)) throw new Error('Journey removal unknown');
@@ -358,17 +407,19 @@ export async function superviseForeground(ctx, { directory = stateDir, findConta
   let enabled = true, busy = false, closed = false, finish;
   const completion = new Promise(resolve => { finish = resolve; });
   let scheduled;
-  async function report(name, status) {
+  async function report(name, status, observation) {
     try {
       const owned = await findContainers(ctx), relay = owned.find(x => x.Config.Labels['com.docker.compose.service'] === 'runner');
       if (!relay?.State?.Running) throw new Error('Relay unavailable');
-      await ctx.docker(['exec', relay.Id, 'node', '/checker/local-checker.mjs', '--emit', name, String(status)], { timeout: 5000 });
+      const args = ['exec', relay.Id, 'node', '/checker/local-checker.mjs', '--emit', name, String(status)];
+      if (status === 2 && name !== 'heartbeat') args.push(JSON.stringify(diagnostic(name, { url: 'http://deskdrop.test:3000', source: ctx.commit, image: ctx.ids.app }, observation)));
+      await ctx.docker(args, { timeout: 5000 });
       observed.telemetry = 'sent';
     } catch { observed.telemetry = 'unknown'; }
   }
-  function markResult(name, value) {
+  function markResult(name, value, observation) {
     observed[name] = { status: value, time: Date.now() };
-    if (value === 2) console.log(JSON.stringify(diagnostic(name, { url: 'http://deskdrop.test:3000', source: ctx.commit, image: ctx.ids.app })));
+    if (value === 2) console.log(JSON.stringify(diagnostic(name, { url: 'http://deskdrop.test:3000', source: ctx.commit, image: ctx.ids.app }, observation)));
   }
   async function shutdown() {
     try { await protect(true); } catch { throw new Error('Suppression not confirmed; owned project remains running'); }
@@ -457,12 +508,12 @@ async function withOperation(name, action) {
 async function main() {
   if (process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === 'help')) return { commands: ['help', 'status', 'preflight', 'build', 'start', 'stop', 'check', 'app-stop', 'app-restart', 'checker-stop', 'checker-restart', 'runner-stop', 'runner-restart'] };
   if (process.argv.length === 3 && process.argv[2] === 'preflight') return preflight();
-  if (process.argv.length === 3 && process.argv[2] === 'build') { await requireFreePort(); await safeDirectory(stateDir, true); return withOperation('build', build); }
+  if (process.argv.length === 3 && process.argv[2] === 'build') { await requireFreePort(); return guardedBuild(); }
   if (process.argv.length === 3 && process.argv[2] === 'start') { await requireFreePort(); return withOperation('start', start); }
   if (process.argv.length === 3 && ['status', 'check', 'stop', 'app-stop', 'app-restart', 'checker-stop', 'checker-restart', 'runner-stop', 'runner-restart'].includes(process.argv[2])) return controlRequest(process.argv[2]);
   throw new Error('Invalid local command');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().then(value => console.log(JSON.stringify(value)), error => {
-  const messages = new Set(['Local port unavailable', 'Clean committed checkout required', 'Docker Desktop Mac required', 'Invalid Docker Desktop socket', 'Unsafe local runtime directory', 'Unsafe runtime file', 'Local image identity mismatch', 'Container ownership or image mismatch', 'Stale build', 'Seccomp profile mismatch', 'Invalid Agent image', 'Owned project already running', 'Network already in use', 'Monitor notifications are not suppressed', 'Suppression not effective', 'Monitor reconciliation required', 'Datadog API access denied', 'Datadog API rate limited', 'Datadog request outcome unknown', 'Suppression not confirmed; owned project remains running', 'Startup failed; owned project cleanup requires inspection', 'Startup outcome requires inspection', 'Control outcome unknown', 'Journey reconciliation required', 'Stop outcome requires inspection', 'Inspect previous unknown operation before continuing', 'Existing intake file requires operator reconciliation', 'Build record already exists; inspect the existing build', 'Local image tag already exists']);
+  const messages = new Set(['Local port unavailable', 'Clean committed checkout required', 'Docker Desktop Mac required', 'Invalid Docker Desktop socket', 'Docker Desktop plugin preparation failed before build', 'Docker Desktop buildx unavailable before build', 'Docker Desktop compose unavailable before build', 'Unsafe local runtime directory', 'Unsafe runtime file', 'Local image identity mismatch', 'Container ownership or image mismatch', 'Stale build', 'Seccomp profile mismatch', 'Invalid Agent image', 'Owned project already running', 'Network already in use', 'Monitor notifications are not suppressed', 'Suppression not effective', 'Monitor reconciliation required', 'Datadog API access denied', 'Datadog API rate limited', 'Datadog request outcome unknown', 'Suppression not confirmed; owned project remains running', 'Startup failed; owned project cleanup requires inspection', 'Startup outcome requires inspection', 'Control outcome unknown', 'Journey reconciliation required', 'Stop outcome requires inspection', 'Inspect previous unknown operation before continuing', 'Existing intake file requires operator reconciliation', 'Build record already exists; inspect the existing build', 'Local image tag already exists']);
   console.error(messages.has(error?.message) ? error.message : 'Local operation failed; inspect owned state and journal'); process.exitCode = 1;
 });

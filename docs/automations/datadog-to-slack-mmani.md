@@ -16,9 +16,15 @@ An authorized operator should review its trigger, destination, Agent scope, conn
 
 <!-- coderabbit-ai-generated-section:v1:e93243393db72bee5982418e382cb534af34749243737ebc76f435c6707716bb -->
 
-## Proposed local scope
+<!-- coderabbit-ai-generated:v1 -->
 
-The proposed local scope is `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local` and host `deskdrop-mmani-local`. The monitors are `[MMANI local] DeskDrop availability`, `[MMANI local] DeskDrop checkout` and `[MMANI local] DeskDrop checker heartbeat`. Proposed failure classes are `http_unavailable`, `journey_failed` and missing checker data. The local diagnostics include source commit and local image identity as separate sanitized evidence; a local image ID does not establish registry publication.
+<!-- coderabbit-ai-generated-section:v1:2158a657c26bdeae64242ac756efb2e503af3a23dd0fd163c9f111cb48cfb172 -->
+
+## Approved local runtime scope
+
+Mahesh approved the local runtime tags on 2026-11-04: `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local` and host `deskdrop-mmani-local`. The monitors are `[MMANI local] DeskDrop availability`, `[MMANI local] DeskDrop checkout` and `[MMANI local] DeskDrop checker heartbeat`. The intended failure classes are `http_unavailable`, `journey_failed` and missing checker data. The local diagnostics include source commit and local image identity as separate sanitized evidence; a local image ID does not establish registry publication.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The existing destination remains CodeRabbit Demo workspace `T0AU433PG75`, channel `C0CEPB2LURY`. Native event fields, filter enforcement, representative payloads and matching/unrelated-event tests remain pending actual evidence and separate approval. Do not infer that a diagnostic failure class is automatically present in the native Datadog webhook payload. Initial triage remains button-gated as described below; the existing reuse, concurrency and failure-reporting requirements remain unchanged.
 

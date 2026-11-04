@@ -70,22 +70,42 @@ export function verifyDowntime(record, expected) {
 export function inventoryHash(all) {
   return createHash('sha256').update(JSON.stringify(all.map(({ id, name, tags, query }) => ({ id, name, tags, query })).sort((a, b) => a.id - b.id))).digest('hex');
 }
-export function makeApi({ apiKey, appKey, request = https.request }) {
+export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 10000 }) {
   if (!apiKey || !appKey) throw new Error('Missing Datadog credentials');
+  if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000) throw new Error('Invalid request deadline');
   async function call(method, path, body) {
     if (!/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
     return new Promise((resolve, reject) => {
-      let size = 0, chunks = [], finished = false;
-      const finish = (error, value) => { if (finished) return; finished = true; if (error) reject(new Error(error)); else resolve(value); };
-      const req = request({ protocol: 'https:', hostname: 'api.us3.datadoghq.com', port: 443, method, path, headers: { 'DD-API-KEY': apiKey, 'DD-APPLICATION-KEY': appKey, 'content-type': 'application/json', accept: 'application/json' } }, response => {
-        if (response.statusCode < 200 || response.statusCode >= 300) { response.resume(); finish(response.statusCode === 401 || response.statusCode === 403 ? 'Datadog API access denied' : response.statusCode === 429 ? 'Datadog API rate limited' : response.statusCode >= 300 && response.statusCode < 400 ? 'Datadog API redirect rejected' : 'Datadog API request failed'); return; }
-        response.on('data', chunk => { size += chunk.length; if (size > 1048576) { req.destroy(); finish('Datadog response invalid or outcome unknown'); } else chunks.push(chunk); });
-        response.on('error', () => finish('Datadog request outcome unknown'));
-        response.on('end', () => { try { finish(false, size ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null); } catch { finish('Datadog response invalid or outcome unknown'); } });
-      });
-      req.setTimeout(10000, () => req.destroy());
-      req.on('error', () => finish('Datadog request outcome unknown'));
-      req.end(body === undefined ? undefined : JSON.stringify(body));
+      let size = 0, chunks = [], finished = false, req, response;
+      const fail = () => finish('Datadog request outcome unknown');
+      const onData = chunk => { size += chunk.length; if (size > 1048576) finish('Datadog response invalid or outcome unknown'); else chunks.push(chunk); };
+      const onEnd = () => { try { finish(false, size ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null); } catch { finish('Datadog response invalid or outcome unknown'); } };
+      const timer = setTimeout(fail, deadlineMs);
+      const finish = (error, value) => {
+        if (finished) return;
+        finished = true; clearTimeout(timer);
+        const dispose = stream => {
+          if (!stream || typeof stream.destroy !== 'function') return;
+          const ignore = () => {};
+          const closed = () => { stream.removeListener('error', ignore); stream.removeListener('close', closed); };
+          stream.once('error', ignore); stream.once('close', closed);
+          stream.destroy();
+        };
+        if (response) { response.removeListener('data', onData); response.removeListener('end', onEnd); response.removeListener('error', fail); response.removeListener('aborted', fail); }
+        if (req) req.removeListener('error', fail);
+        if (error) { dispose(response); dispose(req); }
+        if (error) reject(new Error(error)); else resolve(value);
+      };
+      try {
+        req = request({ protocol: 'https:', hostname: 'api.us3.datadoghq.com', port: 443, method, path, headers: { 'DD-API-KEY': apiKey, 'DD-APPLICATION-KEY': appKey, 'content-type': 'application/json', accept: 'application/json' } }, incoming => {
+          response = incoming;
+          if (finished) { response.destroy?.(); return; }
+          if (response.statusCode < 200 || response.statusCode >= 300) { finish(response.statusCode === 401 || response.statusCode === 403 ? 'Datadog API access denied' : response.statusCode === 429 ? 'Datadog API rate limited' : response.statusCode >= 300 && response.statusCode < 400 ? 'Datadog API redirect rejected' : 'Datadog API request failed'); return; }
+          response.on('data', onData); response.on('error', fail); response.on('aborted', fail); response.on('end', onEnd);
+        });
+        req.on('error', fail);
+        req.end(body === undefined ? undefined : JSON.stringify(body));
+      } catch { finish('Datadog request outcome unknown'); }
     });
   }
   return {

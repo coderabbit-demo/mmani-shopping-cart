@@ -57,3 +57,41 @@ test('send emits fixed private DogStatsD bytes and diagnostics only allow safe f
   assert.equal(data.stage, 'checkout');
   assert.equal(JSON.stringify(data).includes('private'), false);
 });
+
+test('validated journey observations travel in Agent service-check messages and hostile data is rejected', async () => {
+  const { diagnostic, parseJourneyFailure } = await import('../deploy/local-checker.mjs');
+  const observation = parseJourneyFailure(Buffer.from(JSON.stringify({ type: 'deskdrop-journey-failure', stage: 'checkout_total', expected: '$97', actual: '$96' })));
+  const detail = diagnostic('checkout', { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `sha256:${'b'.repeat(64)}` }, observation);
+  const output = datagram('checkout', 2, detail).toString();
+  const [prefix, message] = output.split('|m:');
+  assert.equal(prefix, '_sc|deskdrop.local.checkout|2|h:deskdrop-mmani-local|#service:deskdrop,env:local-demo,demo_id:mmani-shopping-cart-local');
+  assert.deepEqual(JSON.parse(message), { source: 'a'.repeat(40), image_id: `sha256:${'b'.repeat(64)}`, stage: 'checkout_total', expected: '$97', actual: '$96' });
+  for (const actual of ['$96|secret', 'private browser data', '$1234', '1\nprivate']) assert.throws(() => parseJourneyFailure(Buffer.from(JSON.stringify({ type: 'deskdrop-journey-failure', stage: 'checkout_total', expected: '$97', actual }))));
+  assert.throws(() => parseJourneyFailure(Buffer.from(JSON.stringify({ type: 'deskdrop-journey-failure', stage: 'checkout_total', expected: '$97', actual: '$96', secret: 'private' }))));
+  assert.throws(() => datagram('heartbeat', 2, detail));
+});
+
+test('Agent container selector includes exact owned one-shot names and rejects unrelated containers', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  const match = /DD_CONTAINER_INCLUDE: "name:([^"]+)"/.exec(yaml);
+  assert.ok(match);
+  const include = new RegExp(match[1]);
+  for (const name of ['deskdrop-mmani-local-app-1', '/deskdrop-mmani-local-runner-1', `deskdrop-mmani-local-journey-${'a'.repeat(32)}`]) assert.equal(include.test(name), true);
+  for (const name of ['other-app-1', 'deskdrop-mmani-local-journey-secret', `deskdrop-mmani-local-journey-${'a'.repeat(33)}`, 'deskdrop-mmani-local-agent-1']) assert.equal(include.test(name), false);
+});
+
+test('service-check message reaches a local UDP collector without browser or credential data', { timeout: 3000 }, async () => {
+  const { send, diagnostic } = await import('../deploy/local-checker.mjs');
+  const { createSocket } = await import('node:dgram');
+  const collector = createSocket('udp4'), sender = createSocket('udp4');
+  await new Promise(resolve => collector.bind(0, '127.0.0.1', resolve));
+  try {
+    const received = new Promise(resolve => collector.once('message', bytes => resolve(bytes.toString())));
+    const detail = diagnostic('checkout', { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `sha256:${'b'.repeat(64)}` }, { stage: 'history_organizer', expected: 'organizer_natural_oak', actual: 'mismatch' });
+    await send({ send(bytes, port, host, callback) { assert.equal(port, 8125); assert.equal(host, 'agent'); sender.send(bytes, collector.address().port, '127.0.0.1', callback); } }, 'checkout', 2, detail);
+    const packet = await received;
+    assert.ok(packet.includes('|m:')); assert.ok(packet.includes('history_organizer')); assert.ok(packet.includes('organizer_natural_oak')); assert.ok(packet.includes('mismatch'));
+    assert.ok(!packet.includes('shopper@example.test'));
+  } finally { collector.close(); sender.close(); }
+});

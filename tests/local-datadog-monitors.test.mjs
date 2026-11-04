@@ -202,3 +202,23 @@ test('saving a reviewed plan preserves existing files and rejects unsafe paths',
     await assert.rejects(savePlan(dir, plan, templates));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('US3 request deadline bounds a trickling response and a pre-response stall', { timeout: 4000 }, async () => {
+  const { makeApi } = await import('../scripts/demo/datadog-monitors.mjs');
+  const http = await import('node:http');
+  let mode = 'trickle';
+  const server = http.createServer((_req, res) => {
+    if (mode === 'trickle') { res.writeHead(200); res.write('{'); const timer = setInterval(() => res.write(' '), 30); res.on('close', () => clearInterval(timer)); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const request = (options, callback) => http.request({ hostname: '127.0.0.1', port: server.address().port, method: options.method, path: options.path }, callback);
+  try {
+    const api = makeApi({ apiKey: 'fixture-api', appKey: 'fixture-app', request, deadlineMs: 160 });
+    for (const current of ['trickle', 'stall']) {
+      mode = current;
+      const started = Date.now();
+      await assert.rejects(Promise.race([api.listMonitors(0, 100), new Promise((_, reject) => setTimeout(() => reject(new Error('fixture deadline exceeded')), 700))]), error => error.message === 'Datadog request outcome unknown');
+      assert.ok(Date.now() - started < 650);
+    }
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});

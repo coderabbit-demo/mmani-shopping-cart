@@ -12,7 +12,13 @@ This is a Mac Docker Desktop workflow for the fixed `deskdrop-mmani-local` proje
 
 ## Before starting
 
-Use the reviewed clean committed checkout, macOS Docker Desktop and the already approved pinned images. Check that the Docker Desktop socket `~/.docker/run/docker.sock` exists and port 3177 is free. No host bootstrap, cloud login or registry publication is used. The controller checks out no other branch. Its build consumes a Git archive, checks the clean commit and architecture, stores local image IDs and the reviewed seccomp digest, and never treats those IDs as registry receipts. Existing runtime files are preserved; a conflicting build record stops the operation.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:0902067044cdf684f4e3b2fcc721dad43d45811e2613ced162dd94f929d71131 -->
+
+Use the reviewed clean committed checkout, macOS Docker Desktop and the already approved pinned images. Check that the Docker Desktop socket `~/.docker/run/docker.sock` exists and port 3177 is free. No host bootstrap, cloud login or registry publication is used. The controller checks out no other branch. Its build consumes a Git archive, checks the clean commit and architecture, stores local image IDs and the reviewed seccomp digest, and never treats those IDs as registry receipts. Existing runtime files are preserved; a conflicting build record stops the operation. Before recording a build as pending, the controller verifies the two existing Docker Desktop CLI plugin links and executable identities, creates only corresponding links in its private credential-free Docker config, and checks `buildx version` and `compose version`. It accepts the Docker Desktop executables under `/Applications/Docker.app/Contents/Resources/cli-plugins/`; an absent, changed or unsafe plugin or an existing `config.json` in the isolated directory stops preparation. Inspect and reconcile any existing pending build journal before retrying; never assume an unknown build failed or delete its state.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The Mac-only `.env.demo.local` is a regular current-user-owned mode-0600 file containing `DD_API_KEY`, `DD_APP_KEY` (or `DD_APPLICATION_KEY`) and optionally `DD_SITE=us3.datadoghq.com`. Invoke the Node commands directly: the controller reads the file privately and rejects blanks, conflicting inherited values, mismatched aliases and other sites. Do not print, export, commit, transfer or attach its contents. The application key remains in the monitor controller; only the intake key is copied into the protected `~/.deskdrop-mmani-local/secrets/intake` file for the Agent. The protected directory, build receipts, monitor journal and intake file remain after shutdown for explicit operator reconciliation.
 
@@ -53,7 +59,13 @@ node scripts/demo/local.mjs check
 
 <!-- /coderabbit-ai-generated:v1 -->
 
-The apply operation creates a uniquely tagged, scoped initial downtime before creating the three monitors and transfers suppression to verified exact-ID downtimes. Query validation is not ingestion or permission proof. Check US3 Agent intake, monitor readback, every downtime match and an initial healthy heartbeat group. Do not claim missing-data coverage for an unseen group. Confirm that no notification rule sends an event during setup. The documented Datadog matching contract does not by itself prove there is no propagation window in this account.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8c41c50c22714478148905108ab3dd6cb16cd5510a5475a47d1b7cfd181d235c -->
+
+The apply operation creates a uniquely tagged, scoped initial downtime before creating the three monitors and transfers suppression to verified exact-ID downtimes. The US3 client uses a ten-second total request deadline; a timed-out write has an unknown outcome and must be reconciled rather than retried automatically. Query validation is not ingestion or permission proof.
+
+<!-- /coderabbit-ai-generated:v1 --> Check US3 Agent intake, monitor readback, every downtime match and an initial healthy heartbeat group. Do not claim missing-data coverage for an unseen group. Confirm that no notification rule sends an event during setup. The documented Datadog matching contract does not by itself prove there is no propagation window in this account.
 
 <!-- coderabbit-ai-generated:v1 -->
 
@@ -63,7 +75,13 @@ The apply operation creates a uniquely tagged, scoped initial downtime before cr
 
 <!-- coderabbit-ai-generated-section:v1:407e6f1cf24efd9b3f9f2276f6e0886bd7ec091bfae2063f8ca957c9950e5cdf -->
 
-Run `node scripts/demo/local.mjs start` in the foreground and wait for its ready result; use `status` and `check` from another terminal. The Mac controller independently schedules HTTP, checkout and heartbeat every 30 seconds. It creates a uniquely named one-shot checker container for each journey through the validated local Docker CLI. At the 25-second deadline or interruption, it inspects the exact container identity, kills it if needed and removes only that container. An unknown outcome blocks later journeys until reconciliation. The unprivileged runner relays service checks over private UDP when the controller asks; it has no Docker socket or credentials. A local result or UDP send does not prove US3 ingestion. The five-second HTTP check and heartbeat continue independently while a journey is stalled. Each journey uses a fresh browser context and synthetic shopper details and checks both items, DESK15, express delivery, the $97 receipt and history. Actual Docker Desktop cleanup and restart evidence remains a Mac gate.
+Run `node scripts/demo/local.mjs start` in the foreground and wait for its ready result; use `status` and `check` from another terminal. The Mac controller independently schedules HTTP, checkout and heartbeat every 30 seconds. It creates a uniquely named one-shot checker container for each journey through the validated local Docker CLI. At the 25-second deadline or interruption, it inspects the exact container identity, kills it if needed and removes only that container. An unknown outcome blocks later journeys until reconciliation. <!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d0b327f3b179b10a53189523f7f15e2a9577c17335c60e85286a9079a4c2065b -->
+
+The unprivileged runner relays service checks over private UDP when the controller asks; it has no Docker socket or credentials. For a failed journey the controller reads a bounded allowlisted observation from the verified stopped container before removing it, then sends it in the DogStatsD service-check message with the source and local image ID. If the observation is unavailable, the message says so. It contains no page bodies, form fields, browser errors or credentials. The Agent's filter also permits exact owned one-shot names, but short-lived container log collection is not assumed. A local result or UDP send does not prove US3 ingestion or native payload mapping.
+
+<!-- /coderabbit-ai-generated:v1 --> The five-second HTTP check and heartbeat continue independently while a journey is stalled. Each journey uses a fresh browser context and synthetic shopper details and checks both items, DESK15, express delivery, the $97 receipt and history. Actual Docker Desktop cleanup and restart evidence remains a Mac gate.
 
 <!-- /coderabbit-ai-generated:v1 -->
 

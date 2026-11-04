@@ -8,17 +8,54 @@ const target = 'http://deskdrop.test:3000';
 const host = 'deskdrop-mmani-local';
 const tags = 'service:deskdrop,env:local-demo,demo_id:mmani-shopping-cart-local';
 const healthFile = '/tmp/deskdrop-runner-health';
-export function datagram(name, status) {
-  if (!['availability', 'checkout', 'heartbeat'].includes(name) || ![0, 2].includes(status)) throw new Error('Invalid check');
-  return Buffer.from(`_sc|deskdrop.local.${name}|${status}|h:${host}|#${tags}`);
+const amounts = { subtotal: '$100', discount: '-$15', shipping: '$12', total: '$97' };
+const steps = { navigation: 'storefront_load', add_lamp: 'item_added', add_organizer: 'item_added', bag: 'bag_open', coupon: 'coupon_applied', checkout_open: 'checkout_open', shipping: 'express_selected', details: 'synthetic_details_entered', submit: 'order_submitted', receipt_url: 'checkout_success', receipt: 'receipt_verified', history_open: 'history_open', history: 'history_verified' };
+export function safeObservation(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'actual,expected,stage') throw new Error('Invalid observation');
+  const { stage, expected, actual } = value;
+  if (['journey', 'checkout'].includes(stage) && expected === 'checkout_receipt_history' && actual === 'failed') return { stage, expected, actual };
+  if (stage === 'journey_result' && expected === 'observation' && actual === 'unavailable') return { stage, expected, actual };
+  if (Object.hasOwn(steps, stage) && expected === steps[stage] && actual === 'failed') return { stage, expected, actual };
+  const match = /^(checkout|receipt|history)_(subtotal|discount|shipping|total|count|lamp|organizer)$/.exec(stage ?? '');
+  if (!match || (match[1] === 'checkout' && !amounts[match[2]])) throw new Error('Invalid observation');
+  const field = match[2];
+  if (amounts[field]) {
+    if (expected !== amounts[field] || (actual !== 'unavailable' && !/^-?\$[0-9]{1,3}$/.test(actual ?? ''))) throw new Error('Invalid observation');
+  } else if (field === 'count') {
+    if (expected !== '2' || (actual !== 'unavailable' && !/^(?:[0-9]|1[0-9]|20)$/.test(actual ?? ''))) throw new Error('Invalid observation');
+  } else if (expected !== ({ lamp: 'lamp_terracotta', organizer: 'organizer_natural_oak' })[field] || actual !== 'mismatch') throw new Error('Invalid observation');
+  return { stage, expected, actual };
 }
-export function diagnostic(name, config) {
+export function parseJourneyFailure(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length > 2048) throw new Error('Invalid observation');
+  const value = JSON.parse(bytes.toString('utf8'));
+  if (!value || value.type !== 'deskdrop-journey-failure' || Object.keys(value).sort().join(',') !== 'actual,expected,stage,type') throw new Error('Invalid observation');
+  return safeObservation({ stage: value.stage, expected: value.expected, actual: value.actual });
+}
+export function datagram(name, status, detail) {
+  if (!['availability', 'checkout', 'heartbeat'].includes(name) || ![0, 2].includes(status)) throw new Error('Invalid check');
+  let message = '';
+  if (detail !== undefined) {
+    if (status !== 2 || name === 'heartbeat') throw new Error('Invalid check');
+    const { source, image } = validateLocal({ url: target, source: detail.source, image: detail.image_id });
+    const observation = name === 'checkout' ? safeObservation({ stage: detail.stage, expected: detail.expected, actual: detail.actual }) : { stage: 'http', expected: 'http_success', actual: 'failed' };
+    message = `|m:${JSON.stringify({ source, image_id: image, ...observation })}`;
+  }
+  return Buffer.from(`_sc|deskdrop.local.${name}|${status}|h:${host}|#${tags}${message}`);
+}
+export function diagnostic(name, config, observation) {
   if (!['availability', 'checkout'].includes(name)) throw new Error('Invalid check');
   const { source, image } = validateLocal(config);
-  return { event: 'deskdrop_check', check: name, failure_class: name === 'availability' ? 'http_unavailable' : 'journey_failed', stage: name === 'availability' ? 'http' : 'checkout', source, image_id: image, expected: name === 'availability' ? 'http_success' : 'checkout_receipt_history', actual: 'failed' };
+  const result = name === 'availability' ? { stage: 'http', expected: 'http_success', actual: 'failed' } : observation ? safeObservation(observation) : { stage: 'checkout', expected: 'checkout_receipt_history', actual: 'failed' };
+  return { event: 'deskdrop_check', check: name, failure_class: name === 'availability' ? 'http_unavailable' : 'journey_failed', ...result, source, image_id: image };
 }
-export function send(socket, name, status) {
-  return new Promise((resolve, reject) => socket.send(datagram(name, status), 8125, 'agent', error => error ? reject(error) : resolve()));
+export function send(socket, name, status, detail) {
+  return new Promise((resolve, reject) => socket.send(datagram(name, status, detail), 8125, 'agent', error => error ? reject(error) : resolve()));
+}
+export async function runLocalJourney(config, run = journeyLocal, write = value => console.log(value)) {
+  let observation = { stage: 'journey', expected: 'checkout_receipt_history', actual: 'failed' };
+  try { await run(config, undefined, undefined, value => { observation = safeObservation(value); }); return true; }
+  catch { write(JSON.stringify({ type: 'deskdrop-journey-failure', ...observation })); return false; }
 }
 export async function availability(fetcher = fetch) {
   try {
@@ -30,7 +67,7 @@ export async function availability(fetcher = fetch) {
 export function scheduler({ now = () => performance.now(), interval = 30000, report, runAvailability, runJourney, markHealthy, markResult = () => {}, setTimer = setInterval, clearTimer = clearInterval }) {
   let closed = false, current = null, available = null;
   let nextAvailability = now(), nextJourney = now(), nextHeartbeat = now();
-  const emit = (name, status) => { if (name !== 'heartbeat') void Promise.resolve(markResult(name, status)).catch(() => {}); return Promise.resolve(report(name, status)).catch(() => {}); };
+  const emit = (name, status, observation) => { if (name !== 'heartbeat') void Promise.resolve(markResult(name, status, observation)).catch(() => {}); return Promise.resolve(report(name, status, observation)).catch(() => {}); };
   function tick() {
     if (closed) return;
     const t = now();
@@ -44,7 +81,7 @@ export function scheduler({ now = () => performance.now(), interval = 30000, rep
       nextJourney = t + interval;
       if (current) { current.skipped = true; void emit('checkout', 2); }
       else {
-        try { const job = { ...runJourney(), skipped: false }; current = job; Promise.resolve(job.promise).then(ok => { if (!job.skipped) return emit('checkout', ok ? 0 : 2); }, () => { if (!job.skipped) return emit('checkout', 2); }).finally(() => { if (current === job) current = null; }); }
+        try { const job = runJourney(); job.skipped = false; current = job; Promise.resolve(job.promise).then(ok => { if (!job.skipped) return emit('checkout', ok ? 0 : 2, job.observation); }, () => { if (!job.skipped) return emit('checkout', 2, job.observation); }).finally(() => { if (current === job) current = null; }); }
         catch { current = null; void emit('checkout', 2); }
       }
     }
@@ -60,14 +97,18 @@ async function main() {
     if (!Number.isFinite(value) || Date.now() - value > 65000 || Date.now() < value) process.exitCode = 1;
     return;
   }
-  if (mode === '--emit' && process.argv.length === 5) {
+  if (mode === '--emit' && (process.argv.length === 5 || process.argv.length === 6)) {
     const status = Number(process.argv[4]);
+    const detail = process.argv.length === 6 ? JSON.parse(process.argv[5]) : undefined;
     const socket = createSocket('udp4');
-    try { await send(socket, process.argv[3], status); } finally { socket.close(); }
+    try { await send(socket, process.argv[3], status, detail); } finally { socket.close(); }
     return;
   }
   const config = validateLocal({ url: process.env.CHECKER_URL, source: process.env.SOURCE_COMMIT, image: process.env.APP_IMAGE_ID });
-  if (mode === '--journey' && process.argv.length === 3) { await journeyLocal(config); return; }
+  if (mode === '--journey' && process.argv.length === 3) {
+    if (!await runLocalJourney(config)) process.exitCode = 1;
+    return;
+  }
   if (mode !== '--relay' || process.argv.length !== 3) throw new Error('Invalid command');
   await writeFile(healthFile, String(Date.now()));
   const timer = setInterval(() => { void writeFile(healthFile, String(Date.now())); }, 15000);

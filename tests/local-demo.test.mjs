@@ -286,3 +286,109 @@ test('availability rejects a healthy response unless the owned app and loopback 
   assert.equal(await ownedAvailability({}, async () => [app, foreign], fetcher), false);
   assert.equal(requests, 1);
 });
+
+test('successful command terminates a descendant with detached stdio', { timeout: 3000 }, async () => {
+  const { runCommand } = await import('../scripts/demo/local.mjs');
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const dir = await mkdtemp(join(tmpdir(), 'deskdrop-descendant-')), marker = join(dir, 'pid');
+  let pid;
+  try {
+    await runCommand('bash', ['-c', 'sleep 20 </dev/null >/dev/null 2>&1 & printf "%s" "$!" > "$1"; exit 0', 'fixture', marker], { timeout: 1000 });
+    pid = Number(await readFile(marker, 'utf8'));
+    let alive = true;
+    for (let i = 0; i < 30; i++) {
+      try { const state = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).trim(); alive = !!state && !state.startsWith('Z'); } catch { alive = false; }
+      if (!alive) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(alive, false);
+  } finally { if (pid) { try { process.kill(pid, 'SIGKILL'); } catch {} } await rm(dir, { recursive: true, force: true }); }
+});
+
+test('isolated Docker plugin links expose only verified Desktop executables before a build journal', async () => {
+  const { prepareDockerPlugins, prepareBuild, guardedBuild } = await import('../scripts/demo/local.mjs');
+  const { mkdtemp, mkdir, writeFile, symlink, readlink, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const base = await mkdtemp(join(tmpdir(), 'deskdrop-plugins-'));
+  const home = join(base, 'home'), appDir = join(base, 'Docker.app'), state = join(base, 'state');
+  try {
+    await mkdir(join(home, '.docker', 'cli-plugins'), { recursive: true });
+    await mkdir(appDir);
+    for (const name of ['docker-buildx', 'docker-compose']) {
+      const target = join(appDir, name);
+      await writeFile(target, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      await symlink(target, join(home, '.docker', 'cli-plugins', name));
+    }
+    const calls = [];
+    await prepareBuild({ directory: state, socket: async () => '/desktop.sock', prepare: config => prepareDockerPlugins(config, { home, appDir }), run: async (file, args, options) => { calls.push({ file, args, env: options.env }); return Buffer.alloc(0); } });
+    assert.deepEqual(calls.map(x => x.args.slice(-2)), [['buildx', 'version'], ['compose', 'version']]);
+    assert.equal(calls[0].env.DOCKER_CONFIG, join(state, 'docker-config'));
+    assert.equal(calls[0].env.DD_API_KEY, undefined);
+    assert.equal(await readlink(join(state, 'docker-config', 'cli-plugins', 'docker-buildx')), join(appDir, 'docker-buildx'));
+    let journal = false;
+    await assert.rejects(guardedBuild({ prepare: async () => { throw new Error('plugin missing'); }, operation: async () => { journal = true; } }), /plugin missing/);
+    assert.equal(journal, false);
+    await assert.rejects(guardedBuild({ prepare: () => prepareBuild({ directory: state, socket: async () => '/desktop.sock', prepare: config => prepareDockerPlugins(config, { home, appDir }), run: async (_file, args) => { assert.deepEqual(args.slice(-2), ['buildx', 'version']); throw new Error('plugin missing'); } }), operation: async () => { journal = true; } }), /Docker Desktop buildx unavailable before build/);
+    assert.equal(journal, false);
+    await writeFile(join(state, 'docker-config', 'config.json'), '{}');
+    await assert.rejects(prepareDockerPlugins(join(state, 'docker-config'), { home, appDir }), /must not contain config.json/);
+    await rm(join(state, 'docker-config', 'config.json'));
+    await rm(join(home, '.docker', 'cli-plugins', 'docker-compose'));
+    await symlink('/bin/sh', join(home, '.docker', 'cli-plugins', 'docker-compose'));
+    await assert.rejects(prepareDockerPlugins(join(state, 'docker-config'), { home, appDir }), /plugin identity invalid/);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('owned journey failure is read before removal and relayed with validated evidence', async () => {
+  const { journeySupervisor, superviseForeground, controlRequest } = await import('../scripts/demo/local.mjs');
+  const { datagram, runLocalJourney } = await import('../deploy/local-checker.mjs');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'deskdrop-evidence-'));
+  const id = 'd'.repeat(64), relayId = 'e'.repeat(64), commit = 'a'.repeat(40), app = `sha256:${'b'.repeat(64)}`, checker = `sha256:${'c'.repeat(64)}`;
+  const calls = []; let name, delivered;
+  let record;
+  assert.equal(await runLocalJourney({}, async (_config, _browser, _assertion, observe) => { observe({ stage: 'checkout_total', expected: '$97', actual: '$96' }); throw new Error('private'); }, value => { record = value; }), false);
+  assert.equal(record.includes('private'), false);
+  const ctx = { commit, ids: { app, checker }, docker: async args => {
+    calls.push(args);
+    if (args[0] === 'wait') return Buffer.from('1');
+    if (args[0] === 'logs') return Buffer.from(record);
+    if (args[0] === 'rm' || args[0] === 'ps') return Buffer.alloc(0);
+    if (args[0] === 'exec') { assert.equal(args[1], relayId); delivered = datagram(args[5], Number(args[6]), JSON.parse(args[7])).toString(); return Buffer.alloc(0); }
+    throw new Error('unexpected command');
+  } };
+  const inspect = async () => [{ Id: id, Name: `/${name}`, Image: checker, Config: { Labels: { 'com.docker.compose.project': 'deskdrop-mmani-local', 'com.docker.compose.service': 'checker', 'com.docker.compose.oneoff': 'True' }, Env: [`SOURCE_COMMIT=${commit}`, `APP_IMAGE_ID=${app}`, 'CHECKER_URL=http://deskdrop.test:3000'] }, State: { Running: false } }];
+  const journeys = journeySupervisor(ctx, { runCompose: async (_, args) => { name = args[8]; return Buffer.from(id); }, save: async () => {}, inspect });
+  try {
+    const task = journeys.start(); assert.equal(await task.promise, false);
+    assert.deepEqual(task.observation, { stage: 'checkout_total', expected: '$97', actual: '$96' });
+    assert.ok(calls.findIndex(x => x[0] === 'logs' && x[1] === id) < calls.findIndex(x => x[0] === 'rm' && x[1] === id));
+    record = '{"type":"deskdrop-journey-failure","stage":"checkout_total","expected":"$97","actual":"$96|private"}';
+    const hostile = journeys.start(); assert.equal(await hostile.promise, false);
+    assert.deepEqual(hostile.observation, { stage: 'journey_result', expected: 'observation', actual: 'unavailable' });
+    const relay = { Id: relayId, State: { Running: true }, Config: { Labels: { 'com.docker.compose.service': 'runner' } } };
+    const completion = superviseForeground(ctx, { directory: dir, checkPrevious: async () => {}, findContainers: async () => [relay], createJourneys: () => journeys, protect: async () => {}, stopServices: async () => {}, schedulerFactory: ({ report }) => { void report('checkout', 2, task.observation); return { stop: async () => {} }; } });
+    for (let i = 0; i < 50 && !delivered; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(delivered?.includes('"stage":"checkout_total"'));
+    assert.ok(delivered.includes('"actual":"$96"'));
+    assert.ok(delivered.includes(commit)); assert.ok(delivered.includes(app));
+    await controlRequest('stop', dir); await completion;
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('owned command transfers input and leaves a separate process group alive', { timeout: 3000 }, async () => {
+  const { runCommand } = await import('../scripts/demo/local.mjs');
+  const { spawn } = await import('node:child_process');
+  const foreign = spawn('sleep', ['20'], { detached: true, stdio: 'ignore' });
+  try {
+    const input = Buffer.alloc(1048576, 65);
+    assert.deepEqual(await runCommand('bash', ['-c', 'cat'], { input }), input);
+    assert.doesNotThrow(() => process.kill(foreign.pid, 0));
+  } finally { try { process.kill(-foreign.pid, 'SIGKILL'); } catch {} }
+});

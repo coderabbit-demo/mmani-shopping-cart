@@ -107,7 +107,7 @@ services:
       DD_LOGS_ENABLED: "true"
       DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "true"
       DD_CONTAINER_EXCLUDE: "name:.*"
-      DD_CONTAINER_INCLUDE: "name:^/?deskdrop-mmani-local-(app|forwarder|checker|runner)-1$"
+      DD_CONTAINER_INCLUDE: "name:^/?deskdrop-mmani-local-((app|forwarder|checker|runner)-1|journey-[a-f0-9]{32})$"
     volumes:
       - type: bind
         source: ${LOCAL_SECRET_DIR:?required}
