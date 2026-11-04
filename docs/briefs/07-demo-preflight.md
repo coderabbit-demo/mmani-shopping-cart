@@ -1,7 +1,8 @@
 # Brief 07 — `chore: demo preflight and incident handoff`
 
 **Mode:** Brownfield, operational tooling and documentation. **Jira:** SC-35
-**GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
+**GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/11
+**Parent tracker:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
 **Status:** Draft for maintainer approval. CodeRabbit must propose a plan first and make no implementation changes until the maintainer approves this brief and the plan.
 
 Read `AGENTS.md`, `docs/PLAN.md`, this brief, and the linked GitHub/Jira acceptance criteria. Preserve all existing product behavior, tests, assertions and goldens. CodeRabbit Code is the implementation author; the Mac runs orchestration and verification.
@@ -84,7 +85,7 @@ Describe a separately controlled synthetic alert → Slack → SC Bug → dispos
 Extend `scripts/golden/open-pr.sh` to recognize one optional `**GitHub:**` issue URL in a brief. When present, validate that it is a GitHub issue URL for the current repository with a positive issue number and no extra path/query/fragment. The body begins exactly:
 
 ```text
-Fixes https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
+Fixes https://github.com/coderabbit-demo/mmani-shopping-cart/issues/11
 Jira: SC-35
 ```
 
@@ -112,7 +113,7 @@ CodeRabbit Code first reports its plan, file list, test approach, capability gap
 
 After implementation, run the required checks and a completed `coderabbit review --agent --committed --base-commit <merge-base>`. Route valid findings through CodeRabbit Code within ALLOW, with tests for behavior/security fixes. List every finding as fixed or skipped with a reason. The Mac repeats the required pre-publication review and scope checks under `docs/PLAN.md`.
 
-Open a PR linked to GitHub #10 and Jira SC-35 only after pre-publication gates pass. Request CodeRabbit PR review and `@coderabbitai test`; retain actual exact-head review/security and QA evidence. Do not treat an inconclusive QA result as passed Verify. For this tooling PR, separate QA's browser result from deterministic harness tests and the still-pending live incident rehearsal.
+Open a PR linked to GitHub #11 and Jira SC-35 only after pre-publication gates pass. Request CodeRabbit PR review and `@coderabbitai test`; retain actual exact-head review/security and QA evidence. Do not treat an inconclusive QA result as passed Verify. For this tooling PR, separate QA's browser result from deterministic harness tests and the still-pending live incident rehearsal.
 
 ## Required checks and report
 
