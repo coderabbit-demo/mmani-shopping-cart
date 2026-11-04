@@ -14,6 +14,10 @@ run "private_versioned_state" {
     condition     = google_storage_bucket_iam_member.operator.role == "roles/storage.objectAdmin"
     error_message = "Operator access must be scoped to bucket objects."
   }
+  assert {
+    condition     = try(google_storage_bucket.state.labels.service == "deskdrop" && google_storage_bucket.state.labels.environment == "demo" && google_storage_bucket.state.labels.managed_by == "terraform", false)
+    error_message = "Bootstrap state must carry service, environment and management labels."
+  }
 }
 run "wrong_project" {
   command = plan

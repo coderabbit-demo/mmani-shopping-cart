@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 const imagePattern = /^us-central1-docker\.pkg\.dev\/se-demos-project\/deskdrop\/deskdrop@sha256:[a-f0-9]{64}$/;
 export function validate({ url, source, image }) {
-  if (url !== 'http://app:3000') throw new Error('Target must be the private Compose app endpoint');
+  if (url !== 'http://deskdrop.test:3000') throw new Error('Target must be the private Compose app endpoint');
   if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('A full source commit is required');
   if (!imagePattern.test(image ?? '')) throw new Error('An owned immutable image digest is required');
   return { url, source, image };

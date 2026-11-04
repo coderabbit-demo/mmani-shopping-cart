@@ -37,6 +37,7 @@ resource "google_storage_bucket" "state" {
   name                        = var.bucket_name
   project                     = var.project_id
   location                    = "US-CENTRAL1"
+  labels                      = { service = "deskdrop", environment = "demo", managed_by = "terraform" }
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   force_destroy               = false

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { Parser } from 'commonmark';
 
 const script = readFileSync(new URL('../deploy/bootstrap.sh', import.meta.url), 'utf8');
 const python = script.split("<<'PYCODE'\n")[1]?.split('\nPYCODE\n')[0];
@@ -299,3 +301,356 @@ test('publication and deployment require explicit matching approvals before comm
   await assert.rejects(action('deploy', [], run, ctx));
   assert.equal(calls.filter(x => x.file === 'gcloud').length, 0);
 }));
+
+async function until(check, message) {
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.fail(message);
+}
+for (const signal of ['SIGINT', 'SIGTERM']) test(`CLI forwards ${signal} to its own child group and reaps descendants`, async () => withArtifacts(async dir => {
+  const cli = new URL('../scripts/demo/baseline.mjs', import.meta.url);
+  const pidFile = path.join(dir, 'pids'), signals = path.join(dir, 'signals');
+  await writeFile(path.join(dir, 'gcloud'), `#!${process.execPath}
+const fs = require('node:fs');
+const {spawn} = require('node:child_process');
+const descendant = spawn(process.execPath, ['-e', "process.on('SIGINT',()=>{});process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {stdio:'ignore'});
+fs.writeFileSync(process.env.FIXTURE_PIDS, process.pid+' '+descendant.pid);
+for (const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>{fs.writeFileSync(process.env.FIXTURE_SIGNALS, signal);process.exit(0)});
+setInterval(()=>{},1000);
+`, { mode: 0o700 });
+  const unrelated = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  const parent = spawn(process.execPath, [cli.pathname, 'tunnel'], { env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, FIXTURE_PIDS: pidFile, FIXTURE_SIGNALS: signals }, stdio: 'pipe' });
+  let pids = [], diagnostics = '';
+  parent.stderr.on('data', data => { diagnostics += data; });
+  const closed = once(parent, 'close');
+  try {
+    await until(async () => { try { pids = (await readFile(pidFile, 'utf8')).split(' ').map(Number); return pids.length === 2; } catch { return false; } }, 'fake gcloud never started');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    parent.kill(signal);
+    const [code, terminated] = await Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(new Error('CLI failed to settle interruption')), 4000).unref())]);
+    assert.equal(code, signal === 'SIGINT' ? 130 : 143, 'CLI preserves the termination exit status');
+    assert.equal(terminated, null);
+    assert.equal(await readFile(signals, 'utf8').catch(() => ''), signal, 'signal must reach fake gcloud');
+    await until(async () => {
+      for (const pid of pids) {
+        try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') continue; throw error; }
+        // A killed orphan may await its sandbox init reaper; it cannot execute.
+        try { if ((await readFile(`/proc/${pid}/stat`, 'utf8')).split(' ')[2] === 'Z') continue; } catch {}
+        return false;
+      }
+      return true;
+    }, 'detached command or descendant survived interruption');
+    assert.ok(!diagnostics.includes(pidFile));
+    assert.equal(process.kill(unrelated.pid, 0), true, 'unrelated process must survive');
+  } finally {
+    for (const pid of pids) { try { process.kill(-pid, 'SIGKILL'); } catch {} try { process.kill(pid, 'SIGKILL'); } catch {} }
+    parent.kill('SIGKILL');
+    unrelated.kill('SIGKILL');
+  }
+}));
+
+test('command removes signal listeners after success, exit failure, spawn failure and timeout', async () => {
+  const counts = () => ['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal));
+  const before = counts();
+  assert.match(await command('git', ['rev-parse', '--show-toplevel']), /mmani-shopping-cart/);
+  assert.deepEqual(counts(), before);
+  await assert.rejects(command('git', ['not-a-command']));
+  assert.deepEqual(counts(), before);
+  const original = process.env.PATH;
+  try { process.env.PATH = '/nonexistent-fixture-bin'; await assert.rejects(command('gcloud', [])); }
+  finally { process.env.PATH = original; }
+  assert.deepEqual(counts(), before);
+  await assert.rejects(command('git', ['-c', 'alias.wait=!sleep 5', 'wait'], { timeout: 30 }));
+  assert.deepEqual(counts(), before);
+});
+
+test('cost worksheet renders as one uninterrupted table block', async () => {
+  const markdown = await readFile(new URL('../docs/demo/gcp-costs.md', import.meta.url), 'utf8');
+  const walker = new Parser().parse(markdown).walker();
+  const paragraphs = []; let event;
+  while ((event = walker.next())) if (event.entering && event.node.type === 'paragraph') {
+    const [start, end] = event.node.sourcepos;
+    paragraphs.push(markdown.split('\n').slice(start[0] - 1, end[0]).join('\n'));
+  }
+  const table = paragraphs.find(text => text.startsWith('| Item |'));
+  assert.ok(table?.includes('| Compute Engine') && table.includes('| Datadog US3'), 'header and every data row must occupy the same rendered block');
+  const rows = table.split('\n');
+  assert.match(rows[1], /^\| --- \| --- \| --- \|$/);
+  for (const row of rows) assert.equal(row.split('|').length, 5, 'each rendered row has three cells');
+});
+
+const imageFixture = `us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:${'a'.repeat(64)}`;
+function composeConfig() {
+  const result = spawnSync('docker', ['compose', '-f', 'deploy/compose.yaml', '--profile', 'check', 'config', '--format', 'json'], { encoding: 'utf8', timeout: 10000, env: { ...process.env, APP_IMAGE: imageFixture, CHECKER_IMAGE: imageFixture.replace('/deskdrop@', '/checker@'), SOURCE_COMMIT: commit } });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test('checker namespace policy retains default-deny and Docker capability restrictions', () => {
+  const config = composeConfig();
+  assert.ok(config.services.checker.security_opt.some(option => option.startsWith('seccomp=')), 'checker requires its reviewed namespace policy');
+  assert.ok(config.services.checker.shm_size >= 268435456, 'private shared memory must fit Chromium');
+  assert.deepEqual(config.services.checker.cap_drop, ['ALL']);
+  assert.ok(config.services.checker.security_opt.includes('no-new-privileges:true'));
+  const result = spawnSync('bash', ['deploy/bootstrap.sh', 'seccomp-profile'], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  const profile = JSON.parse(result.stdout);
+  const upstream = script.split("profile = json.loads(r'''")[1].split("''')")[0];
+  assert.equal(createHash('sha256').update(upstream).digest('hex'), '6416b47770785a41ac59073cdc77d9fe98517df2799dc83ef207e622de3053f6', 'embedded Docker baseline bytes must match the pinned official source');
+  const baseline = JSON.parse(upstream);
+  assert.deepEqual(profile.syscalls.slice(1), baseline.syscalls, 'all existing Docker rules must survive unchanged');
+  assert.deepEqual({ ...profile, syscalls: [] }, { ...baseline, syscalls: [] });
+  assert.deepEqual(profile.syscalls[0].names, ['clone', 'setns', 'unshare', 'chroot']);
+  assert.equal(createHash('sha256').update(result.stdout).digest('hex'), script.match(/profile_sha=([a-f0-9]{64})/)[1], 'installed policy must be hash-bound to emitted bytes');
+  assert.equal(profile.defaultAction, 'SCMP_ACT_ERRNO');
+  const effective = name => profile.syscalls.filter(rule => rule.names.includes(name) && !rule.includes?.caps?.length && !rule.includes?.arches?.length && !rule.args?.length);
+  for (const name of ['clone', 'setns', 'unshare', 'chroot']) assert.ok(effective(name).some(rule => rule.action === 'SCMP_ACT_ALLOW'));
+  for (const name of ['mount', 'bpf', 'kexec_load', 'perf_event_open']) assert.ok(!effective(name).some(rule => rule.action === 'SCMP_ACT_ALLOW'), `${name} must remain restricted`);
+  assert.ok(effective('clone3').some(rule => rule.action === 'SCMP_ACT_ERRNO' && rule.errnoRet === 38));
+});
+
+test('only the fixed forwarder publishes loopback; app/checker retain the internal network', () => {
+  const config = composeConfig(), { app, checker, forwarder } = config.services;
+  assert.ok(forwarder, 'internal-only app requires a separate publishing endpoint');
+  assert.ok(!app.ports && !checker.ports);
+  assert.deepEqual(Object.keys(app.networks), ['isolated']);
+  assert.deepEqual(Object.keys(checker.networks), ['isolated']);
+  assert.equal(config.networks.isolated.internal, true);
+  assert.deepEqual(Object.keys(forwarder.networks).sort(), ['edge', 'isolated']);
+  assert.equal(forwarder.ports[0].host_ip, '127.0.0.1');
+  assert.equal(forwarder.ports[0].published, '3000');
+  assert.equal(forwarder.image, imageFixture);
+  assert.equal(forwarder.user, '1000:1000');
+  assert.equal(forwarder.read_only, true);
+  assert.deepEqual(forwarder.cap_drop, ['ALL']);
+  assert.ok(forwarder.security_opt.includes('no-new-privileges:true'));
+  assert.ok(!forwarder.volumes && !checker.volumes && !app.volumes);
+});
+
+function shellFunctions(source = script) {
+  return source.slice(source.indexOf('firewall() {'), source.indexOf('\ninstall_packages() {'));
+}
+function shellFixture(body, source = script) {
+  return spawnSync('bash', ['-c', `set -euo pipefail\n${shellFunctions(source)}\n${body}`], { encoding: 'utf8', timeout: 5000 });
+}
+
+test('bridge firewall permits only established host/forward replies before denying new off-subnet attempts', () => {
+  // Execute the real rule installer against a stateful iptables adapter, then route packets through its rules.
+  const adapter = `
+declare -a rules=()
+iptables() {
+ local operation=$1 chain=$2; shift 2
+ if [ "$operation" = -nL ]; then return 0; fi
+ if [ "$operation" = -I ]; then shift; rules=("$chain $*" "\${rules[@]}"); return; fi
+ if [ "$operation" = -C ]; then
+  local candidate
+  for candidate in "\${rules[@]}"; do [ "$candidate" != "$chain $*" ] || return 0; done
+  return 1
+ fi
+ return 1
+}
+ip6tables() { return 0; }
+firewall
+before=\${#rules[@]}
+firewall
+[ "\${#rules[@]}" = "$before" ]
+printf '%s\\n' "\${rules[@]}"
+`;
+  const result = shellFixture(adapter);
+  assert.equal(result.status, 0, result.stderr);
+  const rules = result.stdout.trim().split('\n').map(line => line.split(' '));
+  function route(chain, bridge, destination, state) {
+    for (const rule of rules) {
+      if (rule[0] !== chain || rule[rule.indexOf('-i') + 1] !== bridge) continue;
+      if (rule.includes('--ctstate') && state !== rule[rule.indexOf('--ctstate') + 1]) continue;
+      if (rule.includes('-d')) {
+        const subnet = rule[rule.indexOf('-d') + 1].replace('.0/24', '.');
+        if (destination.startsWith(subnet)) continue;
+      }
+      return rule.at(-1);
+    }
+    return 'CONTINUE';
+  }
+  for (const bridge of ['br-deskdrop', 'br-deskdrop-in']) {
+    assert.equal(route('INPUT', bridge, '127.0.0.1', 'ESTABLISHED'), 'ACCEPT', 'legitimate host replies must survive');
+    assert.equal(route('DOCKER-USER', bridge, '10.90.0.2', 'ESTABLISHED'), 'RETURN');
+    for (const destination of ['169.254.169.254', '10.90.0.1', '1.1.1.1']) {
+      assert.equal(route('INPUT', bridge, destination, 'NEW'), 'DROP');
+      assert.equal(route('DOCKER-USER', bridge, destination, 'NEW'), 'DROP');
+    }
+  }
+  assert.equal(route('DOCKER-USER', 'br-deskdrop', '172.30.243.12', 'NEW'), 'CONTINUE', 'private checker can reach app');
+});
+
+test('boot firewall failure blocks Docker but transient telemetry failure is not a firewall dependency', async () => withArtifacts(async dir => {
+  // Run the existing dispatcher with only command/filesystem boundaries replaced; never run host operations.
+  const dispatcher = script.slice(script.indexOf('case "$mode" in'), script.indexOf("exec python3 -"));
+  const release = path.join(dir, 'release');
+  await writeFile(release, 'synthetic release');
+  const fixturePath = path.join(dir, 'bootstrap.sh');
+  await writeFile(fixturePath, `#!/usr/bin/env bash
+set -euo pipefail
+mode=$1
+if [ "$mode" = secret-refresh ]; then printf 'secret-unavailable\\n'; exit 23; fi
+firewall() { printf 'firewall\\n'; [ "\${FIXTURE_FIREWALL_FAIL:-0}" = 0 ]; }
+runtime_command() { printf '%s\\n' "$1"; [ "$1" != secret-refresh ]; }
+${dispatcher.replaceAll('/etc/deskdrop/release', release)}
+`, { mode: 0o700 });
+  const boot = spawnSync('bash', [fixturePath, 'firewall'], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(boot.status, 0, 'an unavailable telemetry secret must not stop docker.service');
+  assert.ok(!boot.stdout.includes('secret-unavailable'), 'firewall cannot fetch telemetry credentials');
+  const failure = spawnSync('bash', [fixturePath, 'firewall'], { encoding: 'utf8', timeout: 5000, env: { ...process.env, FIXTURE_FIREWALL_FAIL: '1' } });
+  assert.notEqual(failure.status, 0, 'isolation failure must block docker.service');
+}));
+
+test('boot resumes only verified cached images, reports degraded telemetry, then recovers Agent', () => {
+  for (const secretStatus of [1, 0]) {
+    const result = shellFixture(`
+app_image=app checker_image=checker source_commit=source
+runtime_command() { printf 'runtime %s\\n' "$*"; if [ "$1" = secret-refresh ]; then return ${secretStatus}; fi; }
+compose() { printf 'compose %s\\n' "$*"; }
+resume_services
+`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /verify-images app checker source/);
+    assert.match(result.stdout, /up -d --pull never --wait --wait-timeout 60 app forwarder/);
+    if (secretStatus) {
+      assert.match(result.stdout, /compose stop agent/);
+      assert.ok(!result.stdout.includes('--force-recreate agent'));
+      assert.match(result.stderr, /Telemetry degraded/);
+    } else {
+      assert.match(result.stdout, /--force-recreate agent/);
+      assert.ok(!result.stdout.includes('stop agent'));
+      assert.equal(result.stderr, '');
+    }
+  }
+  const failedIdentity = shellFixture(`app_image=app checker_image=checker source_commit=source
+runtime_command() { return 1; }
+compose() { printf 'unsafe-start'; }
+resume_services`);
+  assert.notEqual(failedIdentity.status, 0);
+  assert.equal(failedIdentity.stdout, '', 'bad cached image identity must never start app');
+});
+
+test('Agent directory bind survives an empty /run reboot and secret recovery without creating a directory at the key path', () => {
+  const config = composeConfig();
+  const mount = config.services.agent.volumes.find(mount => mount.target.startsWith('/run/deskdrop'));
+  assert.ok(mount, 'runtime secret mount must be explicit');
+  const mountedName = mount.source.split('/').at(-1);
+  fixture(`
+with tempfile.TemporaryDirectory() as d:
+ os.chmod(d,0o700)
+ runtime=d+'/runtime'; os.mkdir(runtime,0o700)
+ # Reproduce Docker's directory handling for the actual configured bind source.
+ os.mkdir(runtime+${JSON.stringify('/' + mountedName)},0o700)
+ isolated={}
+ exec(compile(${JSON.stringify(python)}.replace('/run/deskdrop',runtime).replace('owner=0', 'owner=os.getuid()'), 'isolated-auth', 'exec'), isolated)
+ isolated['acquire']=lambda opener: ('synthetic-token',b'A'*32)
+ isolated['sys'].argv=['auth','secret-refresh']
+ outcome=None
+ try: isolated['main']()
+ except Exception as error: outcome=type(error).__name__
+ assert outcome is None, 'refresh after boot must succeed, not fail on a directory created at the key path: '+str(outcome)
+ assert os.path.isfile(runtime+'/secrets/intake')
+ assert open(runtime+'/secrets/intake','rb').read()==b'A'*32
+ isolated['acquire']=lambda opener: (_ for _ in ()).throw(TimeoutError('synthetic-secret'))
+ try: isolated['main'](); raise AssertionError('outage accepted')
+ except TimeoutError: pass
+ assert open(runtime+'/secrets/intake','rb').read()==b'A'*32, 'failed refresh must preserve last restricted file'
+ isolated['acquire']=lambda opener: ('synthetic-token',b'B'*32)
+ isolated['main']()
+ assert open(runtime+'/secrets/intake','rb').read()==b'B'*32
+ assert os.stat(runtime+'/secrets/intake').st_mode & 0o777 == 0o600
+ assert os.listdir(runtime+'/secrets') == ['intake']
+`);
+  assert.equal(mount.bind.create_host_path, false, 'Docker must not create missing bind paths');
+  assert.equal(mount.read_only, true);
+});
+
+test('runtime directories reject symlinks, loose permissions and directories at the secret file path', () => {
+  fixture(`
+with tempfile.TemporaryDirectory() as d:
+ runtime=d+'/runtime'
+ g['prepare_runtime'](runtime,os.getuid())
+ assert os.stat(runtime+'/secrets').st_mode & 0o777 == 0o700
+ os.mkdir(runtime+'/secrets/intake',0o700)
+ try: g['save_secret'](runtime+'/secrets/intake',b'A'*32,os.getuid()); raise AssertionError('directory accepted as key')
+ except ValueError: pass
+ os.rmdir(runtime+'/secrets/intake'); os.rmdir(runtime+'/secrets'); os.symlink(d,runtime+'/secrets')
+ try: g['prepare_runtime'](runtime,os.getuid()); raise AssertionError('symlink accepted')
+ except ValueError: pass
+ os.unlink(runtime+'/secrets'); os.chmod(runtime,0o755)
+ try: g['prepare_runtime'](runtime,os.getuid()); raise AssertionError('permissions accepted')
+ except ValueError: pass
+`);
+});
+
+import net from 'node:net';
+import http from 'node:http';
+import vm from 'node:vm';
+test('fixed forwarder serves real loopback HTTP and closes failed backend connections', async () => {
+  const config = composeConfig();
+  const code = config.services.forwarder.command.at(-1);
+  const large = 'x'.repeat(2 * 1024 * 1024);
+  const backend = http.createServer((request, response) => { response.setHeader('Connection', 'close'); response.end(request.url === '/large' ? large : 'private app fixture'); });
+  backend.listen(0, '127.0.0.1'); await once(backend, 'listening');
+  let proxy, upstreamPort = backend.address().port;
+  const adapter = {
+    createConnection(target) { assert.deepEqual(JSON.parse(JSON.stringify(target)), { host: 'app', port: 3000 }); return net.createConnection({ host: '127.0.0.1', port: upstreamPort }); },
+    createServer(handler) {
+      proxy = net.createServer(handler);
+      const listen = proxy.listen.bind(proxy);
+      proxy.listen = (port, host) => { assert.equal(port, 3000); assert.equal(host, '0.0.0.0'); return listen(0, '127.0.0.1'); };
+      return proxy;
+    },
+  };
+  try {
+    vm.runInNewContext(code, { require(name) { assert.equal(name, 'node:net'); return adapter; } });
+    await once(proxy, 'listening');
+    assert.equal(proxy.maxConnections, 128);
+    const response = await fetch(`http://127.0.0.1:${proxy.address().port}`, { signal: AbortSignal.timeout(2000) });
+    assert.equal(await response.text(), 'private app fixture');
+    const bulk = await fetch(`http://127.0.0.1:${proxy.address().port}/large`, { signal: AbortSignal.timeout(2000) });
+    assert.equal(await bulk.text(), large, 'backend close must not truncate buffered HTTP output');
+    await new Promise(resolve => backend.close(resolve));
+    await assert.rejects(fetch(`http://127.0.0.1:${proxy.address().port}`, { signal: AbortSignal.timeout(2000) }));
+  } finally {
+    await new Promise(resolve => proxy?.close(resolve) ?? resolve());
+    await new Promise(resolve => backend.close(resolve));
+  }
+});
+
+test('forwarder timeout and connection errors close both sockets without selecting arbitrary targets', () => {
+  const code = composeConfig().services.forwarder.command.at(-1);
+  for (const failure of ['timeout', 'error']) {
+    const sockets = [];
+    const socket = () => {
+      const callbacks = {};
+      const value = { callbacks, destroyed: false, setTimeout(ms) { assert.equal(ms, 30000); }, on(event, fn) { callbacks[event] = fn; }, pipe(target) { return target; }, destroy() { this.destroyed = true; } };
+      sockets.push(value); return value;
+    };
+    let connect;
+    vm.runInNewContext(code, { require(name) {
+      assert.equal(name, 'node:net');
+      return { createServer(handler) { connect = handler; return { listen(port, host) { assert.equal(port, 3000); assert.equal(host, '0.0.0.0'); } }; }, createConnection(target) { assert.equal(target.host, 'app'); assert.equal(target.port, 3000); return socket(); } };
+    } });
+    connect(socket());
+    sockets[0].callbacks[failure](new Error('synthetic-private-error'));
+    assert.ok(sockets.every(socket => socket.destroyed));
+  }
+});
+
+test('bounded command output rejects safely and removes interruption listeners', async () => {
+  const before = ['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal));
+  await assert.rejects(command('git', ['-c', 'alias.fixture=!printf synthetic-private-output', 'fixture'], { maxOutput: 4 }), error => !String(error).includes('synthetic-private-output'));
+  assert.deepEqual(['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal)), before);
+});
+
+test('Compose gives the app the reserved browser alias and fixes checker navigation to it', () => {
+  const { services } = composeConfig();
+  assert.equal(services.checker.environment.CHECKER_URL, 'http://deskdrop.test:3000', 'bare app is an HSTS domain, not a valid private HTTP browser endpoint');
+  assert.ok(services.app.networks.isolated.aliases.includes('deskdrop.test'));
+});

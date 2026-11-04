@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validate, journey } from '../deploy/checker.mjs';
 
-const good = { url: 'http://app:3000', source: 'a'.repeat(40), image: `us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:${'b'.repeat(64)}` };
+const good = { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:${'b'.repeat(64)}` };
 test('checker accepts only explicit private endpoint, commit and immutable owned image', () => {
   assert.deepEqual(validate(good), good);
-  for (const value of [undefined, '', 'http://127.0.0.1:3000', 'http://app:3000@evil.test', 'https://app:3000']) assert.throws(() => validate({ ...good, url: value }));
+  for (const value of [undefined, '', 'http://app:3000', 'http://127.0.0.1:3000', 'http://app:3000@evil.test', 'https://app:3000']) assert.throws(() => validate({ ...good, url: value }));
   assert.throws(() => validate({ ...good, source: 'abc' }));
   assert.throws(() => validate({ ...good, image: good.image.replace(/@sha256:.*/, ':latest') }));
 });
@@ -47,7 +47,7 @@ test('one-shot journey checks totals and every receipt and history item', async 
     });
     const context = { newPage: async () => page, close: async () => closed.push('context') };
     const browser = { newContext: async options => { assert.equal(options.baseURL, good.url); return context; }, close: async () => closed.push('browser') };
-    const fake = { launch: async opts => { assert.equal(opts.chromiumSandbox, true); return browser; } };
+    const fake = { launch: async opts => { assert.equal(opts.chromiumSandbox, true); assert.deepEqual(opts, { headless: true, chromiumSandbox: true }); return browser; } };
     return { promise: journey(good, fake, check), actions, closed };
   }
   const success = await runJourney('$97');
@@ -58,4 +58,11 @@ test('one-shot journey checks totals and every receipt and history item', async 
   const failure = await runJourney('$96');
   await assert.rejects(failure.promise);
   assert.deepEqual(failure.closed, ['context', 'browser']);
+});
+
+test('private browser endpoint uses the explicit reserved alias and rejects the HSTS .app endpoint', () => {
+  const endpoint = { ...good, url: 'http://deskdrop.test:3000' };
+  assert.doesNotThrow(() => validate(endpoint));
+  assert.deepEqual(validate(endpoint), endpoint);
+  assert.throws(() => validate({ ...endpoint, url: 'http://app:3000' }));
 });

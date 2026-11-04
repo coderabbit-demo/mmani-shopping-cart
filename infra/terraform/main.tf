@@ -14,7 +14,8 @@ provider "google" {
   zone    = var.zone
 }
 locals {
-  apis = toset(["compute.googleapis.com", "artifactregistry.googleapis.com", "secretmanager.googleapis.com", "iam.googleapis.com", "iap.googleapis.com", "oslogin.googleapis.com"])
+  labels = { service = "deskdrop", environment = var.environment, managed_by = "terraform" }
+  apis   = toset(["compute.googleapis.com", "artifactregistry.googleapis.com", "secretmanager.googleapis.com", "iam.googleapis.com", "iap.googleapis.com", "oslogin.googleapis.com"])
 }
 resource "google_project_service" "api" {
   for_each           = local.apis
@@ -77,6 +78,15 @@ resource "google_artifact_registry_repository" "app" {
   location      = var.region
   repository_id = "deskdrop"
   format        = "DOCKER"
+  labels        = local.labels
+  cleanup_policies {
+    id     = "delete-aged-untagged"
+    action = "DELETE"
+    condition {
+      tag_state  = "UNTAGGED"
+      older_than = "604800s"
+    }
+  }
   cleanup_policies {
     id     = "keep-recent"
     action = "KEEP"
@@ -87,6 +97,7 @@ resource "google_artifact_registry_repository" "app" {
 resource "google_secret_manager_secret" "intake" {
   project   = var.project_id
   secret_id = "deskdrop-datadog-intake"
+  labels    = local.labels
   replication {
     auto {}
   }
@@ -111,12 +122,14 @@ resource "google_compute_instance" "demo" {
   machine_type = "e2-standard-2"
   zone         = var.zone
   tags         = ["deskdrop-iap"]
+  labels       = local.labels
   metadata     = { enable-oslogin = "TRUE" }
   boot_disk {
     initialize_params {
-      image = "projects/ubuntu-os-cloud/global/images/ubuntu-2404-noble-amd64-v20261024"
-      size  = 30
-      type  = "pd-balanced"
+      labels = local.labels
+      image  = "projects/ubuntu-os-cloud/global/images/ubuntu-2404-noble-amd64-v20261024"
+      size   = 30
+      type   = "pd-balanced"
     }
   }
   network_interface {

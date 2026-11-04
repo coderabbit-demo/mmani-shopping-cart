@@ -20,15 +20,34 @@ export async function command(file, args, { timeout = 120000, input, binary = fa
   for (const key of Object.keys(env)) if (/^(DD_|DATADOG_)/i.test(key)) delete env[key];
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { cwd: root, env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
-    let output = Buffer.alloc(0), done = false;
-    const end = (error, value) => { if (done) return; done = true; clearTimeout(timer); error ? reject(new Error('Command failed')) : resolve(value); };
-    const stop = () => { try { process.platform === 'win32' ? child.kill('SIGKILL') : process.kill(-child.pid, 'SIGKILL'); } catch {} };
-    const timer = setTimeout(() => { stop(); end(true); }, timeout);
+    let output = Buffer.alloc(0), done = false, interrupted, escalation;
+    const send = signal => {
+      if (!child.pid) return;
+      try { process.platform === 'win32' ? child.kill(signal) : process.kill(-child.pid, signal); } catch {}
+    };
+    const onInterrupt = signal => {
+      if (done || interrupted) return;
+      interrupted = signal;
+      send(signal);
+      // The group can outlive its leader. Escalate before settling even if it closes.
+      escalation = setTimeout(() => { send('SIGKILL'); end(true); }, 1000);
+    };
+    const onInt = () => onInterrupt('SIGINT'), onTerm = () => onInterrupt('SIGTERM');
+    const end = (error, value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer); clearTimeout(escalation);
+      process.removeListener('SIGINT', onInt); process.removeListener('SIGTERM', onTerm);
+      if (error) { const failure = new Error('Command failed'); failure.signal = interrupted; reject(failure); }
+      else resolve(value);
+    };
+    const timer = setTimeout(() => { send('SIGKILL'); end(true); }, timeout);
+    process.on('SIGINT', onInt); process.on('SIGTERM', onTerm);
     child.on('error', () => end(true));
-    child.stdout.on('data', chunk => { output = Buffer.concat([output, chunk]); if (output.length > maxOutput) { stop(); end(true); } });
+    child.stdout.on('data', chunk => { if (done) return; if (output.length + chunk.length > maxOutput) { send('SIGKILL'); end(true); } else output = Buffer.concat([output, chunk]); });
     child.stderr.on('data', () => {});
     if (input !== undefined) { child.stdin.on('error', () => {}); child.stdin.end(input); }
-    child.on('close', code => end(code !== 0, binary ? output : output.toString('utf8')));
+    child.on('close', code => { if (!interrupted) end(code !== 0, binary ? output : output.toString('utf8')); });
   });
 }
 async function safeArtifacts(artifacts) {
@@ -231,5 +250,5 @@ export async function action(name, args = [], run = command, context = {}) {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.umask(0o077);
-  action(process.argv[2] ?? 'help', process.argv.slice(3)).then(value => console.log(JSON.stringify(value)), () => { console.error('Operation failed or prerequisite invalid'); process.exitCode = 1; });
+  action(process.argv[2] ?? 'help', process.argv.slice(3)).then(value => console.log(JSON.stringify(value)), error => { console.error('Operation failed or prerequisite invalid'); process.exitCode = error.signal === 'SIGINT' ? 130 : error.signal === 'SIGTERM' ? 143 : 1; });
 }

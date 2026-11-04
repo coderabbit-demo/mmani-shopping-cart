@@ -32,6 +32,19 @@ run "private_resources" {
     condition     = alltrue([for api in google_project_service.api : !api.disable_on_destroy])
     error_message = "Destroy must retain project APIs."
   }
+  assert {
+    condition     = anytrue([for policy in google_artifact_registry_repository.app.cleanup_policies : policy.action == "DELETE" && anytrue([for c in policy.condition : c.tag_state == "UNTAGGED" && c.older_than == "604800s"])]) && anytrue([for policy in google_artifact_registry_repository.app.cleanup_policies : policy.action == "KEEP" && anytrue([for recent in policy.most_recent_versions : recent.keep_count >= 5])])
+    error_message = "Delete only untagged versions older than seven days and retain at least five recent versions."
+  }
+  assert {
+    condition     = alltrue([for policy in google_artifact_registry_repository.app.cleanup_policies : policy.action != "DELETE" || (length(policy.condition) == 1 && alltrue([for c in policy.condition : c.tag_state == "UNTAGGED" && c.older_than == "604800s"]))])
+    error_message = "Every deletion rule must exclude tagged deployments and recent untagged artifacts."
+  }
+  assert {
+    condition     = alltrue([for labels in [google_artifact_registry_repository.app.labels, google_secret_manager_secret.intake.labels, google_compute_instance.demo.labels, google_compute_instance.demo.boot_disk[0].initialize_params[0].labels] : try(labels.service == "deskdrop" && labels.environment == "demo" && labels.managed_by == "terraform", false)])
+    error_message = "All label-capable owned resources must carry service, environment and management labels."
+  }
+
 }
 run "wrong_project" {
   command = plan
