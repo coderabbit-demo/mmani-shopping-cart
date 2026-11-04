@@ -113,3 +113,48 @@ test('local journey reports only bounded observations for checkout and receipt o
   assert.deepEqual(await exercise('receipt_url'), { stage: 'receipt_url', expected: 'checkout_success', actual: 'failed' });
   assert.deepEqual(await exercise('history_organizer'), { stage: 'history_organizer', expected: 'organizer_natural_oak', actual: 'mismatch' });
 });
+
+test('journeys validate before loading defaults and retain injected browser and assertion arguments', { timeout: 10000 }, async () => {
+  const { mkdtemp, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-browser-loader-')));
+  try {
+    const loader = join(dir, 'browser.mjs');
+    const fixture = `globalThis.fixtureLoads = (globalThis.fixtureLoads || 0) + 1;
+      export const chromium = { launch: async () => { throw new Error('default browser used'); } };
+      export const expect = () => { throw new Error('default assertion used'); };`;
+    await writeFile(loader, `export async function resolve(specifier, context, next) {
+      if (specifier === '@playwright/test') return { url: ${JSON.stringify(`data:text/javascript,${encodeURIComponent(fixture)}`)}, shortCircuit: true };
+      return next(specifier, context);
+    }`);
+    const checker = new URL('../deploy/checker.mjs', import.meta.url).href;
+    const program = `import assert from 'node:assert/strict';
+      import { journey, journeyLocal } from ${JSON.stringify(checker)};
+      const base = { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40) };
+      const cloud = { ...base, image: 'us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:' + 'b'.repeat(64) };
+      const local = { ...base, image: 'sha256:' + 'c'.repeat(64) };
+      await assert.rejects(journey({ ...cloud, image: local.image }));
+      await assert.rejects(journeyLocal({ ...local, image: cloud.image }));
+      assert.equal(globalThis.fixtureLoads, undefined);
+      const injected = { launch: async () => { throw new Error('injected browser used'); } };
+      const assertion = () => {};
+      await assert.rejects(journey(cloud, injected, assertion), /injected browser used/);
+      await assert.rejects(journeyLocal(local, injected, assertion), /injected browser used/);
+      assert.equal(globalThis.fixtureLoads, undefined);
+      await assert.rejects(journey(cloud, undefined, assertion), /default browser used/);
+      await assert.rejects(journeyLocal(local, undefined, assertion), /default browser used/);
+      assert.equal(globalThis.fixtureLoads, 1);
+      await assert.rejects(journey(cloud, injected), /injected browser used/);
+      await assert.rejects(journeyLocal(local, injected), /injected browser used/);
+      const locator = { getByRole: () => locator, getByLabel: () => locator, getByTestId: () => locator,
+        click: async () => {}, fill: async () => {}, check: async () => {} };
+      const page = { ...locator, setDefaultTimeout() {}, goto: async () => {} };
+      const browser = { launch: async () => ({ newContext: async () => ({ newPage: async () => page, close: async () => {} }), close: async () => {} }) };
+      await assert.rejects(journey(cloud, browser), /default assertion used/);
+      await assert.rejects(journeyLocal(local, browser), /default assertion used/);`;
+    await promisify(execFile)(process.execPath, ['--no-warnings', '--experimental-loader', loader, '--input-type=module', '-e', program], { timeout: 8000 });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

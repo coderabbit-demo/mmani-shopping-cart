@@ -1,4 +1,3 @@
-import { chromium, expect } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
 
 const imagePattern = /^us-central1-docker\.pkg\.dev\/se-demos-project\/deskdrop\/deskdrop@sha256:[a-f0-9]{64}$/;
@@ -14,13 +13,18 @@ export function validateLocal({ url, source, image }) {
   if (!/^sha256:[a-f0-9]{64}$/.test(image ?? '')) throw new Error('A local image ID is required');
   return { url, source, image };
 }
-export async function journey(config, browserType = chromium, assertion = expect) {
+export async function journey(config, browserType, assertion) {
   return runJourney(validate(config), browserType, assertion);
 }
-export async function journeyLocal(config, browserType = chromium, assertion = expect, observe) {
+export async function journeyLocal(config, browserType, assertion, observe) {
   return runJourney(validateLocal(config), browserType, assertion, observe);
 }
 async function runJourney({ url, source, image }, browserType, assertion, observe) {
+  if (browserType === undefined || assertion === undefined) {
+    const playwright = await import('@playwright/test');
+    if (browserType === undefined) browserType = playwright.chromium;
+    if (assertion === undefined) assertion = playwright.expect;
+  }
   const note = (stage, expected, actual = 'failed') => { if (observe) observe({ stage, expected, actual }); };
   const amount = async (stage, value, locator, check) => {
     try { await check(); } catch (error) {

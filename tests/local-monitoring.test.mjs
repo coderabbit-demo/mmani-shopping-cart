@@ -150,3 +150,61 @@ test('Agent initializes the pinned image configuration before core-only exec and
     assert.equal(await readFile(marker, 'utf8'), 'init\ncore run 1\n');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('telemetry CLI emits all three service checks without loading Playwright', { timeout: 15000 }, async () => {
+  const { mkdtemp, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createSocket } = await import('node:dgram');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { fileURLToPath } = await import('node:url');
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-telemetry-')));
+  const collector = createSocket('udp4');
+  try {
+    const loader = join(dir, 'block-browser.mjs'), preload = join(dir, 'local-udp.mjs');
+    await writeFile(loader, `export async function resolve(specifier, context, next) {
+      if (specifier === '@playwright/test') return { url: 'data:text/javascript,export const chromium = {}; export const expect = () => {}; throw new Error("browser was loaded")', shortCircuit: true };
+      return next(specifier, context);
+    }`);
+    await writeFile(preload, `import dgram from 'node:dgram'; import { syncBuiltinESMExports } from 'node:module';
+      const create = dgram.createSocket;
+      dgram.createSocket = (...args) => { const socket = create(...args), send = socket.send.bind(socket);
+        socket.send = (bytes, port, host, callback) => {
+          if (port !== 8125 || host !== 'agent') throw new Error('unexpected destination');
+          socket.send = send;
+          return send(bytes, Number(process.env.FIXTURE_PORT), '127.0.0.1', callback);
+        }; return socket;
+      }; syncBuiltinESMExports();`);
+    await new Promise((resolve, reject) => { collector.once('error', reject); collector.bind(0, '127.0.0.1', resolve); });
+    const packets = [];
+    collector.on('message', value => packets.push(value.toString()));
+    const node = promisify(execFile);
+    const script = fileURLToPath(new URL('../deploy/local-checker.mjs', import.meta.url));
+    const detail = { source: 'a'.repeat(40), image_id: `sha256:${'b'.repeat(64)}`, stage: 'checkout_total', expected: '$97', actual: '$96' };
+    const requests = [['availability', '0'], ['checkout', '2', JSON.stringify(detail)], ['heartbeat', '0']];
+    const results = await Promise.allSettled(requests.map(args => node(process.execPath, ['--no-warnings', '--experimental-loader', loader, '--import', preload, script, '--emit', ...args], { env: { PATH: process.env.PATH, FIXTURE_PORT: String(collector.address().port) }, timeout: 10000 })));
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+    if (packets.length < 3) await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { collector.off('message', check); reject(new Error('missing datagrams')); }, 2000);
+      const check = () => { if (packets.length === 3) { clearTimeout(timer); collector.off('message', check); resolve(); } };
+      collector.on('message', check);
+    });
+    assert.deepEqual(packets.sort(), [datagram('availability', 0).toString(), datagram('checkout', 2, detail).toString(), datagram('heartbeat', 0).toString()].sort());
+  } finally { collector.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('only the journey checker uses one CPU while retaining bounded sandbox settings', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  const service = name => new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][\\w-]*:|^networks:)`, 'm').exec(yaml)?.[1];
+  const checker = service('checker'), runner = service('runner');
+  assert.ok(checker && runner);
+  assert.match(checker, /^    cpus: 1\.0$/m);
+  assert.match(runner, /^    cpus: 0\.5$/m);
+  assert.match(checker, /^    mem_limit: 512m$/m);
+  assert.match(checker, /^    shm_size: 512m$/m);
+  assert.match(checker, /^    cap_drop: \[ALL\]$/m);
+  assert.match(checker, /^      - no-new-privileges:true$/m);
+  assert.match(checker, /^      - seccomp=\$\{LOCAL_SECCOMP_PROFILE:\?required\}$/m);
+});

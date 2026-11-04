@@ -58,7 +58,7 @@ services:
       SOURCE_COMMIT: ${SOURCE_COMMIT:?required}
       APP_IMAGE_ID: ${LOCAL_APP_IMAGE_ID:?required}
     mem_limit: 512m
-    cpus: 0.5
+    cpus: 1.0
     shm_size: 512m
     security_opt:
       - no-new-privileges:true
