@@ -355,7 +355,7 @@ setInterval(()=>{},1000);
 test('command removes signal listeners after success, exit failure, spawn failure and timeout', async () => {
   const counts = () => ['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal));
   const before = counts();
-  assert.match(await command('git', ['rev-parse', '--show-toplevel']), /mmani-shopping-cart/);
+  assert.equal(await realpath((await command('git', ['rev-parse', '--show-toplevel'])).trim()), await realpath(new URL('..', import.meta.url)));
   assert.deepEqual(counts(), before);
   await assert.rejects(command('git', ['not-a-command']));
   assert.deepEqual(counts(), before);
@@ -444,10 +444,10 @@ declare -a rules=()
 iptables() {
  local operation=$1 chain=$2; shift 2
  if [ "$operation" = -nL ]; then return 0; fi
- if [ "$operation" = -I ]; then shift; rules=("$chain $*" "\${rules[@]}"); return; fi
+ if [ "$operation" = -I ]; then shift; rules=("$chain $*" \${rules[@]+"\${rules[@]}"}); return; fi
  if [ "$operation" = -C ]; then
   local candidate
-  for candidate in "\${rules[@]}"; do [ "$candidate" != "$chain $*" ] || return 0; done
+  for candidate in \${rules[@]+"\${rules[@]}"}; do [ "$candidate" != "$chain $*" ] || return 0; done
   return 1
  fi
  return 1
