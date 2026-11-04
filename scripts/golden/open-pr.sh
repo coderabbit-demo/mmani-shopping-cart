@@ -6,7 +6,7 @@ usage() {
 Usage: open-pr.sh <branch> <brief-file> <results-file>
 Create a PR against main or update an open PR for the branch, then request
 @coderabbitai test once per PR. The brief must be under docs/briefs/.
-Requires authenticated gh, Git, Node >=22.6.0, and Bash >=3.2.
+Requires authenticated gh, Git, Node >=22.6.0, Bash >=3.2, and dependencies installed with npm ci.
 After every operation succeeds, print the PR URL as the last stdout line.
 HELP
 }
@@ -38,6 +38,7 @@ tmp=$(mktemp -d)
 node --input-type=module - "$1" "$2" "$3" "$tmp" <<'JS'
 import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
 const [branch, briefFile, resultsFile, directory] = process.argv.slice(2);
@@ -92,15 +93,87 @@ try {
   const title = heading?.match(/`([^`\r\n]+)`/)?.[1];
   const issues = [...brief.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)];
   if (!title?.trim() || issues.length !== 1) fail('Brief must contain a backticked title in its first # heading and one valid **Jira:** field');
+  let Parser;
+  try {
+    ({ Parser } = createRequire(join(repoRoot, 'package.json'))('commonmark'));
+    if (typeof Parser !== 'function') throw new Error();
+  } catch {
+    fail('CommonMark parser unavailable; run npm ci in the repository.');
+  }
+  const parser = new Parser();
+  const document = parser.parse(brief);
+  const lineStarts = [0];
+  for (const match of brief.matchAll(/\r\n|\r|\n/g)) lineStarts.push(match.index + match[0].length);
+  const blocks = [];
+  const walker = document.walker();
+  let event;
+  while ((event = walker.next())) {
+    if (event.entering && ['code_block', 'html_block', 'paragraph', 'heading'].includes(event.node.type)) blocks.push(event.node);
+  }
+  let marker = 'CommonmarkInlineCodeProbe';
+  while (brief.includes(marker)) marker += 'X';
+  function isInlineCode(offset) {
+    const tagged = brief.slice(0, offset) + marker + brief.slice(offset);
+    const probe = parser.parse(tagged).walker();
+    let item;
+    while ((item = probe.next())) {
+      if (item.entering && item.node.type === 'code' && item.node.literal.includes(marker)) return true;
+    }
+    return false;
+  }
+  function maskInlineCode(text, offset) {
+    let masked = '';
+    let cursor = 0;
+    let search = 0;
+    while (search < text.length) {
+      const start = text.indexOf('`', search);
+      if (start < 0) break;
+      let slashes = 0;
+      while (start - slashes - 1 >= 0 && text[start - slashes - 1] === '\\') slashes++;
+      if (slashes % 2) { search = start + 1; continue; }
+      let end = start;
+      while (text[end] === '`') end++;
+      const length = end - start;
+      let close = end;
+      let closeEnd;
+      while ((close = text.indexOf('`', close)) !== -1) {
+        closeEnd = close;
+        while (text[closeEnd] === '`') closeEnd++;
+        if (closeEnd - close === length) break;
+        close = closeEnd;
+      }
+      if (close === -1) { search = end; continue; }
+      if (!isInlineCode(offset + end)) { search = end; continue; }
+      masked += text.slice(cursor, start) + text.slice(start, closeEnd).replace(/[^\n]/g, ' ');
+      cursor = closeEnd;
+      search = closeEnd;
+    }
+    return masked + text.slice(cursor);
+  }
+  let metadata = brief;
+  for (const block of blocks) {
+    const [[startLine, startColumn], [endLine, endColumn]] = block.sourcepos;
+    const start = lineStarts[startLine - 1] + (block.type === 'code_block' ? 0 : startColumn - 1);
+    const end = block.type === 'code_block' ? (lineStarts[endLine] ?? brief.length) : lineStarts[endLine - 1] + endColumn;
+    const text = metadata.slice(start, end);
+    const masked = ['code_block', 'html_block'].includes(block.type) ? text.replace(/[^\r\n]/g, ' ') : maskInlineCode(text, start);
+    metadata = metadata.slice(0, start) + masked + metadata.slice(end);
+  }
+  const githubFields = [...metadata.matchAll(/(?:^|[ \t])\*\*GitHub:\*\*[ \t]*([^\r\n]*)/gm)];
+  if (githubFields.length > 1) fail('Brief must contain at most one GitHub field');
+  const githubUrl = githubFields[0]?.[1].trim();
+  const githubMatch = githubUrl?.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/([1-9][0-9]*)$/);
+  if (githubFields.length && !githubMatch) fail('Invalid GitHub issue field');
   const results = readFileSync(resultsFile);
   const repo = json(gh('repo', 'view', '--json', 'nameWithOwner,url'));
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo?.nameWithOwner) ||
       typeof repo.url !== 'string' || !repo.url.startsWith('https://')) fail('Invalid repository returned by gh');
+  if (githubMatch && githubMatch[1].toLowerCase() !== repo.nameWithOwner.toLowerCase()) fail('GitHub issue must belong to the current repository');
   const encodeLink = (part) => encodeURIComponent(part).replaceAll('(', '%28').replaceAll(')', '%29');
   const briefLink = `${repo.url}/blob/${encodeLink(branch)}/${relative(repoRoot, briefPath).split(sep).map(encodeLink).join('/')}`;
   const bodyFile = join(directory, 'body.md');
   writeFileSync(bodyFile, Buffer.concat([
-    Buffer.from(`Jira: ${issues[0][1]}\n\n[Brief](${briefLink})\n\n`),
+    Buffer.from(`${githubUrl ? `Fixes ${githubUrl}\n` : ''}Jira: ${issues[0][1]}\n\n[Brief](${briefLink})\n\n`),
     results,
     Buffer.from('\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n'),
   ]));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -391,6 +391,7 @@ test("strict gate rejects absent or revoked approval and skipped checks", (t) =>
 
 function openPrFixture(t) {
   const directory = fixture(t);
+  symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(directory, "node_modules"), "dir");
   const brief = "docs/briefs/step with spaces.md";
   const results = "results with spaces.md";
   const title = "chore: automatic PR opening";
@@ -448,13 +449,14 @@ process.stdout.write(typeof result === 'string' ? result + '\\n' : JSON.stringif
   chmodSync(join(directory, "bin/gh"), 0o755);
   return {
     directory, brief, results, title, source, report, data,
-    run(args = ["feature/sc-3", brief, results], script = join(scripts, "open-pr.sh")) {
+    run(args = ["feature/sc-3", brief, results], script = join(scripts, "open-pr.sh"), extraEnv = {}) {
       writeFileSync(stateFile, JSON.stringify(data));
       const result = command(directory, "bash", [script, ...args], {
         ...gitEnv,
         PATH: `${join(directory, "bin")}:${process.env.PATH}`,
         OPEN_PR_FIXTURE: stateFile,
         TMPDIR: directory,
+        ...extraEnv,
       });
       Object.assign(data, JSON.parse(readFileSync(stateFile, "utf8")));
       return result;
@@ -775,4 +777,262 @@ test("strict gate help documents the neutral exception only for CodeRabbit Secur
   assert.equal(result.stderr, "");
   assert.match(result.stdout, /CodeRabbit Security also accepts neutral/);
   assert.match(result.stdout, /All other checks require success/);
+});
+
+test("open-pr uses the optional GitHub issue in create and update bodies", (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}**GitHub:** https://github.com/fixture/repo/issues/11\n**Parent tracker:** https://github.com/fixture/repo/issues/10\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
+  assert.equal(f.data.body.includes("Fixes https://github.com/fixture/repo/issues/10"), false);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
+  assert.equal(f.data.calls.filter((args) => args[1] === "create").length, 1);
+  assert.equal(f.data.calls.filter((args) => args[1] === "comment").length, 1);
+  assert.ok(f.data.body.includes(f.report));
+});
+
+for (const [name, field] of [
+  ["empty", "**GitHub:**"],
+  ["duplicate", "**GitHub:** https://github.com/fixture/repo/issues/11\n**GitHub:** https://github.com/fixture/repo/issues/12"],
+  ["cross repository", "**GitHub:** https://github.com/other/repo/issues/11"],
+  ["zero", "**GitHub:** https://github.com/fixture/repo/issues/0"],
+  ["query", "**GitHub:** https://github.com/fixture/repo/issues/11?x=1"],
+  ["fragment", "**GitHub:** https://github.com/fixture/repo/issues/11#x"],
+  ["extra path", "**GitHub:** https://github.com/fixture/repo/issues/11/extra"],
+  ["host", "**GitHub:** https://github.com.evil.invalid/fixture/repo/issues/11"],
+]) {
+  test(`open-pr rejects ${name} GitHub metadata before mutation`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}${field}\n`);
+    const result = f.run();
+    assertOpenFailed(result, /GitHub/);
+    assert.equal(f.data.calls.some((args) => args[0] === 'pr' && ['create', 'edit', 'comment'].includes(args[1])), false);
+  });
+}
+
+test("open-pr recognizes inline metadata and ignores code examples", (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source.trim()} **GitHub:** https://github.com/fixture/repo/issues/11\n\nReference \`**GitHub:**\` here.\n\`\`\`text\n**GitHub:** https://github.com/other/repo/issues/2\n\`\`\`\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
+});
+
+test("open-pr handles the approved brief layout without treating the parent or prose as metadata", (t) => {
+  const f = openPrFixture(t);
+  const source = [
+    '# Brief 07 — `chore: demo preflight and incident handoff`',
+    '',
+    '**Mode:** Brownfield, operational tooling and documentation. **Jira:** SC-35',
+    '**GitHub:** https://github.com/fixture/repo/issues/11',
+    '**Parent tracker:** https://github.com/fixture/repo/issues/10',
+    '**Status:** Approved by Mahesh.',
+    '',
+    '## GitHub issue linkage in the PR helper',
+    'Extend `scripts/golden/open-pr.sh` to recognize one optional `**GitHub:**` issue URL in a brief.',
+    '',
+    '```text',
+    'Fixes https://github.com/fixture/repo/issues/11',
+    'Jira: SC-35',
+    '```',
+    '',
+  ].join('\n');
+  write(f.directory, f.brief, source);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-35\n'));
+  assert.equal(f.data.body.includes('Fixes https://github.com/fixture/repo/issues/10'), false);
+});
+
+for (const [name, fenced] of [
+  ['shorter backticks', '````markdown\n```\n**GitHub:** https://github.com/other/repo/issues/9\n```\n````'],
+  ['shorter tildes', '~~~~markdown\n~~~\n**GitHub:** https://github.com/other/repo/issues/9\n~~~\n~~~~'],
+  ['mixed fence characters', '````markdown\n~~~\n**GitHub:** https://github.com/other/repo/issues/9\n~~~\n````'],
+  ['closing fence with trailing text', '````markdown\n````not-a-close\n**GitHub:** https://github.com/other/repo/issues/9\n````'],
+]) {
+  test(`regression: open-pr ignores metadata inside ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}**GitHub:** https://github.com/fixture/repo/issues/11\n\n${fenced}\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+  });
+}
+
+test('regression: open-pr accepts metadata after the matching longer fence closes', (t) => {
+  const f = openPrFixture(t);
+  const content = '  ````markdown\n~~~\n**GitHub:** https://github.com/other/repo/issues/9\n````not-a-close\n**GitHub:** https://github.com/other/repo/issues/10\n  ````` \t\n**GitHub:** https://github.com/fixture/repo/issues/11\n';
+  write(f.directory, f.brief, `${f.source}\n${content}`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+test('regression: open-pr keeps legacy Jira-first body when GitHub appears only in a fence', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\n~~~~markdown\n\`\`\`\n**GitHub:** https://github.com/fixture/repo/issues/11\n\`\`\`\n~~~~\n`);
+  assertOpened(f.run());
+  assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+});
+
+for (const [name, example] of [
+  ['double backticks', 'Example ``**GitHub:** https://github.com/fixture/repo/issues/11``'],
+  ['longer delimiters with shorter runs inside', 'Example ````one ` two `` three ``` **GitHub:** https://github.com/fixture/repo/issues/11````'],
+  ['multiline span', 'Example ``first\n**GitHub:** https://github.com/fixture/repo/issues/11\nlast``'],
+]) {
+  test(`regression: open-pr keeps legacy body for ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  });
+}
+
+test('regression: open-pr accepts real metadata alongside a multiple-backtick example', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, f.source + '\nExample ``**GitHub:** https://github.com/other/repo/issues/2``\n**GitHub:** https://github.com/fixture/repo/issues/11\n');
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+test('regression: unmatched and escaped backticks do not hide real metadata', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, f.source + '\nUnmatched ``\nEscaped \\`\n**GitHub:** https://github.com/fixture/repo/issues/11\n');
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+test('regression: a different-length run cannot close a code span', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, f.source + '\nExample ``one ``` **GitHub:** https://github.com/other/repo/issues/2 ``\n**GitHub:** https://github.com/fixture/repo/issues/11\n');
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+for (const [name, example] of [
+  ['quoted tilde fence', '> ~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/11\n> ~~~'],
+  ['unclosed quoted backtick fence', '> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/11'],
+]) {
+  test(`regression: open-pr ignores ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Jira: SC-3\n'));
+    assert.doesNotMatch(f.data.body, /^Fixes /);
+  });
+}
+
+for (const [name, example] of [
+  ['quoted tilde followed by real field', '> ~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['unclosed backticks followed by unquoted field', '> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['unclosed backticks interrupt a quoted paragraph', '> Introduction\n> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['closed quoted backticks followed by real field', '> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ```\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['blank line exits quoted fence', '> ~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['nested quote exits to outer quote', '> > ~~~text\n> > **GitHub:** https://github.com/fixture/repo/issues/9\n> **GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['deeper quote cannot close fence', '> ~~~~text\n> > ~~~~\n> ~~~\n> ```\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ~~~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['quoted blank remains in fence', '> ~~~text\n>\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['unquoted fence cannot close in quote', '~~~text\n> ~~~\n**GitHub:** https://github.com/fixture/repo/issues/9\n~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+]) {
+  test(`regression: open-pr handles ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+  });
+}
+
+for (const [name, example] of [
+  ['tab-indented quoted fence', '> \t~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/11\n> ~~~'],
+  ['quoted list fence', '> - ~~~text\n>   **GitHub:** https://github.com/fixture/repo/issues/11\n>   ~~~'],
+]) {
+  test(`regression: open-pr ignores same-repository metadata inside a ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  });
+
+  test(`regression: open-pr accepts metadata after exiting a ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+  });
+}
+
+for (const [name, example] of [
+  ['indented code block', '    **GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['nested list and quote fence', '- > ~~~text\n  > **GitHub:** https://github.com/fixture/repo/issues/11\n  > ~~~'],
+  ['quoted multiline code span', '> ``example\n> **GitHub:** https://github.com/fixture/repo/issues/11\n> end``'],
+  ['list code span', '- ``**GitHub:** https://github.com/fixture/repo/issues/11``'],
+]) {
+  test(`regression: open-pr ignores metadata in a ${name} before a real field`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+  });
+}
+
+test('regression: open-pr scopes inline code to parsed text blocks', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\nUnmatched \`\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});
+
+test('regression: open-pr does not treat a backtick in an HTML attribute as an inline code delimiter', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\n<span title="\`">text</span> \`example\` **GitHub:** https://github.com/fixture/repo/issues/12\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});
+
+test('regression: open-pr ignores an inline code span after a real field', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}\n**GitHub:** https://github.com/fixture/repo/issues/12 \`example\`\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+});
+
+for (const [name, example] of [
+  ['HTML pre block', '<pre>\n**GitHub:** https://github.com/fixture/repo/issues/9\n</pre>'],
+  ['HTML comment block', '<!--\n**GitHub:** https://github.com/fixture/repo/issues/9\n-->'],
+]) {
+  test(`regression: open-pr keeps the legacy body for an ${name} example`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  });
+
+  test(`regression: open-pr accepts a real field after an ${name} example`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n\n**GitHub:** https://github.com/fixture/repo/issues/12\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/12\nJira: SC-3\n'));
+  });
+}
+
+for (const [name, field] of [
+  ['legacy Jira-only', ''],
+  ['GitHub-linked', '**GitHub:** https://github.com/fixture/repo/issues/11\n'],
+]) {
+  test(`open-pr reports missing parser installation for ${name} briefs before gh calls`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, f.source + field);
+    unlinkSync(join(f.directory, 'node_modules'));
+    const result = f.run(undefined, undefined, { DD_API_KEY: 'synthetic-parser-secret' });
+    assertOpenFailed(result, /npm ci/);
+    assert.equal(result.stderr, 'FAIL: CommonMark parser unavailable; run npm ci in the repository.\n');
+    assert.doesNotMatch(result.stderr, /synthetic-parser-secret/);
+    assert.deepEqual(f.data.calls, []);
+  });
+}
+
+test('open-pr help works without the parser dependency', (t) => {
+  const f = openPrFixture(t);
+  unlinkSync(join(f.directory, 'node_modules'));
+  const result = f.run(['--help']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /npm ci/);
+  assert.equal(result.stderr, '');
+  assert.deepEqual(f.data.calls, []);
 });
