@@ -1,6 +1,6 @@
 # Brief 09 — local Docker monitoring and controlled demo
 
-**Status:** Draft for Mahesh's approval of this brief and the CodeRabbit author plan. The request selects local Docker as the next runtime and authorizes preparation and credential validation. It does not approve an unseen implementation plan. No product implementation or live monitor/automation change has been performed for this brief.
+**Status:** Approved by Mahesh on 2026-11-04. Approval covers the 15-path brief at `53b25cf`, CodeRabbit task 0366976d's original and corrected author plans, and continuation of implementation in that same task. It includes local Docker validation and explicit notification-free creation/readback of the three owned US3 monitors after offline validation. Live notification/automation activation, incident rehearsal, GCP work and merge remain separate approvals. No new dependency, provider, runtime or image-version change is authorized.
 
 **Parent:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
 **GitHub child:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/15
@@ -90,7 +90,7 @@ QA Agent tests the exact PR revision in its prepared environment. Separately val
 - Actual Agent intake and live US3 monitor validation/readback require authorized local credentials. Notification-free monitor application is a distinct operator command after implementation approval and offline validation; retain IDs, queries, tags and status evidence. No live alert/automation rehearsal before its explicit activation gate and scope review.
 - This phase completes when the local healthy stack, recurring telemetry and three strictly scoped, operator-controllable monitors are verified; exact-head CodeRabbit PR/security/CI and conclusive relevant QA Agent results are retained. Unavailable live evidence stays pending and is not a pass. No new npm/provider/image/runtime dependency, product behavior change or cloud deployment is part of completion.
 
-## Proposed file scope (15 paths)
+## Approved file scope (15 paths)
 
 ```text
 ALLOW: docs/briefs/09-local-docker-monitoring.md
@@ -124,8 +124,8 @@ No dependency change is proposed. Do not change package.json, package-lock.json,
 
 ## Plan and delivery checkpoint
 
-Return a plan without implementation. Confirm the 15 paths suffice, propose exact monitor/check names and transport, show the local secret/collection boundaries and controller lifecycle, identify any unresolved platform/API limits and describe tests. Do not start a CLI review during a plan-only turn. After Mahesh approves this brief and that concrete author plan, continue implementation in the same normal task. Do not auto-enable Autofix.
+The plan-only checkpoint is complete and Mahesh approved the brief and concrete author plan. Continue implementation in the same normal task. Keep Autofix off and preserve all boundaries above.
 
-CodeRabbit task [0366976d-e1c9-40a3-bfdd-dd2ac3b61e8a](https://app.coderabbit.ai/code/tasks/0366976d-e1c9-40a3-bfdd-dd2ac3b61e8a) completed its original plan and corrected plan-only turn with no file changes. It confirmed the 15 paths suffice and clarified exact local transport/timing/identity, accepted query shape and pre-established suppression without relying on draft preview. These concrete choices are incorporated above for Mahesh's checkpoint. Exactly zero CLI reviews are completed for this task so far; its one-review requirement begins when implementation is authorized.
+CodeRabbit task [0366976d-e1c9-40a3-bfdd-dd2ac3b61e8a](https://app.coderabbit.ai/code/tasks/0366976d-e1c9-40a3-bfdd-dd2ac3b61e8a) completed its original plan and corrected plan-only turn with no file changes. It confirmed the 15 paths suffice and clarified exact local transport/timing/identity, accepted query shape and pre-established suppression without relying on draft preview. Mahesh approved these choices in this chat on 2026-11-04. Exactly zero CLI reviews are completed for this task so far; require its single completed review during implementation, with Mac fallback only if no in-task review completes.
 
 After implementation and applicable checks, open a PR with first line `Fixes https://github.com/coderabbit-demo/mmani-shopping-cart/issues/15` and `Jira: SC-37`, preserving all strict gates. Request native QA Agent Verify, record exact tested source/results, and report live local telemetry/monitor evidence separately. No merge is authorized by this brief.
