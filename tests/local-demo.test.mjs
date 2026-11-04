@@ -310,10 +310,10 @@ test('successful command terminates a descendant with detached stdio', { timeout
 
 test('isolated Docker plugin links expose only verified Desktop executables before a build journal', async () => {
   const { prepareDockerPlugins, prepareBuild, guardedBuild } = await import('../scripts/demo/local.mjs');
-  const { mkdtemp, mkdir, writeFile, symlink, readlink, rm } = await import('node:fs/promises');
+  const { mkdtemp, mkdir, writeFile, symlink, readlink, realpath, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const base = await mkdtemp(join(tmpdir(), 'deskdrop-plugins-'));
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-plugins-')));
   const home = join(base, 'home'), appDir = join(base, 'Docker.app'), state = join(base, 'state');
   try {
     await mkdir(join(home, '.docker', 'cli-plugins'), { recursive: true });
@@ -329,6 +329,8 @@ test('isolated Docker plugin links expose only verified Desktop executables befo
     assert.equal(calls[0].env.DOCKER_CONFIG, join(state, 'docker-config'));
     assert.equal(calls[0].env.DD_API_KEY, undefined);
     assert.equal(await readlink(join(state, 'docker-config', 'cli-plugins', 'docker-buildx')), join(appDir, 'docker-buildx'));
+    await symlink(base, join(base, 'alias'));
+    await assert.rejects(prepareBuild({ directory: join(base, 'alias', 'state'), socket: async () => '/desktop.sock', run: async () => { throw new Error('unexpected Docker call'); } }), /Unsafe local runtime directory/);
     let journal = false;
     await assert.rejects(guardedBuild({ prepare: async () => { throw new Error('plugin missing'); }, operation: async () => { journal = true; } }), /plugin missing/);
     assert.equal(journal, false);
@@ -346,10 +348,10 @@ test('isolated Docker plugin links expose only verified Desktop executables befo
 test('owned journey failure is read before removal and relayed with validated evidence', async () => {
   const { journeySupervisor, superviseForeground, controlRequest } = await import('../scripts/demo/local.mjs');
   const { datagram, runLocalJourney } = await import('../deploy/local-checker.mjs');
-  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { mkdtemp, realpath, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const dir = await mkdtemp(join(tmpdir(), 'deskdrop-evidence-'));
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-evidence-')));
   const id = 'd'.repeat(64), relayId = 'e'.repeat(64), commit = 'a'.repeat(40), app = `sha256:${'b'.repeat(64)}`, checker = `sha256:${'c'.repeat(64)}`;
   const calls = []; let name, delivered;
   let record;
