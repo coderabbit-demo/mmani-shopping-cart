@@ -5,6 +5,8 @@
 **Parent tracker:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
 **Status:** Approved by Mahesh on 2026-11-03. Implement the amended CodeRabbit plan within this brief's scope.
 
+**Approved amendment (2026-11-03):** Mahesh approved pinned development dependency `commonmark@0.31.2` and the corresponding `package.json` / `package-lock.json` changes to replace handwritten Markdown block/container parsing in the PR helper. Preserve every existing test and assertion, add the tab/list regressions, and keep the PR below 30 files. CodeRabbit feedback only applies to this phase; omit the four additional model judges.
+
 Read `AGENTS.md`, `docs/PLAN.md`, this brief, and the linked GitHub/Jira acceptance criteria. Preserve all existing product behavior, tests, assertions and goldens. CodeRabbit Code is the implementation author; the Mac runs orchestration and verification.
 
 ## Goal
@@ -27,7 +29,7 @@ This PR does not provision infrastructure, build/publish container images, seed 
 - Existing automation: **Datadog to Slack Automation - MMANI**, https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203. It is active, uses native Datadog webhook events `monitor.alert` and `incident.triggered`, uses Workspace default agent scope, delivers to Saved DM with CodeRabbit, and has no runs. Its current generic instructions allow a PR during initial triage and do not specify the two requested buttons.
 - The native webhook wizard supplies a webhook URL and required header. Keep both out of committed examples, logs and reports. Its payload `event_type` strings are CodeRabbit-defined filters, not Datadog `$EVENT_TYPE` values.
 - Mac: arm64, Bash 3.2.57, Node 24.13.0, npm 11.6.2, gh 2.100.0, gcloud 590.0.0, Terraform 1.15.3 and CodeRabbit CLI 0.9.2. Docker Desktop has been started; daemon now reports 29.5.3. Verify builder platforms separately.
-- Existing locked npm dependencies were installed with `npm ci`; no manifest/lockfile changes or new dependencies are approved.
+- Existing locked npm dependencies were installed with `npm ci`. The approved amendment permits only exact development dependency `commonmark@0.31.2` and its necessary locked transitive dependencies (`entities`, `mdurl`, `minimist`); preserve all existing dependency versions, scripts and stack requirements. No other dependency change is approved.
 - CLI 0.9.2 supports `coderabbit auth status --agent`, `coderabbit code ls --repo . --agent`, `coderabbit code new --agent -`, and `coderabbit review --agent --committed --base-commit <sha>`. It does not support the older `--type committed` example. Start a normal coding task with a plan-only instruction; do not use `--plan` for this repository's workflow.
 - `scripts/golden/open-pr.sh` currently creates/updates a PR against `main`, writes `Jira: SC-N` first, and requests `@coderabbitai test` once. Existing tests assert that exact legacy body. Retain those assertions.
 - CI jobs are `typecheck`, `unit`, `golden`, `e2e`. PR gates also require CodeRabbit exact-head approval, security coverage and the Security Gate summary under the current `strict-gate.sh` rules.
@@ -36,7 +38,7 @@ This PR does not provision infrastructure, build/publish container images, seed 
 
 ### 1. Read-only Mac preflight
 
-Add `scripts/demo/preflight.mjs`, runnable with the existing Node runtime, with a helpful `--help` mode. No npm script/manifest change is needed.
+Add `scripts/demo/preflight.mjs`, runnable with the existing Node runtime, with a helpful `--help` mode. The preflight itself uses Node built-ins only; no npm script is needed.
 
 Use fixed, documented demo targets or validated explicit configuration; fail on conflicting repository, GCP project, CodeRabbit organization or Datadog site rather than changing configuration. Do not accept an arbitrary Datadog host that could receive credentials.
 
@@ -93,9 +95,11 @@ Use the actual metadata values, not hardcoded issue numbers. Preserve the existi
 
 Add observable cases to `tests/scripts.test.mjs` for the new create/update body behavior and rejected metadata. Preserve every existing test and assertion.
 
+Use the approved CommonMark reference parser for block/container semantics so tab-indented and list-contained fenced examples cannot become issue metadata. Keep inline-code exclusion consistent with parsed text blocks and preserve the existing raw metadata syntax, validation, error handling and legacy behavior. The dependency is tooling-only; do not import it into the application. Isolated test repositories may link the installed approved `node_modules` as fixture setup without a production test hook. The four prepared tab/list guards must fail by assertions on `70f917a` and pass with the fix; missing packages or setup errors do not count as RED.
+
 ## Scope
 
-The following allowlist is approved by the maintainer. It approves no dependency, manifest, lockfile, CI workflow or golden changes. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
+The following ten-path allowlist and explicit dependency exception are approved by the maintainer. Manifest/lockfile changes are limited to the exact CommonMark development dependency and necessary locked transitives described above. No CI workflow or golden changes are approved. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
 
 ```text
 ALLOW: docs/briefs/07-demo-preflight.md
@@ -106,6 +110,9 @@ ALLOW: docs/demo/runbook.md
 ALLOW: docs/automations/datadog-to-slack-mmani.md
 ALLOW: scripts/golden/open-pr.sh
 ALLOW: tests/scripts.test.mjs
+ALLOW: package.json
+ALLOW: package-lock.json
+ALLOW: dependency commonmark@0.31.2
 ```
 
 ## Author, review and Verify
@@ -119,6 +126,7 @@ Open a PR linked to GitHub #11 and Jira SC-35 only after pre-publication gates p
 ## Required checks and report
 
 - `npm run typecheck`, `npm test`, `npm run golden:check`, `npm run build`, and existing CI/e2e/security gates as applicable. No golden updates.
+- After the approved dependency amendment, install with `npm ci`, verify the direct dependency is pinned exactly and existing resolutions are preserved, record `npm audit`, and rerun build/e2e for the changed dependency graph.
 - Scope gate against this approved brief and the correct merge base; meaningful red/green proof for PR-helper behavior fixes. New-module tests must assert behavior and must not manufacture a red merely because a module is absent on the base.
 - Mac live preflight: report each executed result and each blocker. Missing local Datadog credentials must remain a visible blocker, even if deterministic tests pass.
 - Report changed files, test results, CLI/PR findings and dispositions, QA run/head/verdict, and the exact operator actions still needed for Phase 1's operational exit. Do not claim the automation, Jira write or end-to-end delivery has been proven by this PR alone.
