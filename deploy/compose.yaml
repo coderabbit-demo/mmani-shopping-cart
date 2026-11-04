@@ -1,0 +1,126 @@
+name: deskdrop
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    user: "1000:1000"
+    restart: unless-stopped
+    networks:
+      isolated:
+        aliases: [deskdrop.test]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  forwarder:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    user: "1000:1000"
+    read_only: true
+    restart: unless-stopped
+    depends_on: [app]
+    networks:
+      isolated: {}
+      edge:
+        gw_priority: 1
+    ports:
+      - "127.0.0.1:3000:3000"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    command:
+      - node
+      - -e
+      - |
+        const net = require('node:net');
+        const server = net.createServer(client => {
+          const upstream = net.createConnection({host:'app',port:3000});
+          const close = () => { client.destroy(); upstream.destroy(); };
+          for (const socket of [client, upstream]) {
+            socket.setTimeout(30000);
+            socket.on('timeout', close);
+            socket.on('error', close);
+          }
+          client.on('close', () => upstream.destroy());
+          upstream.on('close', () => { if (!upstream.readableEnded) client.destroy(); });
+          client.pipe(upstream).pipe(client);
+        });
+        server.maxConnections = 128;
+        server.listen(3000, '0.0.0.0');
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "1m", max-file: "2"}
+  agent:
+    image: registry.datadoghq.com/agent:7.85.0@sha256:1e45b8442dbcc297a01eb9ef61b7b909650b30e50f3dd6aa3654d89380bf5cc9
+    restart: unless-stopped
+    environment:
+      DD_SITE: us3.datadoghq.com
+      DD_API_KEY: "ENC[file@/run/deskdrop/secrets/intake]"
+      DD_SECRET_BACKEND_COMMAND: /readsecret_multiple_providers.sh
+      DD_APM_ENABLED: "false"
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "false"
+    volumes:
+      - type: bind
+        source: ${DESKDROP_SECRET_DIR:-/run/deskdrop/secrets}
+        target: /run/deskdrop/secrets
+        read_only: true
+        bind:
+          create_host_path: false
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  checker:
+    user: "1000:1000"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
+    image: ${CHECKER_IMAGE:?CHECKER_IMAGE is required}
+    profiles: [check]
+    networks: [isolated]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    environment:
+      CHECKER_URL: http://deskdrop.test:3000
+      SOURCE_COMMIT: ${SOURCE_COMMIT:?SOURCE_COMMIT is required}
+      APP_IMAGE: ${APP_IMAGE:?APP_IMAGE is required}
+    mem_limit: 512m
+    cpus: 0.5
+    shm_size: 512m
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${CHECKER_SECCOMP_PROFILE:-/opt/deskdrop/checker-seccomp.json}
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "1m", max-file: "2"}
+networks:
+  edge:
+    driver_opts:
+      com.docker.network.bridge.name: br-deskdrop-in
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.30.244.0/24
+  isolated:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: br-deskdrop
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.30.243.0/24
