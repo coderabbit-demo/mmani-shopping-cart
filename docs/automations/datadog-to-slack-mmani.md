@@ -44,7 +44,7 @@ After separate authorization and review, the operator must REPLACE the complete 
 
 <!-- coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated-section:v1:ff5318f13c80eb37dd7657b550132d163b3c5a845cc670f9429ac344bc995747 -->
+<!-- coderabbit-ai-generated-section:v1:f4dc528073161c42129b847d786f735346de382880deb7579895f7384f13212a -->
 
 ## Capability proof and controlled rehearsal
 
@@ -63,7 +63,9 @@ Review the saved instructions, destination, scope record, native filters and but
 | Debug and Create PR alone | One SC Bug, one CodeRabbit task and one PR created or reused; the thread links all three. |
 | Ticket then Debug | The second action reuses the same SC Bug and creates or reuses one task and one PR; both replies identify the same ticket. |
 | Debug then Ticket | The second action reuses the same SC Bug; one task and one PR remain, and both replies identify the same ticket. |
-| Webhook replay and concurrent repeated clicks | For one failure episode, observe one incident identity and one SC Bug, task and PR after the relevant actions complete; all replies show the same links. Record counts and links, including in-flight and final outcomes. |
+| Webhook replay with no button | Assert that the existing triage incident and thread are reused under a proven platform contract and that no ticket, task or PR is created. If reuse is unproven, record the gap and stop rather than claim a pass. |
+| Repeated or concurrent Create Jira Ticket only | In an episode with no Debug selection, observe at most one SC Bug and zero tasks or PRs; successful responses reuse the same ticket link. |
+| Repeated or concurrent Debug and mixed-button selections | Observe exactly one shared SC Bug and at most one in-flight task and one in-flight PR. After successful authorized completion, observe exactly one task and one PR; responses show identical links for each shared artifact. Record counts and links for in-flight and final outcomes. |
 | Recovery followed by a new failure | Record recovery, then a new episode key and new incident identity; subsequent actions create or reuse artifacts for the new episode without reusing the recovered episode's identities. |
 
 Check that the Slack thread, SC Bug, task and PR cross-link their matching episode and each other, and retain the identities and links. Test permission failures, timeouts and budget exhaustion for visible status without claiming success. Prompt-only searches do not serialize concurrent actions; do not claim native atomicity without evidence. If replay or concurrent-click evidence is missing or safe reuse fails, report the integration gap and stop further rehearsal pending an approved bounded solution. Failed, unsupported or inconclusive behavior is not a pass.
