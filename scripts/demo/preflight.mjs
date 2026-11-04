@@ -91,11 +91,12 @@ export async function preflight({ run = command, http = validateKeys, env = proc
   });
   await check('coderabbit_org', 'Check the selected CodeRabbit organization.', async () => {
     const events = eventLines(await call('coderabbit', 'auth', 'org', '--agent'));
+    if (events.some((x) => x?.type === 'error' || x?.type === 'action_required')) return blocked('Confirm the active CodeRabbit organization manually.');
     const currentEvents = events.filter((x) => x && typeof x === 'object' && (x.type === 'org_list' || Object.hasOwn(x, 'currentOrg')));
     if (currentEvents.length) {
       const event = currentEvents[0];
       const current = event.currentOrg;
-      if (currentEvents.length !== 1 || events.some((x) => x?.type === 'error' || x?.type === 'action_required') || event.type !== 'org_list' || event.phase !== 'auth' ||
+      if (currentEvents.length !== 1 || event.type !== 'org_list' || event.phase !== 'auth' ||
           !current || typeof current !== 'object' || Array.isArray(current) ||
           typeof current.name !== 'string' || !current.name.trim() || current.name !== current.name.trim() ||
           !Array.isArray(event.organizations) || !event.organizations.every((x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x.name === 'string' && x.name.trim() && x.name === x.name.trim())) return blocked('Confirm the active CodeRabbit organization manually.');

@@ -128,16 +128,24 @@ try {
     paragraph = [];
   }
   for (const line of brief.split(/\r?\n/)) {
+    let content = line;
+    let depth = 0;
+    let quote;
+    while ((quote = content.match(/^ {0,3}>[ \t]?/))) {
+      content = content.slice(quote[0].length);
+      depth++;
+    }
+    if (fence && depth < fence.depth) fence = null;
     if (fence) {
-      const closing = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
-      if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
+      const closing = depth === fence.depth && content.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (closing && closing[1][0] === fence.marker[0] && closing[1].length >= fence.marker.length) fence = null;
       metadataLines.push('');
       continue;
     }
-    const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    const opening = content.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (opening && (opening[1][0] !== '`' || !opening[2].includes('`'))) {
       flushParagraph();
-      fence = opening[1];
+      fence = { marker: opening[1], depth };
       metadataLines.push('');
     } else if (/^[ \t]*$/.test(line)) {
       flushParagraph();

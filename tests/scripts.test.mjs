@@ -903,3 +903,35 @@ test('regression: a different-length run cannot close a code span', (t) => {
   assertOpened(f.run());
   assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
 });
+
+for (const [name, example] of [
+  ['quoted tilde fence', '> ~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/11\n> ~~~'],
+  ['unclosed quoted backtick fence', '> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/11'],
+]) {
+  test(`regression: open-pr ignores ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Jira: SC-3\n'));
+    assert.doesNotMatch(f.data.body, /^Fixes /);
+  });
+}
+
+for (const [name, example] of [
+  ['quoted tilde followed by real field', '> ~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['unclosed backticks followed by unquoted field', '> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['unclosed backticks interrupt a quoted paragraph', '> Introduction\n> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['closed quoted backticks followed by real field', '> ```text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ```\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['blank line exits quoted fence', '> ~~~text\n> **GitHub:** https://github.com/fixture/repo/issues/9\n\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['nested quote exits to outer quote', '> > ~~~text\n> > **GitHub:** https://github.com/fixture/repo/issues/9\n> **GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['deeper quote cannot close fence', '> ~~~~text\n> > ~~~~\n> ~~~\n> ```\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ~~~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['quoted blank remains in fence', '> ~~~text\n>\n> **GitHub:** https://github.com/fixture/repo/issues/9\n> ~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+  ['unquoted fence cannot close in quote', '~~~text\n> ~~~\n**GitHub:** https://github.com/fixture/repo/issues/9\n~~~\n**GitHub:** https://github.com/fixture/repo/issues/11'],
+]) {
+  test(`regression: open-pr handles ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+  });
+}

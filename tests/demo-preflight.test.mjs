@@ -201,6 +201,39 @@ test('regression: observed CodeRabbit currentOrg enables repository access', asy
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(marker));
 });
 
+for (const type of ['error', 'action_required']) {
+  for (const order of ['before', 'after']) {
+    test(`regression: legacy organization stream blocks ${type} ${order} selection`, async () => {
+      const f = fixture();
+      const selected = { organizations: [{ name: 'coderabbit-demo', selected: true }] };
+      const rejection = { type, message: marker };
+      const events = order === 'before' ? [rejection, selected] : [selected, rejection];
+      f.replies.set('coderabbit auth org --agent', events.map(JSON.stringify).join('\n'));
+      const summary = await run(f);
+      assert.equal(summary.checks.coderabbit_org.status, 'blocked');
+      assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+      assert.equal(summary.exitCode, 1);
+      assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), false);
+      assert.doesNotMatch(JSON.stringify(summary), new RegExp(marker));
+    });
+  }
+}
+
+test('regression: currentOrg streams also reject error events in either order', async () => {
+  const selected = { type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbit-demo' }, organizations: [{ name: 'coderabbit-demo' }] };
+  for (const type of ['error', 'action_required']) {
+    for (const events of [[{ type, message: marker }, selected], [selected, { type, message: marker }]]) {
+      const f = fixture();
+      f.replies.set('coderabbit auth org --agent', events.map(JSON.stringify).join('\n'));
+      const summary = await run(f);
+      assert.equal(summary.checks.coderabbit_org.status, 'blocked');
+      assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+      assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), false);
+      assert.doesNotMatch(JSON.stringify(summary), new RegExp(marker));
+    }
+  }
+});
+
 test('regression: a different currentOrg fails and does not check repository access', async () => {
   const f = fixture();
   f.replies.set('coderabbit auth org --agent', JSON.stringify({ type: 'org_list', phase: 'auth', currentOrg: { name: 'coderabbitai' }, organizations: [{ name: 'coderabbit-demo' }, { name: 'coderabbitai' }] }));
