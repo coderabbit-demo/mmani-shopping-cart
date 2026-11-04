@@ -1,0 +1,65 @@
+name: deskdrop
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    user: "1000:1000"
+    restart: unless-stopped
+    networks: [isolated]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    ports:
+      - "127.0.0.1:3000:3000"
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  agent:
+    image: registry.datadoghq.com/agent:7.85.0@sha256:1e45b8442dbcc297a01eb9ef61b7b909650b30e50f3dd6aa3654d89380bf5cc9
+    restart: unless-stopped
+    environment:
+      DD_SITE: us3.datadoghq.com
+      DD_API_KEY: "ENC[file@/run/deskdrop/intake]"
+      DD_SECRET_BACKEND_COMMAND: /readsecret_multiple_providers.sh
+      DD_APM_ENABLED: "false"
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "false"
+    volumes:
+      - /run/deskdrop/intake:/run/deskdrop/intake:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  checker:
+    image: ${CHECKER_IMAGE:?CHECKER_IMAGE is required}
+    profiles: [check]
+    networks: [isolated]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    environment:
+      CHECKER_URL: http://app:3000
+      SOURCE_COMMIT: ${SOURCE_COMMIT:?SOURCE_COMMIT is required}
+      APP_IMAGE: ${APP_IMAGE:?APP_IMAGE is required}
+    mem_limit: 512m
+    cpus: 0.5
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "1m", max-file: "2"}
+networks:
+  isolated:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: br-deskdrop
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.30.243.0/24

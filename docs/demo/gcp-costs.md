@@ -1,0 +1,44 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+# Phase 2 cost worksheet — incomplete
+
+No price, spend limit, owner or deployment window has been approved. The operator must fill in dated prices and approve this worksheet before any apply. A budget notification does not enforce a spending cap.
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e9d8fd481ed6a2b565bc469fa004d94844d75b3747035e5ce8b0f328839a85f7 -->
+
+As observed 2026-11-04, USD, before taxes or account-specific discounts. Figures are nonbinding and must be rechecked for the account and intended duration.
+
+| Item | Quantity for estimate | Rate and cost |
+| --- | --- | --- |
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e1060cd7d7048f0b98e50cfa24764c2bce6d6e65f8a5ceea7b6cc6311e1f63ad -->
+
+| Compute Engine e2-standard-2, us-central1-a | One VM × planned hours | [Iowa on-demand rate](https://cloud.google.com/products/compute/pricing/general-purpose#e2-machine-types) $0.06701142 per hour: approximately $48.92 for 730 hours. |
+
+<!-- /coderabbit-ai-generated:v1 -->
+| Balanced persistent boot disk | 30 GiB | Google lists $0.000136986 per GiB-hour for balanced provisioned space in its default pricing table; approximately $3.00 per 730-hour month. Confirm the region before apply. |
+| Cloud NAT gateway | One VM × planned hours | $0.0014 per VM-hour for up to 32 VMs: $1.022 for 730 hours. |
+| Cloud NAT external IP | One × planned hours | $0.005 per IP-hour: $3.65 for 730 hours. |
+| Cloud NAT processing | Inbound and outbound GiB | $0.045 per GiB. |
+| Artifact Registry | Stored GiB and transfer | Variable; confirm regional rates and free-tier eligibility. |
+| GCS state | Current and versioned objects and operations | Variable; confirm regional storage, operation and retention rates. |
+| Logging and data transfer | Ingested and retained volume, egress | Variable; confirm account tier and regional rates. |
+| Secret Manager | Secret versions and access operations | Variable; confirm access and active-version rates. |
+| Datadog US3 and CodeRabbit | Account usage | Account-specific; confirm applicable contracts and usage. |
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:25eadf575a72aaedc5150ef4bbedacfd4071a47b3c19cfd730f13ba715329985 -->
+
+Illustrative subtotal for 730 hours is approximately $56.59 for the VM, 30 GiB disk, NAT gateway and one NAT IP. It excludes NAT data, registry, state, logging, Secret Manager, data transfer, Datadog, CodeRabbit, taxes and account discounts. Actual charges can differ.
+
+Record the source date, applicable pricing tier, estimated hours and traffic, total, contingency, owner, rehearsal period, teardown deadline and approved spend limit.
+
+<!-- /coderabbit-ai-generated:v1 --> State versions and other retained resources may continue to accrue charges after demo teardown. Estimate and verify all applicable taxes and variable charges separately.
+
+Primary sources: [Compute pricing](https://cloud.google.com/products/compute/pricing), [disk pricing](https://cloud.google.com/compute/disks-image-pricing), [Cloud NAT pricing](https://cloud.google.com/nat/pricing), [Artifact Registry pricing](https://cloud.google.com/artifact-registry/pricing), [Cloud Storage pricing](https://cloud.google.com/storage/pricing), [Cloud Logging pricing](https://cloud.google.com/stackdriver/pricing), [Secret Manager pricing](https://cloud.google.com/secret-manager/pricing), [Datadog pricing](https://www.datadoghq.com/pricing/) and [CodeRabbit pricing](https://www.coderabbit.ai/pricing).

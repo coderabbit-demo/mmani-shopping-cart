@@ -1,0 +1,5 @@
+project_id   = "se-demos-project"
+region       = "us-central1"
+zone         = "us-central1-a"
+environment  = "demo"
+image_digest = "us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:0000000000000000000000000000000000000000000000000000000000000000"
