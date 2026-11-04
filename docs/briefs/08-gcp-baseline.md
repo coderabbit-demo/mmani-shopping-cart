@@ -144,4 +144,3 @@ After approval, one completed CodeRabbit CLI review is required for this NEW cod
 CodeRabbit Code fixes validated findings within ALLOW. Verify round and whole-branch scope; preserve existing tests/assertions/goldens. PR description starts exactly Fixes https://github.com/coderabbit-demo/mmani-shopping-cart/issues/13 then Jira: SC-36. Open only after applicable prepublication checks pass. Require exact-head CodeRabbit PR approval/security, all checks and strict gate; request QA Agent Verify and retain its actual tested revision/results. Tooling fixtures do not prove deployed behavior or live IAM. No stale/inconclusive/error result counts as passed Verify.
 
 Report changes and limitations, dependency/source pins, all validation evidence, CLI/PR dispositions, QA run/head/verdict, estimated costs, outstanding permissions/credential/runtime gates and the exact next human actions. No merge/apply/publish/deploy implied by a ready patch.
-
