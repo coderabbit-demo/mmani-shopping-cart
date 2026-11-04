@@ -869,3 +869,37 @@ test('regression: open-pr keeps legacy Jira-first body when GitHub appears only 
   assertOpened(f.run());
   assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
 });
+
+for (const [name, example] of [
+  ['double backticks', 'Example ``**GitHub:** https://github.com/fixture/repo/issues/11``'],
+  ['longer delimiters with shorter runs inside', 'Example ````one ` two `` three ``` **GitHub:** https://github.com/fixture/repo/issues/11````'],
+  ['multiline span', 'Example ``first\n**GitHub:** https://github.com/fixture/repo/issues/11\nlast``'],
+]) {
+  test(`regression: open-pr keeps legacy body for ${name}`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}\n${example}\n`);
+    assertOpened(f.run());
+    assert.equal(f.data.body, `Jira: SC-3\n\n[Brief](https://github.com/fixture/repo/blob/feature%2Fsc-3/docs/briefs/step%20with%20spaces.md)\n\n${f.report}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n`);
+  });
+}
+
+test('regression: open-pr accepts real metadata alongside a multiple-backtick example', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, f.source + '\nExample ``**GitHub:** https://github.com/other/repo/issues/2``\n**GitHub:** https://github.com/fixture/repo/issues/11\n');
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+test('regression: unmatched and escaped backticks do not hide real metadata', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, f.source + '\nUnmatched ``\nEscaped \\`\n**GitHub:** https://github.com/fixture/repo/issues/11\n');
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});
+
+test('regression: a different-length run cannot close a code span', (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, f.source + '\nExample ``one ``` **GitHub:** https://github.com/other/repo/issues/2 ``\n**GitHub:** https://github.com/fixture/repo/issues/11\n');
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n'));
+});

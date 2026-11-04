@@ -122,6 +122,10 @@ test('Datadog errors, redirects, malformed JSON and exceptions never leak diagno
 test('production HTTPS adapter sends keys only to US3 and does not follow redirects', async (t) => {
   const f = fixture();
   const requests = [];
+  const location = 'https://redirect.invalid/synthetic-header-marker';
+  let output = '';
+  const stdout = t.mock.method(process.stdout, 'write', (chunk) => { output += chunk; return true; });
+  const stderr = t.mock.method(process.stderr, 'write', (chunk) => { output += chunk; return true; });
   t.mock.method(https, 'get', (url, options, callback) => {
     requests.push({ url, options });
     const request = new EventEmitter();
@@ -129,20 +133,25 @@ test('production HTTPS adapter sends keys only to US3 and does not follow redire
     process.nextTick(() => {
       const response = new EventEmitter();
       response.statusCode = 302;
+      response.headers = { location, 'x-fixture': 'synthetic-header-marker' };
       response.setEncoding = () => {};
       callback(response);
-      response.emit('data', marker);
+      response.emit('data', `synthetic-response-marker ${marker}`);
       response.emit('end');
     });
     return request;
   });
   const summary = await preflight({ run: f.run, env, nodeVersion: '24.13.0' });
+  stdout.mock.restore();
+  stderr.mock.restore();
   assert.equal(summary.checks.datadog_keys.status, 'blocked');
+  assert.equal(summary.exitCode, 1);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, 'https://api.us3.datadoghq.com/api/v2/validate_keys');
   assert.equal(requests[0].options.headers['DD-API-KEY'], env.DD_API_KEY);
   assert.equal(requests[0].options.headers['DD-APPLICATION-KEY'], env.DD_APP_KEY);
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(marker));
+  assert.doesNotMatch(JSON.stringify(summary) + output, /synthetic-response-marker|synthetic-header-marker|redirect\.invalid|synthetic-secret-marker/);
 });
 
 test('command output and process environment secrets never appear on CLI output', (t) => {

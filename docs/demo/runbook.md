@@ -42,7 +42,14 @@ The JSON output gives `pass`, `fail`, or `blocked` per automated check, safe nex
 - CodeRabbit authentication, active organization and task-list access are separate. A list operation does not prove the ability to create tasks or PRs. A saved Connected badge does not prove effective Agent access. If the CLI output cannot establish the selected organization, verify it manually and treat the automated result as blocked.
 - A Docker client is not a daemon. A running builder advertising `linux/amd64` is evidence of a build path, not proof of a successful image build. Verify a real build only during separately approved deployment work.
 - Datadog key validation proves only that US3 accepted the API/application pair. It does not prove telemetry read, monitor/webhook management, Agent intake or CodeRabbit connection permissions. Missing keys are blocked, not invalid. A 401/403 needs an authentication or authorization investigation; never record the response body.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:17556e117d8ec4501acbc7988aa829b6135a0458070cef2007d6d900e30d7f45 -->
+
 - Jira identity and SC read access are manual; record the evidence. Verify Slack membership, effective Agent scope, channel delivery, connection permissions and automation behavior separately. No channel ID or connection badge proves these capabilities.
+- Before rehearsal, separately establish and record evidence for Slack channel writes, Jira SC Bug creation, and CodeRabbit task plus GitHub PR creation using the acting identities and disposable targets. Read access, connection badges and effective scope are distinct from these capabilities. Any write check requires separate authorization; preparing this runbook runs none. See the [capability and rehearsal checklist](../automations/datadog-to-slack-mmani.md#capability-proof-and-controlled-rehearsal).
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Gates and evidence
 
@@ -50,4 +57,12 @@ For the implementation retain focused tests, typecheck, unit, golden, build and 
 
 Request CodeRabbit QA Agent Verify on the PR. Retain its URL, tested revision, scenario outcomes and browser evidence. An inconclusive or stale result is not a pass. This tooling PR's deterministic checks do not prove the live incident workflow.
 
-The separately controlled rehearsal requires explicit authorization, a synthetic event, channel delivery, SC Bug and disposable CodeRabbit task/PR, both button orders, webhook replay and concurrent clicks, failure reporting, evidence and cleanup. Do not run it as part of preflight. Provisioning, deployment and image publication belong to Phase 2 and require their own approval.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c6874e2dd8de747353f7577218f33de4cbb501ff874745695ce0534fe1aa89ef -->
+
+Before activation or rehearsal, complete and approve the [operator scope record](../automations/datadog-to-slack-mmani.md#scope-record-required-before-activation) with exact values, native event types, actual payload mappings and evidence. The intended availability, cart-journey and missing-checker cases come from the parent monitoring contract; exact deployed values and field mappings remain pending. Incomplete scope blocks activation and rehearsal.
+
+The separately controlled rehearsal requires explicit authorization. A synthetic alert must originate through the configured native Datadog webhook and reach Slack; a message injected into Slack does not prove the trigger or filters. Follow the automation checklist for expected artifacts at triage and each button, both button orders, replay, concurrent clicks, recovery and a new episode, cross-links, failure reporting and cleanup. Do not run it as part of preflight. Provisioning, deployment and image publication belong to Phase 2 and require their own approval.
+
+<!-- /coderabbit-ai-generated:v1 -->

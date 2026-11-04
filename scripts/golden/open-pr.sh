@@ -92,20 +92,62 @@ try {
   const title = heading?.match(/`([^`\r\n]+)`/)?.[1];
   const issues = [...brief.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)];
   if (!title?.trim() || issues.length !== 1) fail('Brief must contain a backticked title in its first # heading and one valid **Jira:** field');
+  function maskInlineCode(text) {
+    let masked = '';
+    let cursor = 0;
+    let search = 0;
+    while (search < text.length) {
+      const start = text.indexOf('`', search);
+      if (start < 0) break;
+      let slashes = 0;
+      while (start - slashes - 1 >= 0 && text[start - slashes - 1] === '\\') slashes++;
+      if (slashes % 2) { search = start + 1; continue; }
+      let end = start;
+      while (text[end] === '`') end++;
+      const length = end - start;
+      let close = end;
+      let closeEnd;
+      while ((close = text.indexOf('`', close)) !== -1) {
+        closeEnd = close;
+        while (text[closeEnd] === '`') closeEnd++;
+        if (closeEnd - close === length) break;
+        close = closeEnd;
+      }
+      if (close === -1) { search = end; continue; }
+      masked += text.slice(cursor, start) + text.slice(start, closeEnd).replace(/[^\n]/g, ' ');
+      cursor = closeEnd;
+      search = closeEnd;
+    }
+    return masked + text.slice(cursor);
+  }
   let fence = null;
-  const metadata = brief.split(/\r?\n/).map((line) => {
+  let paragraph = [];
+  const metadataLines = [];
+  function flushParagraph() {
+    if (paragraph.length) metadataLines.push(maskInlineCode(paragraph.join('\n')));
+    paragraph = [];
+  }
+  for (const line of brief.split(/\r?\n/)) {
     if (fence) {
       const closing = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
       if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
-      return '';
+      metadataLines.push('');
+      continue;
     }
     const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (opening && (opening[1][0] !== '`' || !opening[2].includes('`'))) {
+      flushParagraph();
       fence = opening[1];
-      return '';
+      metadataLines.push('');
+    } else if (/^[ \t]*$/.test(line)) {
+      flushParagraph();
+      metadataLines.push('');
+    } else {
+      paragraph.push(line);
     }
-    return line.replace(/`[^`]*`/g, '');
-  }).join('\n');
+  }
+  flushParagraph();
+  const metadata = metadataLines.join('\n');
   const githubFields = [...metadata.matchAll(/(?:^|[ \t])\*\*GitHub:\*\*[ \t]*([^\r\n]*)/gm)];
   if (githubFields.length > 1) fail('Brief must contain at most one GitHub field');
   const githubUrl = githubFields[0]?.[1].trim();
