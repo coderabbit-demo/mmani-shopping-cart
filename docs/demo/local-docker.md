@@ -99,7 +99,34 @@ The Mac controller separately verifies the one-shot journey container's name, pr
 
 The correction fixes the reported plugin discovery and pre-journal check, ordinary descendant leak, total API deadline, and bounded failure-observation transport in code with regression coverage. It also fixes the completed CLI review's Minor documentation finding: Mahesh approved the local runtime tags on 2026-11-04. The one reported completed review covered base `f7a859dfe151a78a71dc8d6e3c5d87385eb6c8e1` and head `3cf4606cae825dc663654ad7fa40329916d9dc20`; exact-head PR, security, CI and QA verification remain required. Mac Docker build, actual Agent intake and collection, US3 ingestion and suppression transitions remain validation gates. A separate synthetic shell probe created a new host session and survived group cleanup; its fixture was terminated. That adversarial result is a documented limit, not a containment pass or evidence of a supported production caller.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:363954a26c5ac244af85f1eefe093f1849a819d99766d79d9ada9d6c003e9ab1 -->
+
+## Reconcile a known partial monitor setup
+
+Keep the protected `monitor-plan.json` and `monitors.json` files and the initial tag downtime. Confirm complete monitor visibility, `monitors_read`, `monitors_write` and `monitors_downtime`, and any applicable editor or muter restrictions. Review the original plan's installation owner and inventory hash, the journal's `pending` value and every recorded monitor and downtime ID. Independently compare each known monitor's name, query, tags and options, and each downtime's active status, selector, scope and non-expiring notification settings in US3. Confirm that the initial tag downtime and any recorded ID downtime both match each known monitor, and inspect the remaining reserved names. Never clear a pending or unknown write by guessing or adopt an unrecorded object.
+
+From the reviewed checkout on the Mac, run the read-only inspection and compare its sanitized output with that evidence:
+
+```sh
+node scripts/demo/datadog-monitors.mjs reconcile --all-monitors-visible
+```
+
+This checks the saved plan, the complete paginated inventory against its original hash after excluding only journaled owned IDs, every known monitor and downtime, all active downtime matches, and remaining reserved names. It rejects unexpected matching downtimes, incomplete or changed inventory, unowned resources, changed definitions, pending writes and unavailable protection. The visibility flag is the operator's assertion, not a proof of account-wide visibility. Inspection does not lock or mutate resources; a concurrent operation or changed local journal causes refusal, and the next command repeats the checks under the local lock.
+
+Only after inspecting the result and confirming the evidence, explicitly continue the known partial setup:
+
+```sh
+node scripts/demo/datadog-monitors.mjs resume --all-monitors-visible
+node scripts/demo/datadog-monitors.mjs status
+```
+
+Resume creates only missing journaled monitor or ID-downtime objects, after rechecking the exact active tag guard, known ownership and inventory. It cancels only the initial tag downtime after all three ID-specific downtimes are confirmed active and matching. It does not enable notifications. Successful but not-yet-matching readbacks are checked at most four times, one second apart; each match pagination has a ten-second total deadline and each full inventory has a 30-second total deadline. A read error stops immediately. A write with an unknown outcome remains pending and is never retried automatically. The safe error class identifies missing matches, stale or incomplete inventory, ownership changes and other verification failures without printing response bodies. If any check fails or a write outcome is unknown, stop and inspect actual US3 state; do not repeat a create or edit the journal to make it pass. The limits can block large or slow inventories and do not prove absence of a propagation window.
+
 ## Control and recovery
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
 

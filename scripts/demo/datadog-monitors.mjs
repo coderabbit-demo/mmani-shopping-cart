@@ -5,6 +5,7 @@ import path from 'node:path';
 import { loadCredentials } from './local.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import https from 'node:https';
 
 export const fixedTags = Object.freeze(['service:deskdrop', 'env:local-demo', 'demo_id:mmani-shopping-cart-local', 'managed_by:deskdrop-local-controller']);
@@ -29,10 +30,14 @@ export function ownedMonitor(monitor, expected) {
   if (!Number.isSafeInteger(monitor?.id) || monitor.id <= 0 || monitor.name !== expected.name || monitor.type !== expected.type || monitor.query !== expected.query || monitor.message !== expected.message || !Array.isArray(monitor.tags) || monitor.tags.length !== expected.tags.length || !expected.tags.every(tag => monitor.tags.includes(tag)) || monitor.options?.thresholds?.critical !== 2 || monitor.options?.thresholds?.ok !== 2 || monitor.options?.notify_no_data !== expected.options.notify_no_data || (expected.options.notify_no_data && monitor.options?.no_data_timeframe !== 2)) throw new Error('Monitor ownership or configuration changed');
   return monitor.id;
 }
-export async function inventory(fetchPage, pageSize = 100) {
+export async function inventory(fetchPage, pageSize = 100, { deadlineMs = 30000, now = () => performance.now() } = {}) {
+  if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 30000) throw new Error('Invalid inventory deadline');
   const all = [], seen = new Set();
+  const end = now() + deadlineMs;
   for (let page = 0; page < 10000; page++) {
-    const items = await fetchPage(page, pageSize);
+    const remaining = Math.floor(end - now());
+    if (remaining < 1) throw new Error('Inventory read deadline exceeded');
+    const items = await fetchPage(page, pageSize, remaining);
     if (!Array.isArray(items) || items.length > pageSize) throw new Error('Incomplete inventory');
     for (const item of items) {
       if (!Number.isSafeInteger(item?.id) || seen.has(item.id)) throw new Error('Unstable inventory');
@@ -70,17 +75,20 @@ export function verifyDowntime(record, expected) {
 export function inventoryHash(all) {
   return createHash('sha256').update(JSON.stringify(all.map(({ id, name, tags, query }) => ({ id, name, tags, query })).sort((a, b) => a.id - b.id))).digest('hex');
 }
+function requireInventoryDetails(all) {
+  if (all.some(item => typeof item.name !== 'string' || !Array.isArray(item.tags) || item.tags.some(tag => typeof tag !== 'string') || typeof item.query !== 'string')) throw new Error('Incomplete monitor details');
+}
 export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 10000 }) {
   if (!apiKey || !appKey) throw new Error('Missing Datadog credentials');
   if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000) throw new Error('Invalid request deadline');
-  async function call(method, path, body) {
+  async function call(method, path, body, requestDeadline = deadlineMs) {
     if (!/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
     return new Promise((resolve, reject) => {
       let size = 0, chunks = [], finished = false, req, response;
       const fail = () => finish('Datadog request outcome unknown');
       const onData = chunk => { size += chunk.length; if (size > 1048576) finish('Datadog response invalid or outcome unknown'); else chunks.push(chunk); };
       const onEnd = () => { try { finish(false, size ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null); } catch { finish('Datadog response invalid or outcome unknown'); } };
-      const timer = setTimeout(fail, deadlineMs);
+      const timer = setTimeout(fail, requestDeadline);
       const finish = (error, value) => {
         if (finished) return;
         finished = true; clearTimeout(timer);
@@ -109,7 +117,7 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
     });
   }
   return {
-    listMonitors: (page, size) => call('GET', `/api/v1/monitor?page=${page}&page_size=${size}`),
+    listMonitors: (page, size, remaining = deadlineMs) => call('GET', `/api/v1/monitor?page=${page}&page_size=${size}`, undefined, Math.max(1, Math.min(deadlineMs, remaining))),
     validate: body => call('POST', '/api/v1/monitor/validate', body),
     getMonitor: id => call('GET', `/api/v1/monitor/${id}`),
     createMonitor: body => call('POST', '/api/v1/monitor', body),
@@ -117,11 +125,17 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
     getDowntime: id => call('GET', `/api/v2/downtime/${id}`),
     cancelDowntime: id => call('DELETE', `/api/v2/downtime/${id}`),
     async matches(id) {
-      const ids = [];
+      const ids = [], seen = new Set();
+      const end = performance.now() + deadlineMs;
       for (let offset = 0; offset < 300000; offset += 100) {
-        const result = await call('GET', `/api/v2/monitor/${id}/downtime_matches?page%5Boffset%5D=${offset}&page%5Blimit%5D=100`);
-        if (!Array.isArray(result?.data)) throw new Error('Incomplete downtime matches');
-        ids.push(...result.data.map(d => d.id));
+        const remaining = end - performance.now();
+        if (remaining <= 0) throw new Error('Downtime match read deadline exceeded');
+        const result = await call('GET', `/api/v2/monitor/${id}/downtime_matches?page%5Boffset%5D=${offset}&page%5Blimit%5D=100`, undefined, remaining);
+        if (!Array.isArray(result?.data) || result.data.length > 100) throw new Error('Incomplete downtime matches');
+        for (const item of result.data) {
+          if (typeof item?.id !== 'string' || !item.id || item.id.length > 128 || seen.has(item.id)) throw new Error('Incomplete downtime matches');
+          seen.add(item.id); ids.push(item.id);
+        }
         if (result.data.length < 100) return ids;
       }
       throw new Error('Incomplete downtime matches');
@@ -141,68 +155,117 @@ export function validatePlan(plan, definitions) {
   if (plan.definitionsHash !== hash || JSON.stringify(plan.changes) !== JSON.stringify(changes)) throw new Error('Plan changed');
   return plan;
 }
-export async function createSuppressed({ api, owner, definitions, expectedInventory, state, save }) {
-  const wanted = monitorDefinitions(definitions, owner);
-  if (state.pending || state.tagDowntime || state.monitors?.length) throw new Error('Reconciliation required');
-  const all = await inventory(api.listMonitors);
-  ensureZeroMatches(all, owner);
-  const snapshot = inventoryHash(all);
-  if (snapshot !== expectedInventory) throw new Error('Plan is stale');
-  async function mutation(kind, operation) {
-    state.pending = kind; await save(state);
-    const result = await operation();
-    state.pending = null; await save(state);
-    return result;
+async function mutation(state, save, kind, operation) {
+  state.pending = kind; await save(state);
+  const result = await operation();
+  state.pending = null; await save(state);
+  return result;
+}
+async function protection(api, id, expected) {
+  if (verifyDowntime(await api.getDowntime(id), expected) !== id) throw new Error('Suppression changed');
+}
+const validDowntimeId = value => typeof value === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(value);
+async function matched(api, id, downtime, message, sleep) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const matches = await api.matches(id);
+    if (!Array.isArray(matches) || matches.some(value => typeof value !== 'string')) throw new Error('Incomplete downtime matches');
+    if (matches.includes(downtime)) return matches;
+    if (attempt < 3) await sleep(1000);
   }
-  async function protection(id, expected) {
-    const result = await api.getDowntime(id);
-    if (verifyDowntime(result, expected) !== id) throw new Error('Suppression changed');
-  }
+  throw new Error(message);
+}
+const normalSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function continueSuppressed({ api, owner, definitions, expectedInventory, state, save, sleep, recheck = async () => {}, inspectOnly = false }) {
+  const wanted = monitorDefinitions(definitions, owner), initial = state.tagDowntime;
+  if (state.owner !== owner || state.pending !== null || state.transition != null || Object.keys(state).some(key => !['owner', 'pending', 'transition', 'tagDowntime', 'monitors'].includes(key)) || !validDowntimeId(initial) || !Array.isArray(state.monitors) || state.monitors.length > wanted.length) throw new Error('Reconciliation required');
+  const entries = state.monitors;
+  if (new Set(entries.map(x => x?.id)).size !== entries.length || new Set(entries.map(x => x?.name)).size !== entries.length || entries.some(x => !x || Object.keys(x).some(key => !['id', 'name', 'downtime'].includes(key)) || !Number.isSafeInteger(x.id) || x.id <= 0 || !wanted.some(w => w.name === x.name) || (x.downtime !== undefined && !validDowntimeId(x.downtime)))) throw new Error('Invalid monitor state');
+  const downtimeIds = entries.map(x => x.downtime).filter(Boolean);
+  if (new Set([initial, ...downtimeIds]).size !== downtimeIds.length + 1) throw new Error('Invalid monitor state');
   const tagSpec = tagDowntime(owner);
-  const initial = await mutation('create-tag-downtime', async () => {
-    const created = await api.createDowntime(tagSpec);
-    if (!created?.data?.id) throw new Error('Downtime create outcome unknown');
-    state.tagDowntime = created.data.id; return created.data.id;
-  });
-  await protection(initial, tagSpec);
-  state.monitors = [];
+  async function verifyCurrent() {
+    await protection(api, initial, tagSpec);
+    const all = await inventory(api.listMonitors), ids = new Set(entries.map(x => x.id));
+    requireInventoryDetails(all);
+    const others = all.filter(x => !ids.has(x.id));
+    ensureZeroMatches(others, owner);
+    if (inventoryHash(others) !== expectedInventory) throw new Error('Plan is stale');
+    for (const entry of entries) {
+      const definition = wanted.find(x => x.name === entry.name), listed = all.find(x => x.id === entry.id);
+      if (!listed || listed.name !== entry.name) throw new Error('Unexpected monitor ownership');
+      const monitor = await api.getMonitor(entry.id);
+      ownedMonitor(monitor, definition);
+      if (monitor.options?.include_tags !== true || monitor.options?.new_group_delay !== 0 || Object.keys(monitor.options?.thresholds ?? {}).sort().join(',') !== 'critical,ok') throw new Error('Monitor ownership or configuration changed');
+      const allowed = new Set([initial, ...(entry.downtime ? [entry.downtime] : [])]);
+      const tagMatches = await matched(api, entry.id, initial, 'Tag suppression not effective', sleep);
+      if (tagMatches.some(id => !allowed.has(id))) throw new Error('Unexpected downtime match');
+      if (entry.downtime) {
+        await protection(api, entry.downtime, idDowntime(entry.id));
+        const idMatches = await matched(api, entry.id, entry.downtime, 'ID suppression not effective', sleep);
+        if (idMatches.some(id => !allowed.has(id))) throw new Error('Unexpected downtime match');
+      }
+    }
+    await protection(api, initial, tagSpec);
+    for (const entry of entries) if (entry.downtime) await protection(api, entry.downtime, idDowntime(entry.id));
+    await recheck();
+    return new Set(all.map(item => item.id));
+  }
+  async function addDowntime(entry) {
+    await verifyCurrent();
+    await mutation(state, save, 'create-id-downtime', async () => {
+      const created = await api.createDowntime(idDowntime(entry.id));
+      if (!validDowntimeId(created?.data?.id) || created.data.id === initial || entries.some(item => item.downtime === created.data.id)) throw new Error('Downtime create outcome unknown');
+      entry.downtime = created.data.id;
+    });
+    await verifyCurrent();
+  }
+  await verifyCurrent();
+  if (inspectOnly) return { status: 'reconciled', owner, tagDowntime: initial, monitors: entries.map(entry => ({ ...entry })), remaining: wanted.filter(item => !entries.some(entry => entry.name === item.name)).map(item => item.name) };
+  for (const entry of entries) if (!entry.downtime) await addDowntime(entry);
   for (const definition of wanted) {
-    await protection(initial, tagSpec);
-    const current = await inventory(api.listMonitors);
-    const remaining = wanted.filter(x => !state.monitors.some(y => y.name === x.name));
-    if (current.some(m => remaining.some(x => x.name === m.name)) || current.some(m => selector(owner).every(t => m.tags?.includes(t)) && !state.monitors.some(x => x.id === m.id))) throw new Error('Unexpected monitor ownership');
-    for (const known of state.monitors) ownedMonitor(await api.getMonitor(known.id), wanted.find(x => x.name === known.name));
-    const id = await mutation('create-monitor', async () => {
-      const created = await api.createMonitor(definition);
-      const monitorId = ownedMonitor(created, definition);
-      state.monitors.push({ id: monitorId, name: definition.name }); return monitorId;
+    if (entries.some(entry => entry.name === definition.name)) continue;
+    const previousIds = await verifyCurrent();
+    const id = await mutation(state, save, 'create-monitor', async () => {
+      const created = await api.createMonitor(definition), monitorId = ownedMonitor(created, definition);
+      if (previousIds.has(monitorId)) throw new Error('Monitor create outcome unknown');
+      entries.push({ id: monitorId, name: definition.name }); return monitorId;
     });
-    ownedMonitor(await api.getMonitor(id), definition);
-    if (!(await api.matches(id)).includes(initial)) throw new Error('Tag suppression not effective');
-    const idSpec = idDowntime(id);
-    const downtime = await mutation('create-id-downtime', async () => {
-      const created = await api.createDowntime(idSpec);
-      if (!created?.data?.id) throw new Error('Downtime create outcome unknown');
-      state.monitors.find(m => m.id === id).downtime = created.data.id; return created.data.id;
-    });
-    await protection(downtime, idSpec);
-    if (!(await api.matches(id)).includes(downtime)) throw new Error('ID suppression not effective');
+    await addDowntime(entries.find(entry => entry.id === id));
   }
-  for (const known of state.monitors) {
-    ownedMonitor(await api.getMonitor(known.id), wanted.find(x => x.name === known.name));
-    await protection(known.downtime, idDowntime(known.id));
-    if (!(await api.matches(known.id)).includes(known.downtime)) throw new Error('ID suppression not effective');
-  }
-  const finalInventory = await inventory(api.listMonitors);
-  if (finalInventory.some(m => selector(owner).every(t => m.tags?.includes(t)) && !state.monitors.some(x => x.id === m.id))) throw new Error('Unexpected monitor ownership');
-  await protection(initial, tagSpec);
-  await mutation('cancel-tag-downtime', async () => {
+  await verifyCurrent();
+  if (entries.length !== wanted.length || entries.some(entry => !entry.downtime)) throw new Error('Monitor state incomplete');
+  await mutation(state, save, 'cancel-tag-downtime', async () => {
     await api.cancelDowntime(initial);
     const canceled = await api.getDowntime(initial);
     if (canceled?.data?.id !== initial || canceled.data.attributes?.status !== 'canceled') throw new Error('Cancellation not confirmed');
     state.tagDowntime = null;
   });
   return state;
+}
+export async function createSuppressed({ api, owner, definitions, expectedInventory, state, save, sleep = normalSleep, recheck = async () => {} }) {
+  monitorDefinitions(definitions, owner);
+  if (state.pending || state.transition || state.tagDowntime || state.monitors?.length || (state.owner && state.owner !== owner)) throw new Error('Reconciliation required');
+  const all = await inventory(api.listMonitors);
+  requireInventoryDetails(all);
+  ensureZeroMatches(all, owner);
+  if (inventoryHash(all) !== expectedInventory) throw new Error('Plan is stale');
+  state.owner = owner; state.monitors = [];
+  await recheck();
+  await mutation(state, save, 'create-tag-downtime', async () => {
+    const created = await api.createDowntime(tagDowntime(owner));
+    if (!validDowntimeId(created?.data?.id)) throw new Error('Downtime create outcome unknown');
+    state.tagDowntime = created.data.id;
+  });
+  return continueSuppressed({ api, owner, definitions, expectedInventory, state, save, sleep, recheck });
+}
+export async function resumeSuppressed({ api, plan, definitions, state, save, sleep = normalSleep, recheck = async () => {} }) {
+  validatePlan(plan, definitions);
+  return continueSuppressed({ api, owner: plan.owner, definitions, expectedInventory: plan.inventoryHash, state, save, sleep, recheck });
+}
+export async function inspectSuppressed({ api, plan, definitions, state, sleep = normalSleep }) {
+  validatePlan(plan, definitions);
+  const result = await continueSuppressed({ api, owner: plan.owner, definitions, expectedInventory: plan.inventoryHash, state, sleep, inspectOnly: true });
+  return { ...result, inventoryHash: plan.inventoryHash, definitionsHash: plan.definitionsHash };
 }
 const stateDir = path.join(os.homedir(), '.deskdrop-mmani-local');
 async function stateDirectory(create = false) {
@@ -217,6 +280,15 @@ async function protectedJson(name) {
     if (!st.isFile() || st.uid !== process.getuid() || (st.mode & 0o077) || st.nlink !== 1 || st.size > 65536) throw new Error('Unsafe runtime state');
     return JSON.parse(await fh.readFile({ encoding: 'utf8' }));
   } finally { await fh.close(); }
+}
+export function inputGuard(plan, state, definitions, { readPlan = () => protectedJson('monitor-plan.json'), readState = () => protectedJson('monitors.json'), readDefinitions = async () => JSON.parse(await readFile(new URL('../../deploy/datadog/local-monitors.json', import.meta.url), 'utf8')) } = {}) {
+  const expectedPlan = JSON.stringify(plan), expectedDefinitions = JSON.stringify(definitions);
+  return async () => {
+    const currentPlan = await readPlan(), currentDefinitions = await readDefinitions();
+    if (JSON.stringify(currentPlan) !== expectedPlan || JSON.stringify(currentDefinitions) !== expectedDefinitions) throw new Error('Plan changed');
+    validatePlan(currentPlan, currentDefinitions);
+    if (JSON.stringify(await readState()) !== JSON.stringify(state)) throw new Error('Monitor state changed during inspection');
+  };
 }
 export async function savePlan(directory, plan, definitions) {
   validatePlan(plan, definitions);
@@ -241,6 +313,10 @@ async function lock(operation) {
   const lockPath = path.join(stateDir, 'monitor.lock');
   const handle = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try { return await operation(); } finally { await handle.close(); await unlink(lockPath); }
+}
+async function requireNoMonitorLock() {
+  try { await lstat(path.join(stateDir, 'monitor.lock')); throw new Error('Monitor operation in progress'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 export async function ensureSuppressed({ api, state, definitions, save, allowCreate = false }) {
   if (state.pending || state.transition || state.tagDowntime || !ownerPattern.test(state.owner ?? '') || !Array.isArray(state.monitors) || state.monitors.length !== 3 || new Set(state.monitors.map(x => x.id)).size !== 3 || new Set(state.monitors.map(x => x.name)).size !== 3) throw new Error('Monitor reconciliation required');
@@ -304,11 +380,11 @@ export async function verifyProtectedMonitors(allowCreate = false) {
 }
 async function main() {
   const command = process.argv[2] ?? 'help', args = process.argv.slice(3);
-  if (command === 'help' && !args.length) return { commands: ['help', 'definitions', 'status', 'plan', 'save-plan', 'validate', 'apply', 'disable', 'enable'] };
+  if (command === 'help' && !args.length) return { commands: ['help', 'definitions', 'status', 'plan', 'save-plan', 'validate', 'apply', 'reconcile', 'resume', 'disable', 'enable'] };
   const definitions = JSON.parse(await readFile(new URL('../../deploy/datadog/local-monitors.json', import.meta.url), 'utf8'));
   if (command === 'definitions' && !args.length) return monitorDefinitions(definitions, 'local_owner:00000000000000000000000000000000');
   if (command === 'save-plan' && !args.length) { if (process.platform !== 'darwin') throw new Error('Monitor operations require the Mac'); await stateDirectory(); await savePlan(stateDir, await readStdin(), definitions); return { status: 'plan-saved' }; }
-  if (!((['status', 'validate', 'disable', 'enable'].includes(command) && !args.length) || (['plan', 'apply'].includes(command) && args.length === 1 && args[0] === '--all-monitors-visible'))) throw new Error('Invalid command');
+  if (!((['status', 'validate', 'disable', 'enable'].includes(command) && !args.length) || (['plan', 'apply', 'reconcile', 'resume'].includes(command) && args.length === 1 && args[0] === '--all-monitors-visible'))) throw new Error('Invalid command');
   if (process.platform !== 'darwin') throw new Error('Monitor operations require the Mac');
   if (command === 'disable' && !args.length) return verifyProtectedMonitors(true);
   if (command === 'enable' && !args.length) return lock(async () => {
@@ -345,6 +421,21 @@ async function main() {
     const owner = installationTag(), all = await inventory(api.listMonitors);
     return makePlan(definitions, owner, all);
   }
+  if (command === 'reconcile' && args.length === 1 && args[0] === '--all-monitors-visible') {
+    await stateDirectory(); await requireNoMonitorLock();
+    const plan = await protectedJson('monitor-plan.json'), state = await protectedJson('monitors.json');
+    const result = await inspectSuppressed({ api, plan, definitions, state });
+    await requireNoMonitorLock();
+    if (JSON.stringify(plan) !== JSON.stringify(await protectedJson('monitor-plan.json')) || JSON.stringify(state) !== JSON.stringify(await protectedJson('monitors.json'))) throw new Error('Monitor state changed during inspection');
+    return result;
+  }
+  if (command === 'resume' && args.length === 1 && args[0] === '--all-monitors-visible') {
+    return lock(async () => {
+      const plan = await protectedJson('monitor-plan.json'), state = await protectedJson('monitors.json');
+      await resumeSuppressed({ api, plan, definitions, state, save: saveState, recheck: inputGuard(plan, state, definitions) });
+      return { status: 'protected', monitorCount: state.monitors.length };
+    });
+  }
   if (command === 'apply' && args.length === 1 && args[0] === '--all-monitors-visible') {
     return lock(async () => {
       const plan = await protectedJson('monitor-plan.json');
@@ -361,13 +452,16 @@ async function main() {
         }
         return { status: 'already-protected', monitorCount: 3 };
       }
-      await createSuppressed({ api, owner: plan.owner, definitions, expectedInventory: plan.inventoryHash, state, save: saveState });
+      await createSuppressed({ api, owner: plan.owner, definitions, expectedInventory: plan.inventoryHash, state, save: saveState, recheck: inputGuard(plan, state, definitions) });
       return { status: 'protected', monitorCount: state.monitors.length };
     });
   }
   throw new Error('Invalid command');
 }
+export function safeMonitorError(error) {
+  const messages = new Set(['Datadog API access denied', 'Datadog API rate limited', 'Datadog API redirect rejected', 'Datadog API request failed', 'Datadog request outcome unknown', 'Datadog response invalid or outcome unknown', 'Downtime match read deadline exceeded', 'Inventory read deadline exceeded', 'Incomplete downtime matches', 'Incomplete inventory', 'Incomplete monitor details', 'Unstable inventory', 'Monitor operation in progress', 'Monitor state changed during inspection', 'Monitor reconciliation required', 'Reconciliation required', 'Invalid plan', 'Invalid definitions', 'Invalid monitor ID', 'Invalid monitor state', 'Monitor state incomplete', 'Monitor ownership changed', 'Monitor ownership or configuration changed', 'Monitor create outcome unknown', 'Unexpected monitor ownership', 'Unexpected downtime match', 'Existing monitor with reserved name', 'Ownership selector already matches a monitor', 'Downtime create outcome unknown', 'Downtime ownership or status unknown', 'Downtime status unknown', 'Downtime not confirmed', 'Downtime selector changed', 'Downtime must not expire', 'Suppression changed', 'Tag suppression not effective', 'ID suppression not effective', 'Cancellation not confirmed', 'Suppression not effective', 'Monitor notifications are not suppressed', 'Notification approval incomplete', 'Fresh healthy monitor evidence required', 'Monitor operations require the Mac', 'Invalid local credentials', 'Plan is stale', 'Plan changed']);
+  return messages.has(error?.message) ? error.message : 'Monitor operation failed; inspect owned state and journal';
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().then(value => console.log(JSON.stringify(value, null, 2)), error => {
-  const messages = new Set(['Datadog API access denied', 'Datadog API rate limited', 'Datadog API redirect rejected', 'Datadog API request failed', 'Datadog request outcome unknown', 'Datadog response invalid or outcome unknown', 'Monitor reconciliation required', 'Reconciliation required', 'Suppression not effective', 'Monitor notifications are not suppressed', 'Notification approval incomplete', 'Fresh healthy monitor evidence required', 'Monitor operations require the Mac', 'Invalid local credentials', 'Plan is stale', 'Plan changed']);
-  console.error(messages.has(error?.message) ? error.message : 'Monitor operation failed; inspect owned state and journal'); process.exitCode = 1;
+  console.error(safeMonitorError(error)); process.exitCode = 1;
 });
