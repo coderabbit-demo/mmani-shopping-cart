@@ -287,3 +287,54 @@ test('regression: Terraform v-prefixed version retains its major number', async 
   assert.equal(summary.checks.tool_terraform.version, '1.15.3');
   for (const [name, [, expected]] of Object.entries(versions)) assert.equal(summary.checks[`tool_${name}`].version, expected);
 });
+
+for (const type of ['error', 'action_required']) {
+  for (const order of ['before', 'after']) {
+    test(`regression: authentication rejects ${type} ${order} success`, async (t) => {
+      const f = fixture();
+      const success = { authenticated: true, payload: `${marker}-auth` };
+      const rejection = { type, message: `${marker}-auth-error` };
+      const events = order === 'before' ? [rejection, success] : [success, rejection];
+      f.replies.set('coderabbit auth status --agent', events.map(JSON.stringify).join('\n'));
+      let output = '';
+      const stdout = t.mock.method(process.stdout, 'write', (chunk) => { output += chunk; return true; });
+      const stderr = t.mock.method(process.stderr, 'write', (chunk) => { output += chunk; return true; });
+      const summary = await run(f);
+      stdout.mock.restore();
+      stderr.mock.restore();
+      assert.equal(summary.checks.coderabbit_auth.status, 'fail');
+      assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+      assert.equal(summary.exitCode, 1);
+      assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), false);
+      assert.doesNotMatch(JSON.stringify(summary) + output, new RegExp(marker));
+    });
+
+    test(`regression: repository listing rejects ${type} ${order} completion`, async (t) => {
+      const f = fixture();
+      const success = { type: 'complete', status: 'tasks_listed', tasks: [{ title: `${marker}-task` }] };
+      const rejection = { type, message: `${marker}-repo-error` };
+      const events = order === 'before' ? [rejection, success] : [success, rejection];
+      f.replies.set('coderabbit code ls --repo . --agent', events.map(JSON.stringify).join('\n'));
+      let output = '';
+      const stdout = t.mock.method(process.stdout, 'write', (chunk) => { output += chunk; return true; });
+      const stderr = t.mock.method(process.stderr, 'write', (chunk) => { output += chunk; return true; });
+      const summary = await run(f);
+      stdout.mock.restore();
+      stderr.mock.restore();
+      assert.equal(summary.checks.coderabbit_repo.status, 'fail');
+      assert.equal(summary.exitCode, 1);
+      assert.equal(f.calls.includes('coderabbit code ls --repo . --agent'), true);
+      assert.doesNotMatch(JSON.stringify(summary) + output, new RegExp(marker));
+    });
+  }
+}
+
+test('repository listing requires a final successful completion event', async () => {
+  const f = fixture();
+  const events = [{ type: 'complete', status: 'tasks_listed', tasks: [{ title: marker }] }, { type: 'status', status: 'loading', message: marker }];
+  f.replies.set('coderabbit code ls --repo . --agent', events.map(JSON.stringify).join('\n'));
+  const summary = await run(f);
+  assert.equal(summary.checks.coderabbit_repo.status, 'blocked');
+  assert.equal(summary.exitCode, 1);
+  assert.doesNotMatch(JSON.stringify(summary), new RegExp(marker));
+});

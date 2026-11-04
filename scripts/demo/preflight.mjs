@@ -39,6 +39,7 @@ function validateKeys(_url, headers) {
 
 function json(text) { return JSON.parse(text); }
 function eventLines(text) { return text.trim().split(/\r?\n/).filter(Boolean).map(json); }
+function hasBlockingEvent(events) { return events.some((x) => x?.type === 'error' || x?.type === 'action_required'); }
 function result(status, action) { return { status, action }; }
 
 export async function preflight({ run = command, http = validateKeys, env = process.env, nodeVersion = process.versions.node } = {}) {
@@ -87,11 +88,11 @@ export async function preflight({ run = command, http = validateKeys, env = proc
   }
   await check('coderabbit_auth', 'Check CodeRabbit authentication.', async () => {
     const auth = eventLines(await call('coderabbit', 'auth', 'status', '--agent'));
-    return auth.some((x) => x.authenticated === true) ? pass() : fail('Authenticate CodeRabbit manually.');
+    return !hasBlockingEvent(auth) && auth.some((x) => x.authenticated === true) ? pass() : fail('Authenticate CodeRabbit manually.');
   });
   await check('coderabbit_org', 'Check the selected CodeRabbit organization.', async () => {
     const events = eventLines(await call('coderabbit', 'auth', 'org', '--agent'));
-    if (events.some((x) => x?.type === 'error' || x?.type === 'action_required')) return blocked('Confirm the active CodeRabbit organization manually.');
+    if (hasBlockingEvent(events)) return blocked('Confirm the active CodeRabbit organization manually.');
     const currentEvents = events.filter((x) => x && typeof x === 'object' && (x.type === 'org_list' || Object.hasOwn(x, 'currentOrg')));
     if (currentEvents.length) {
       const event = currentEvents[0];
@@ -114,7 +115,7 @@ export async function preflight({ run = command, http = validateKeys, env = proc
     if (checks.repository.status !== 'pass' || checks.coderabbit_auth.status !== 'pass' || checks.coderabbit_org.status !== 'pass') return blocked('Confirm the intended repository and CodeRabbit organization first.');
     const events = eventLines(await call('coderabbit', 'code', 'ls', '--repo', '.', '--agent'));
     const last = events.at(-1);
-    if (last?.type === 'error' || last?.type === 'action_required') return fail('Check CodeRabbit repository access.');
+    if (hasBlockingEvent(events)) return fail('Check CodeRabbit repository access.');
     return last?.type === 'complete' && last.status === 'tasks_listed' ? pass() : blocked('Confirm CodeRabbit repository task-list access manually.');
   });
   await check('docker_daemon', 'Start Docker Desktop manually and retry.', async () => (await call('docker', 'version', '--format', '{{.Server.Version}}')).trim() ? pass() : blocked('Start Docker Desktop manually and retry.'));
