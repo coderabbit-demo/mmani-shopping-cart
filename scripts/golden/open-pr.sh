@@ -92,15 +92,26 @@ try {
   const title = heading?.match(/`([^`\r\n]+)`/)?.[1];
   const issues = [...brief.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)];
   if (!title?.trim() || issues.length !== 1) fail('Brief must contain a backticked title in its first # heading and one valid **Jira:** field');
+  let fenced = false;
+  const metadata = brief.split(/\r?\n/).map((line) => {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) { fenced = !fenced; return ''; }
+    return fenced ? '' : line.replace(/`[^`]*`/g, '');
+  }).join('\n');
+  const githubFields = [...metadata.matchAll(/(?:^|[ \t])\*\*GitHub:\*\*[ \t]*([^\r\n]*)/gm)];
+  if (githubFields.length > 1) fail('Brief must contain at most one GitHub field');
+  const githubUrl = githubFields[0]?.[1].trim();
+  const githubMatch = githubUrl?.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/([1-9][0-9]*)$/);
+  if (githubFields.length && !githubMatch) fail('Invalid GitHub issue field');
   const results = readFileSync(resultsFile);
   const repo = json(gh('repo', 'view', '--json', 'nameWithOwner,url'));
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo?.nameWithOwner) ||
       typeof repo.url !== 'string' || !repo.url.startsWith('https://')) fail('Invalid repository returned by gh');
+  if (githubMatch && githubMatch[1].toLowerCase() !== repo.nameWithOwner.toLowerCase()) fail('GitHub issue must belong to the current repository');
   const encodeLink = (part) => encodeURIComponent(part).replaceAll('(', '%28').replaceAll(')', '%29');
   const briefLink = `${repo.url}/blob/${encodeLink(branch)}/${relative(repoRoot, briefPath).split(sep).map(encodeLink).join('/')}`;
   const bodyFile = join(directory, 'body.md');
   writeFileSync(bodyFile, Buffer.concat([
-    Buffer.from(`Jira: ${issues[0][1]}\n\n[Brief](${briefLink})\n\n`),
+    Buffer.from(`${githubUrl ? `Fixes ${githubUrl}\n` : ''}Jira: ${issues[0][1]}\n\n[Brief](${briefLink})\n\n`),
     results,
     Buffer.from('\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n'),
   ]));

@@ -776,3 +776,52 @@ test("strict gate help documents the neutral exception only for CodeRabbit Secur
   assert.match(result.stdout, /CodeRabbit Security also accepts neutral/);
   assert.match(result.stdout, /All other checks require success/);
 });
+
+test("open-pr uses the optional GitHub issue in create and update bodies", (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source}**GitHub:** https://github.com/fixture/repo/issues/11\n**Parent tracker:** https://github.com/fixture/repo/issues/10\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
+  assert.equal(f.data.body.includes("Fixes https://github.com/fixture/repo/issues/10"), false);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
+  assert.equal(f.data.calls.filter((args) => args[1] === "create").length, 1);
+  assert.equal(f.data.calls.filter((args) => args[1] === "comment").length, 1);
+  assert.ok(f.data.body.includes(f.report));
+});
+
+for (const [name, field] of [
+  ["empty", "**GitHub:**"],
+  ["duplicate", "**GitHub:** https://github.com/fixture/repo/issues/11\n**GitHub:** https://github.com/fixture/repo/issues/12"],
+  ["cross repository", "**GitHub:** https://github.com/other/repo/issues/11"],
+  ["zero", "**GitHub:** https://github.com/fixture/repo/issues/0"],
+  ["query", "**GitHub:** https://github.com/fixture/repo/issues/11?x=1"],
+  ["fragment", "**GitHub:** https://github.com/fixture/repo/issues/11#x"],
+  ["extra path", "**GitHub:** https://github.com/fixture/repo/issues/11/extra"],
+  ["host", "**GitHub:** https://github.com.evil.invalid/fixture/repo/issues/11"],
+]) {
+  test(`open-pr rejects ${name} GitHub metadata before mutation`, (t) => {
+    const f = openPrFixture(t);
+    write(f.directory, f.brief, `${f.source}${field}\n`);
+    const result = f.run();
+    assertOpenFailed(result, /GitHub/);
+    assert.equal(f.data.calls.some((args) => args[0] === 'pr' && ['create', 'edit', 'comment'].includes(args[1])), false);
+  });
+}
+
+test("open-pr recognizes inline metadata and ignores code examples", (t) => {
+  const f = openPrFixture(t);
+  write(f.directory, f.brief, `${f.source.trim()} **GitHub:** https://github.com/fixture/repo/issues/11\n\nReference \`**GitHub:**\` here.\n\`\`\`text\n**GitHub:** https://github.com/other/repo/issues/2\n\`\`\`\n`);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith("Fixes https://github.com/fixture/repo/issues/11\nJira: SC-3\n"));
+});
+
+test("open-pr reads the approved brief without treating the parent or prose as metadata", (t) => {
+  const f = openPrFixture(t);
+  const source = readFileSync(new URL('../docs/briefs/07-demo-preflight.md', import.meta.url), 'utf8')
+    .replaceAll('github.com/coderabbit-demo/mmani-shopping-cart', 'github.com/fixture/repo');
+  write(f.directory, f.brief, source);
+  assertOpened(f.run());
+  assert.ok(f.data.body.startsWith('Fixes https://github.com/fixture/repo/issues/11\nJira: SC-35\n'));
+  assert.equal(f.data.body.includes('Fixes https://github.com/fixture/repo/issues/10'), false);
+});
