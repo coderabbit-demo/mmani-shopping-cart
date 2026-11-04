@@ -76,7 +76,7 @@ Provide reviewable instructions for updating the existing automation:
 - Independent **Create Jira Ticket** and **Debug and Create PR** buttons. The latter creates/reuses the SC Bug and hands evidence, faulty branch/commit, reproduction, approved ALLOW scope and acceptance criteria to CodeRabbit Code. Both return useful status and links in the incident thread.
 - Define an incident key per monitor/environment/failure episode, reuse the ticket/task/PR across deliveries and button order, and require concurrency/replay evidence. Prompt-only searches are not atomic deduplication. If native serialization is unavailable, report the integration gap instead of claiming success or inventing a backend/custom Slack app.
 - Keep fault seeds and fixes on isolated demo branches. Triage/coding instructions must not merge, deploy, apply Terraform, access VM admin credentials, bypass gates or alter goldens.
-- Require completed Review CLI before PR publication, CodeRabbit PR feedback on the exact head, deterministic tests and CodeRabbit QA Agent Verify evidence. Record inconclusive/unsupported results honestly.
+- Require one completed CodeRabbit CLI review per new coding task before task completion/PR publication; PR-fix tasks and rounds are exempt. A completed in-task run counts, with a Mac run only as fallback. Keep CodeRabbit PR feedback on the exact head, deterministic tests and CodeRabbit QA Agent Verify evidence. Record inconclusive/unsupported results honestly.
 
 Describe a separately controlled synthetic alert → Slack → SC Bug → disposable CodeRabbit task/PR rehearsal, its cleanup and failure reporting. Preparing the instructions does not authorize dispatching this rehearsal in the code task. Never commit the authenticated webhook endpoint/header or real incident/customer data.
 
@@ -95,10 +95,11 @@ Add observable cases to `tests/scripts.test.mjs` for the new create/update body 
 
 ## Scope
 
-The following is the proposed allowlist for maintainer approval. It approves no dependency, manifest, lockfile, workflow or golden changes. Keep the PR below 30 changed non-golden files.
+The following is the proposed allowlist for maintainer approval. It approves no dependency, manifest, lockfile, CI workflow or golden changes. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
 
 ```text
 ALLOW: docs/briefs/07-demo-preflight.md
+ALLOW: docs/PLAN.md
 ALLOW: scripts/demo/preflight.mjs
 ALLOW: tests/demo-preflight.test.mjs
 ALLOW: docs/demo/runbook.md
@@ -111,7 +112,7 @@ ALLOW: tests/scripts.test.mjs
 
 CodeRabbit Code first reports its plan, file list, test approach, capability gaps and any proposed brief correction without changing files. Wait for explicit maintainer approval before implementing.
 
-After implementation, run the required checks and a completed `coderabbit review --agent --committed --base-commit <merge-base>`. Route valid findings through CodeRabbit Code within ALLOW, with tests for behavior/security fixes. List every finding as fixed or skipped with a reason. The Mac repeats the required pre-publication review and scope checks under `docs/PLAN.md`.
+After implementation, complete **one CodeRabbit CLI review for each new coding task** using `coderabbit review --agent --committed --base-commit <merge-base>`, before task completion/PR publication. A completed in-task run satisfies the requirement; the Mac runs a fallback only if none completed. Do not require duplicate author and Mac runs. **PR fixes are exempt**, including a new task created to fix an existing PR; plan-only turns need no review until implementation. An interrupted or failed review does not count. Record the task ID, reviewed commit/base, completed result and every finding as fixed or skipped with a reason. Route valid fixes through CodeRabbit Code within ALLOW, with tests for behavior/security fixes. Mac scope checks, exact-head PR review, security gates and QA remain required.
 
 Open a PR linked to GitHub #11 and Jira SC-35 only after pre-publication gates pass. Request CodeRabbit PR review and `@coderabbitai test`; retain actual exact-head review/security and QA evidence. Do not treat an inconclusive QA result as passed Verify. For this tooling PR, separate QA's browser result from deterministic harness tests and the still-pending live incident rehearsal.
 
