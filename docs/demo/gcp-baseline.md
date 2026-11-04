@@ -86,7 +86,25 @@ After building the **current committed** images locally via the harness, run the
 )
 ```
 
-Confirm the current local image IDs equal `build.json` and source labels/amd64 architecture before this smoke. Inspect the resolved Compose config: only forwarder publishes loopback, checker reaches app privately, and app/checker have only the internal network and no credential/host mounts. Run bounded TCP-only probes (no credential endpoint responses) from app/checker toward a disposable host canary, metadata IP/hostname and external canary; each new connection must fail. Record listener/HTTP and sandbox execution separately from isolation results. Mac Docker does not install the VM firewall, so it cannot establish forwarder egress isolation; the stateful rule fixture is separate from live Linux packet evidence. A disposable Linux firewall fixture and the actual Ubuntu VM must additionally prove both bridges deny NEW host/metadata/external attempts while host loopback/IAP HTTP, established replies and private checker traffic succeed. Repeat after host/Docker restart, with IPv4/IPv6/hostname variants. Preserve sandbox diagnostics without collecting page or credential bodies; do not classify an actual configuration failure as emulation. The older Playwright namespace-only policy failed `sys_chroot` on the Mac; a temporary chroot extension launched successfully, so emulation alone is not a reason to waive the final-policy smoke. Live Ubuntu proof remains pending.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c04797b47434d10ec49411e1115a1a9da8459024a8fd970aa4ebfeac0063a34e -->
+
+Confirm the current local image IDs equal `build.json` and source labels/amd64 architecture before this smoke. Inspect the resolved Compose config: only forwarder publishes loopback, checker reaches app privately, and app/checker have only the internal network and no credential/host mounts. Run bounded TCP-only probes (no credential endpoint responses) from app/checker toward a disposable host canary, metadata IP/hostname and external canary; each new connection must fail. Record listener/HTTP and sandbox execution separately from isolation results. Mac Docker does not install the VM firewall, so it cannot establish forwarder egress isolation; the stateful rule fixture is separate from live Linux packet evidence. A disposable Linux firewall fixture and the actual Ubuntu VM must additionally prove both bridges deny NEW host/metadata/external attempts while host loopback/IAP HTTP, established replies and private checker traffic succeed. Repeat after host/Docker restart, with IPv4/IPv6/hostname variants. Preserve sandbox diagnostics without collecting page or credential bodies; do not classify an actual configuration failure as emulation.
+
+### Maintainer-supplied Mac verification
+
+The maintainer reports that actual local amd64 harness-built app and checker images and resolved Compose settings passed at production commit `f46c068e468514a357d162ad362982144f69c78a`. The forwarder had a real `127.0.0.1` ephemeral host binding and returned HTTP 200. The checker ran with UID 1000, all capabilities dropped, no-new-privileges, a read-only root and `/tmp` tmpfs, 512 MiB private shared memory, 512 MiB memory, 0.5 CPU, and generated seccomp policy SHA-256 `6c0dc8f64ae4dcd440ae2a009c4399f8ac52e0cd3a325a0b9ade5bd7386ce18c`; no SYS_ADMIN was granted. Its sandboxed `cart-receipt-history` journey passed, checking $100 subtotal, $15 discount, $12 delivery, $97 total, the receipt and both history items. The temporary project was cleaned up.
+
+The measured app OCI digest was `sha256:3dc6f1d00525e728ca09cc5cdf9d349a5f1df82a3c6bb75810374dc20befc549`; checker OCI digest was `sha256:4836023c06b9dc37980b9a41f72617dc4e8d82ea248dea6bf5c040dfc6faa070`. The registry-shaped `APP_IMAGE` identity was a local fixture using the measured digest: no image was published to or pulled from that registry. These observations do not establish deployment, host firewall enforcement, metadata isolation, IAM, IAP, Secret Manager or US3 intake.
+
+At the same production commit, Terraform fmt/validate and four bootstrap plus seven demo native mocked runs passed. The maintainer also reports that test-only commit `596697243f3995d31979377d9f8d44bbc9a6ab55` passed npm ci, all 375 units, typecheck, 29 unchanged goldens, production build and 86 Playwright tests on Mac Bash 3.2. The e2e run used an isolated free port via `PLAYWRIGHT_PORT`; an existing service on port 3100 was left untouched. Only `tests/demo-baseline.test.mjs` changed between the two commits; the production graph, Compose configuration, generated policy, Terraform and documentation were byte-identical, so the Mac container and mocked Terraform results remain applicable to that test-only revision. Mac GitHub GFM rendering showed all ten cost rows in one table body.
+
+The maintainer reports a focused comparison using identical head test contents: eight loaded `ERR_ASSERTION` failures and zero setup failures against `580457927d4a3b165880f0936b8f92109a835f88`, followed by zero failures at `596697243f3995d31979377d9f8d44bbc9a6ab55`. The endpoint-specific regression independently produced assertion RED/GREEN with identical tests/imports and the same approved dependency tree. A full-file baseline run had setup errors for behavior absent from the baseline and is not counted as RED. The same-container Mac HSTS comparison also produced SSL failure through `app` and HTTP 200 through `deskdrop.test`.
+
+Pending separate evidence includes actual Ubuntu firewall and host-canary probes, metadata isolation after Docker restart and VM reboot, scoped IAM, Secret Manager and IAP authorization, recovered US3 intake, exact-head PR review/security/CI, and a successful native QA Agent Verify. The cost worksheet and spend window remain unapproved. The Mac listener and browser results do not prove Linux host firewall behavior or cloud deployment.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### Registry retention and labels
 
@@ -104,16 +122,22 @@ A human creates and reviews a separate destroy plan for the demo root, confirms 
 
 Task `881100be-1192-43aa-a803-7b412f0041d1`: the maintainer supplied Mac receipt is `review_completed`, outcome `completed`, reviewed base `092b03cc21e1c84b0aa6bbee20da014da29b53fa`, head `580457927d4a3b165880f0936b8f92109a835f88`, all 25 paths. It is the single completed CLI review for this original coding task; the earlier disabled cloud attempt did not count. This correction round does not run another CLI review and the receipt does not claim review of subsequent changes.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:426e5277d44a30947b8ee441ff693d0fbf136d5fcb8f674bb48d58229470b89f -->
+
 | Finding | Disposition in this correction round |
 | --- | --- |
-| Major: detached children survive interruption | Fixed: forward SIGINT/SIGTERM to the owned group, bounded escalation, remove listeners on every settlement; real subprocess regressions. |
-| Major: Chromium namespace sandbox denied | Fixed configuration: pinned default-deny Docker policy plus four sandbox calls, hash-bound installation and 512 MiB private shared memory. Final Mac policy/container smoke and live Ubuntu proof remain pending. |
-| Major: internal-only published port has no listener | Fixed design: fixed-target non-root Node forwarder, loopback publication on second bridge, established-reply firewall rules. Real TCP/HTTP fixture passes; final Docker listener/isolation smoke remains pending. |
-| Minor: KEEP-only registry cleanup | Fixed: seven-day untagged DELETE plus five recent KEEP; native mocked assertions. |
-| Minor: generated markers split cost table | Fixed: one contiguous table; required provenance stays outside rendered content/table. Parser block assertions cover the correction. |
-| Minor: boot secret failure blocks Docker | Fixed: mandatory isolation/identity/runtime preparation separated from bounded telemetry recovery; secure directory bind and atomic file replacement. Boot/outage/recovery fixtures; live reboot/telemetry pending. |
+| Major: detached children survive interruption | Fixed: forward SIGINT/SIGTERM to the owned group, bounded escalation, remove listeners on every settlement; real subprocess regressions and the maintainer's focused assertion comparison. |
+| Major: Chromium namespace sandbox denied | Fixed: pinned default-deny Docker policy plus four sandbox calls, hash-bound installation and 512 MiB private shared memory. The final policy and sandboxed checker passed on the Mac at `f46c068`; live Ubuntu proof remains pending. |
+| Major: internal-only published port has no listener | Fixed: fixed-target non-root Node forwarder, loopback publication on second bridge and established-reply firewall rules. Real Mac Docker loopback binding and HTTP 200 passed at `f46c068`; Linux host firewall and isolation proof remain pending. |
+| Minor: KEEP-only registry cleanup | Fixed: seven-day untagged DELETE plus five recent KEEP; the four bootstrap and seven demo mocked Terraform runs passed on the Mac at `f46c068`. |
+| Minor: generated markers split cost table | Fixed: one contiguous table; required provenance stays outside rendered content/table. Mac GitHub GFM rendering confirmed all ten rows in one table body. |
+| Minor: boot secret failure blocks Docker | Fixed: mandatory isolation/identity/runtime preparation separated from bounded telemetry recovery; secure directory bind and atomic file replacement. Boot/outage/recovery fixtures passed; live VM reboot and telemetry proof remain pending. |
 
-Additional runtime finding: fixed browser URL/Compose alias changed to reserved `deskdrop.test`, old HSTS `app` endpoint explicitly rejected, configuration and validation regressions added. Final Mac full journey remains pending.
+Additional runtime finding: the browser URL/Compose alias uses reserved `deskdrop.test`, and the old HSTS `app` endpoint is rejected. The full sandboxed Mac journey passed at `f46c068` with the local fixture identity described above; no deployment or QA Verify is implied.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Additional maintainer finding: non-secret service/environment/managed-by labels added to all label-capable owned resources, with native assertions. No finding was skipped. Exact-head PR review/security/CI and successful QA Agent Verify remain separate later gates; this receipt and fixtures do not satisfy them.
 
