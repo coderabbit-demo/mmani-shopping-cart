@@ -7,6 +7,8 @@
 
 **Approved amendment (2026-11-03):** Mahesh approved pinned development dependency `commonmark@0.31.2` and the corresponding `package.json` / `package-lock.json` changes to replace handwritten Markdown block/container parsing in the PR helper. Preserve every existing test and assertion, add the tab/list regressions, and keep the PR below 30 files. CodeRabbit feedback only applies to this phase; omit the four additional model judges.
 
+**Approved guard update (2026-11-03):** Mahesh approved `tests/smoke.test.mjs` solely to add `commonmark: "0.31.2"` to the exact approved development-dependency expectation. Retain the full equality assertion, every other expected version and all other assertions. The allowlist now contains eleven file paths.
+
 Read `AGENTS.md`, `docs/PLAN.md`, this brief, and the linked GitHub/Jira acceptance criteria. Preserve all existing product behavior, tests, assertions and goldens. CodeRabbit Code is the implementation author; the Mac runs orchestration and verification.
 
 ## Goal
@@ -99,7 +101,7 @@ Use the approved CommonMark reference parser for block/container semantics so ta
 
 ## Scope
 
-The following ten-path allowlist and explicit dependency exception are approved by the maintainer. Manifest/lockfile changes are limited to the exact CommonMark development dependency and necessary locked transitives described above. No CI workflow or golden changes are approved. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
+The following eleven-path allowlist and explicit dependency exception are approved by the maintainer. Manifest/lockfile changes are limited to the exact CommonMark development dependency and necessary locked transitives described above. The smoke-test change is limited to the approved expected-set update, retaining its strict assertion. No CI workflow or golden changes are approved. The maintainer's 2026-11-03 CLI-review policy amendment in `docs/PLAN.md` is included; other changes to that plan are outside scope. Keep the PR below 30 changed non-golden files.
 
 ```text
 ALLOW: docs/briefs/07-demo-preflight.md
@@ -112,6 +114,7 @@ ALLOW: scripts/golden/open-pr.sh
 ALLOW: tests/scripts.test.mjs
 ALLOW: package.json
 ALLOW: package-lock.json
+ALLOW: tests/smoke.test.mjs
 ALLOW: dependency commonmark@0.31.2
 ```
 
