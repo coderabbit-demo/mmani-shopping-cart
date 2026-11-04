@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1018,7 +1018,7 @@ for (const [name, field] of [
   test(`open-pr reports missing parser installation for ${name} briefs before gh calls`, (t) => {
     const f = openPrFixture(t);
     write(f.directory, f.brief, f.source + field);
-    rmSync(join(f.directory, 'node_modules'));
+    unlinkSync(join(f.directory, 'node_modules'));
     const result = f.run(undefined, undefined, { DD_API_KEY: 'synthetic-parser-secret' });
     assertOpenFailed(result, /npm ci/);
     assert.equal(result.stderr, 'FAIL: CommonMark parser unavailable; run npm ci in the repository.\n');
@@ -1029,7 +1029,7 @@ for (const [name, field] of [
 
 test('open-pr help works without the parser dependency', (t) => {
   const f = openPrFixture(t);
-  rmSync(join(f.directory, 'node_modules'));
+  unlinkSync(join(f.directory, 'node_modules'));
   const result = f.run(['--help']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /npm ci/);
