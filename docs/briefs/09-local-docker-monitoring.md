@@ -48,7 +48,15 @@ The Agent is trusted infrastructure: Docker socket access is effectively daemon 
 
 Use fixed low-cardinality identity tags `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local` and a fixed local host identity. These are the only monitored runtime scope for this phase. Record source commit/image identity in sanitized diagnostic events, not high-cardinality monitor grouping.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:831ab9f9ec21fd988a9a35f772b6a292d138c67232ea8a5d07dae85028743743 -->
+
 Run independent bounded HTTP availability and browser-journey checks every 30 seconds, with no overlapping journey executions. Keep runner heartbeat independent of app success. Handle full-journey deadline, browser startup failure, hung child, network failure, interruption and cleanup deterministically. A stalled browser must not silently keep reporting a healthy journey or prevent availability/heartbeat observations. Define and test the scheduling/overrun policy.
+
+Host tool cleanup is limited to the process group owned by the controller for fixed trusted Git and Docker calls and the unprivileged seccomp-profile shell mode. It signals that group after normal completion, timeout or interruption, including ordinary descendants whose standard streams are closed; cleanup cannot be guaranteed if signaling fails. Arbitrary daemonizing shell commands are not a supported controller operation, and a descendant that creates a new session is outside this process-group guarantee. Browser processes are handled separately by stopping and removing the verified one-shot journey container; actual controller behavior on Docker Desktop remains a Mac verification gate.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Every browser run uses fresh storage and synthetic shopper data. Verify two chosen colors, $68 lamp + $32 organizer, $100 subtotal, DESK15 $15 discount, express $12, final $97, receipt and every history item. Preserve all existing assertions. Report OK/CRITICAL service checks and liveness through a private DogStatsD path; configure the Agent receiver explicitly and prove delivery. A UDP send alone is not proof of Datadog ingestion. Selective structured diagnostics include failure class/stage and allowlisted expected/actual observations without page bodies, entered fields, localStorage or arbitrary browser/command error text. Bound and redact outputs.
 

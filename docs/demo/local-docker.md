@@ -87,7 +87,21 @@ The unprivileged runner relays service checks over private UDP when the controll
 
 <!-- /coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:25b29e936c4eb0e0942f7c181eefd84b1fae6220bb6319d947d769d8cc46bf14 -->
+
+## Host process boundary and correction evidence
+
+The controller invokes fixed Git operations, fixed Docker Desktop CLI operations and `bash deploy/bootstrap.sh seccomp-profile`; that profile mode uses Python to print the policy and exits before the VM bootstrap's root-only operations. The controller bounds each host command and attempts to signal its owned process group after normal completion, timeout or interruption. Normal success requires that the group signal succeeds. This covers ordinary descendants in that group even when their standard streams are closed, but cannot guarantee cleanup if signaling fails. It does not promise containment of a descendant that deliberately creates a new session. Arbitrary daemonizing shell programs are not a supported controller operation. It does not discover or kill arbitrary host processes or the Docker Desktop daemon. The reviewed call sites show no supported caller that has been demonstrated to escape the group; actual Mac tool behavior remains to be checked.
+
+The Mac controller separately verifies the one-shot journey container's name, project, service, image and source before stopping and removing that exact container. The user reports that a separate Mac probe verified removal of a test container terminates its sandboxed Chromium namespace; that probe does not verify this controller's lifecycle. Validate the controller on the Mac before accepting cleanup.
+
+The correction fixes the reported plugin discovery and pre-journal check, ordinary descendant leak, total API deadline, and bounded failure-observation transport in code with regression coverage. It also fixes the completed CLI review's Minor documentation finding: Mahesh approved the local runtime tags on 2026-11-04. The one reported completed review covered base `f7a859dfe151a78a71dc8d6e3c5d87385eb6c8e1` and head `3cf4606cae825dc663654ad7fa40329916d9dc20`; exact-head PR, security, CI and QA verification remain required. Mac Docker build, actual Agent intake and collection, US3 ingestion and suppression transitions remain validation gates. A separate synthetic shell probe created a new host session and survived group cleanup; its fixture was terminated. That adversarial result is a documented limit, not a containment pass or evidence of a supported production caller.
+
 ## Control and recovery
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated:v1 -->
 
