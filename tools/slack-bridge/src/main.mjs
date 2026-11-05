@@ -24,6 +24,7 @@ export async function createBridge({root,App=bolt.App,fetcher=fetch,makeProcess=
   const state=new State(root);
   try {
     const toolPath=[dirname(executable(process.execPath)),'/usr/bin','/bin'].join(':');
+    await state.call('recoverJira');
     const invokeJira=makeProcess(config.twgPath,config.workdir,{path:toolPath}), invokeCode=makeProcess(config.coderabbitPath,config.workdir,{path:toolPath}), git=makeProcess(config.gitPath,config.workdir,{path:toolPath});
     const app=new App({token:secrets.SLACK_BOT_TOKEN,appToken:secrets.SLACK_APP_TOKEN,socketMode:true,logger:log});
     const identity=await app.client.auth.test();
@@ -37,14 +38,14 @@ export async function createBridge({root,App=bolt.App,fetcher=fetch,makeProcess=
     if (commandPath.split(':').some(p=>!p.startsWith('/'))) throw new Error('invalid command path');
     const bash=makeProcess(config.bashPath,config.workdir,{path:commandPath});
     const strict=args=>bash([join(config.workdir,'scripts/golden/strict-gate.sh'),...args]);
-    const delivery=new Delivery({state,git,adapter,approval,review:reviewAdapter(invokeCode,git),github:githubAdapter(gh),checks:checksAdapter(gh,strict),prepare:async(grant,head,authoredBranch)=>{const p=await prepareCheckout({git,gitPath:config.gitPath,ghPath:config.ghPath,bashPath:config.bashPath,codePath:config.coderabbitPath,root,grant,head,authoredBranch,makeProcess}); return {git:p.git,review:reviewAdapter(p.code,p.git),github:githubAdapter(p.gh),checks:checksAdapter(p.gh,args=>p.bash([join(p.dir,'scripts/golden/strict-gate.sh'),...args]))};}});
+    const delivery=new Delivery({state,git,adapter,approval,review:reviewAdapter(invokeCode,git),github:githubAdapter(gh),checks:checksAdapter(gh,strict),prepare:async(grant,head,authoredBranch,reopenOnly=false)=>{const p=await prepareCheckout({git,gitPath:config.gitPath,ghPath:config.ghPath,bashPath:config.bashPath,codePath:config.coderabbitPath,root,grant,head,authoredBranch,makeProcess,reopenOnly}); return {git:p.git,review:reviewAdapter(p.code,p.git),github:githubAdapter(p.gh),checks:checksAdapter(p.gh,args=>p.bash([join(p.dir,'scripts/golden/strict-gate.sh'),...args]))};}});
     const actions=new Actions({state,config,monitor,jira,slack,task:tasks,delivery});
     const supervisor=new Supervisor({state,tasks,adapter,slack,delivery});
     for (const action of ACTIONS) app.action(action,async({body,ack,respond})=>{
       const result=await actions.receive(body,ack);
       if(result.status==='blocked' && respond) { try { validateIdentity(body,config); if(config.actors[action].includes(body.user.id)) await respond({response_type:'ephemeral',text:'Action blocked: check the operator status.'}); } catch {} }
     });
-    app.action('mmani_approve_plan',async({body,ack})=>actions.approve(body,ack));
+    app.action('mmani_approve_plan',async({body,ack,respond})=>{ const result=await actions.approve(body,ack); if(result.status==='blocked' && respond) { try { validateIdentity(body,config); if(config.actors.mmani_debug_pr.includes(body.user?.id)) await respond({response_type:'ephemeral',text:'Action blocked: check the operator status.'}); } catch {} } });
     return {app,state,actions,tasks,supervisor,delivery,async reconcileJira(episode,key,id) {
       if (!/^[a-f0-9]{64}$/.test(episode) || !/^SC-[1-9][0-9]*$/.test(key) || !/^[0-9]+$/.test(id)) throw new Error('invalid reconciliation identity');
       const raw=(await state.call('cards')).find(c=>c.episode===episode); if (!raw) throw new Error('unknown incident');
@@ -57,6 +58,12 @@ export async function createBridge({root,App=bolt.App,fetcher=fetch,makeProcess=
     },async doctor(){ await jira.metadata(); for(const id of Object.keys(config.monitors)) await monitor(id); return true; }};
   } catch { await state.close(); throw new Error('bridge preflight failed'); }
 }
+export async function startWorker(bridge) {
+  let timer=null, cleanup=null;
+  const shutdown=()=>cleanup ||= (async()=>{ if(timer) clearInterval(timer); try { await bridge.app.stop(); } finally { await bridge.state.close(); } })();
+  try { await bridge.doctor(); await bridge.app.start(); await bridge.supervisor.tick(); timer=setInterval(()=>bridge.supervisor.tick().catch(()=>{}),1000); return shutdown; }
+  catch { await shutdown().catch(()=>{}); throw new Error('bridge start failed'); }
+}
 async function cli() {
   process.umask(0o077); const root=join(homedir(),'.deskdrop-slack-bridge'), command=process.argv[2];
   if(command==='init') { const state=new State(root,{initialize:true}); await state.call('pending'); await state.close(); console.log('Bridge state initialized'); return; }
@@ -66,11 +73,9 @@ async function cli() {
   if(command==='reconcile-artifact') { try { const receipt=process.argv[4]==='review'?JSON.parse(readPrivate(join(root,'review-receipt.json'))):null; await bridge.delivery.reconcile({episode:process.argv[3],kind:process.argv[4],id:process.argv[5],receipt}); console.log('Authoritative artifact verified; uncertain outcomes remain fenced'); } finally {await bridge.state.close();} return; }
   if(command==='reconcile-jira') { try { await bridge.reconcileJira(process.argv[3],process.argv[4],process.argv[5]); console.log('Jira identity verified'); } finally { await bridge.state.close(); } return; }
   if(command==='doctor') { try { await bridge.doctor(); console.log('Bridge read-only preflight passed'); } finally { await bridge.state.close(); } return; }
-  try { await bridge.doctor(); await bridge.app.start(); } catch { await bridge.state.close(); throw new Error('bridge start failed'); }
-  await bridge.supervisor.tick();
-  const timer=setInterval(()=>bridge.supervisor.tick().catch(()=>{}),1000);
-  const shutdown=async()=>{ clearInterval(timer); await bridge.app.stop(); await bridge.state.close(); process.exit(0); };
-  process.once('SIGINT',shutdown); process.once('SIGTERM',shutdown);
+  const shutdown=await startWorker(bridge);
+  const stop=async()=>{ await shutdown(); process.exit(0); };
+  process.once('SIGINT',stop); process.once('SIGTERM',stop);
   console.log('Bridge Socket Mode worker started');
 }
 if (process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) cli().catch(()=>{ console.error('Bridge startup failed; inspect private configuration and prerequisites.'); process.exitCode=1; });

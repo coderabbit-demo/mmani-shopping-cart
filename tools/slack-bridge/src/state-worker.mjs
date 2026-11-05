@@ -53,6 +53,22 @@ const operations = {
     if (result.changes !== 1) throw new Error('stale fence');
     return art(episode,kind);
   }); },
+  recoverJira() { return transact(() => {
+    q("UPDATE artifacts SET state='prestart_failed' WHERE kind='jira' AND state='claimed'").run();
+    q("UPDATE artifacts SET state='unknown' WHERE kind='jira' AND state='dispatch_intent'").run(); return true;
+  }); },
+  jiraKnown({episode,fence,id,key}) { return transact(() => {
+    const result=q("UPDATE artifacts SET state='known',remote_id=?,remote_key=? WHERE episode=? AND kind='jira' AND fence=? AND state IN ('dispatch_intent','unknown') AND remote_id IS NULL").run(id,key,episode,fence);
+    if(result.changes!==1) throw new Error('stale Jira fence'); return art(episode,'jira');
+  }); },
+  releasePrestart({episode,kind,fence,stage,revision=null,taskId=null}) { return transact(() => {
+    const run=q('SELECT * FROM runs WHERE episode=? AND stage=?').get(episode,stage);
+    const a=art(episode,kind); if(!run || run.status!=='active' || !a || a.fence!==fence || a.state!=='dispatch_intent') throw new Error('unsafe prestart release');
+    q("UPDATE artifacts SET state='prestart_failed' WHERE episode=? AND kind=? AND fence=? AND state='dispatch_intent'").run(episode,kind,fence);
+    q('DELETE FROM runs WHERE episode=? AND stage=?').run(episode,stage);
+    if(stage==='implementation') { const updated=q('UPDATE approvals SET consumed=0 WHERE episode=? AND revision=? AND task_id=? AND consumed=1').run(episode,revision,taskId); if(updated.changes!==1) throw new Error('approval mismatch'); }
+    return true;
+  }); },
   getCard({ts}) { const c=card(ts); if (!c) return null; const i=q('SELECT monitor, synthetic FROM incidents WHERE episode=?').get(c.episode); return {...c,...i}; },
   getArtifact({episode,kind}) { return art(episode,kind) || null; },
   setHandoff({episode,pr,head}) { q("INSERT INTO handoffs VALUES (?,?,?,'awaiting_native_verify') ON CONFLICT(episode) DO UPDATE SET pr=excluded.pr,head=excluded.head,status=excluded.status").run(episode,pr,head); return true; },

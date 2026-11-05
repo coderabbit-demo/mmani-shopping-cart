@@ -84,7 +84,7 @@ export class Actions {
     try { created=await this.jira.create({episode:card.episode,monitor:card.monitor,synthetic:!!card.synthetic}); }
     catch { created={kind:'unknown'}; }
     if (created.kind!=='known') return this.state.call('transition',{...ref,from:'dispatch_intent',to:created.kind==='prestart'?'prestart_failed':'unknown'});
-    artifact=await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id:created.id,key:created.key});
+    artifact=await this.state.call('jiraKnown',{...ref,id:created.id,key:created.key});
     return this.verifyJira(card,artifact);
   }
   async reconcileJira(body,id,key) {

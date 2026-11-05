@@ -9,6 +9,13 @@ Status: APPROVED by Mahesh on November 5, 2026, including all 27 files, the pinn
 
 - One normal CodeRabbit Code feature task, including its planning/implementation and any PR-fix turns; no Autofix. The harness may approve the CodeRabbit plan only when it matches this exact brief.
 - Up to 40 additional reported CodeRabbit Agent minutes, including metered native QA. Record reported units honestly; Code CLI terminal turn minutes are gross rounded usage, not a live billed-spend API. No automatic extension.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1b31fdc1532d5f268307295e28ca8a25e9534e75be8ed18ca294c6c605d5bdaa -->
+
+- Amendment approved by Mahesh on November 5, 2026: add 10 reported Agent minutes, raising the total cap to 50. The same 2026-11-05T19:00:00Z cutoff, implementation scope, single task, PR, review, and native QA conditions apply.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - Start on approval; end November 5, 2026 at 11:00 AM America/Los_Angeles (2026-11-05T19:00:00Z). Do not start after that cutoff.
 - Exactly one completed CLI review for the new coding task before PR publication. A completed in-task review counts; never add a duplicate Mac review. PR-fix turns are exempt. Exact-head PR/security/CI feedback and native CodeRabbit QA Agent Verify remain required.
 - At most one feature PR, open against main and left unmerged; one new GitHub implementation issue and one new SC implementation Task assigned to Mahesh. Live incident Bug creation and demonstration CodeRabbit tasks are not included yet.
