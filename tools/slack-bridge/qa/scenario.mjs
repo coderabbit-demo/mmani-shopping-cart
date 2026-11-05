@@ -8,7 +8,7 @@ import { Actions } from '../src/actions.mjs';
 import { approvalRevision } from '../src/config.mjs';
 import { Tasks,Supervisor,CodeRabbitAdapter,Delivery,reviewAdapter,githubAdapter,checksAdapter } from '../src/coderabbit.mjs';
 import { Jira } from '../src/jira.mjs';
-import { run,verifySource } from '../src/process.mjs';
+import { run,verifySource,prepareCheckout } from '../src/process.mjs';
 import { slackAdapter } from '../src/slack.mjs';
 import { config,envelope,incident } from '../tests/fixtures/cli.mjs';
 const root=await mkdtemp(join(tmpdir(),'deskdrop-bridge-qa-')), state=new State(root,{initialize:true});
@@ -16,13 +16,13 @@ const fixture=fileURLToPath(new URL('../tests/fixtures/cli.mjs',import.meta.url)
 const invoke=target=>(args,options={})=>run(process.execPath,[fixture,'fake',target,...args],{cwd:dirname(fixture),home:root,...options});
 try {
  const now=Date.now(), taskId='11111111-1111-4111-8111-111111111111', statuses=[];
- const grant={repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/offline-fixture',baseBranch:'codex/fixture-base',deliveryBranch:'codex/fixture-delivery',issueUrl:'https://github.com/coderabbit-demo/mmani-shopping-cart/issues/18',delivery:true,reviewMode:'fallback',owner:'U123',allowedFiles:['lib/fixture.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; grant.revision=approvalRevision(grant);
+ const grant={objective:'Repair the approved fixture defect',brief:'Fix lib/fixture.ts only; preserve all assertions.',briefHash:'91c6ef',repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/offline-fixture',baseBranch:'codex/fixture-base',deliveryBranch:'codex/fixture-delivery',issueUrl:'https://github.com/coderabbit-demo/mmani-shopping-cart/issues/18',delivery:true,reviewMode:'fallback',owner:'U123',allowedFiles:['lib/fixture.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; grant.briefHash=(await import('node:crypto')).createHash('sha256').update(grant.brief).digest('hex'); grant.revision=approvalRevision(grant);
  let last;
  const client={chat:{async update(message){last=message;statuses.push(message.blocks[1].elements[0].text)}}};
  const slack=slackAdapter(client,state), adapter=new CodeRabbitAdapter(invoke('coderabbit'));
  const git=invoke('git'), gh=invoke('gh');
  const tasks=new Tasks({state,approval:async()=>grant,source:approved=>verifySource(git,approved),adapter});
- const delivery=new Delivery({state,git,adapter,approval:async()=>grant,review:reviewAdapter(invoke('coderabbit')),github:githubAdapter(gh),checks:checksAdapter(gh,invoke('strict'))});
+ const delivery=new Delivery({state,git,adapter,approval:async()=>grant,review:reviewAdapter(invoke('coderabbit'),git),github:githubAdapter(gh),checks:checksAdapter(gh,invoke('strict')),prepare:async(grant,head,authoredBranch)=>{await prepareCheckout({git,gitPath:process.execPath,ghPath:process.execPath,bashPath:process.execPath,codePath:process.execPath,root,grant,head,authoredBranch,makeProcess:()=>git}); return {git};}});
  const actions=new Actions({state,config:config(),monitor:async()=>true,jira:new Jira(invoke('jira')),task:tasks,delivery,slack});
  const supervisor=new Supervisor({state,tasks,adapter,slack});
  let acks=0; const ack=async()=>{acks++}, raw=JSON.stringify(incident());
@@ -43,7 +43,8 @@ try {
  assert.equal((await actions.receive(other,ack)).status,'unknown'); assert.equal((await actions.receive(other,ack)).status,'unknown');
  const calls=(await readFile(join(root,'calls.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
  const count=(target,verb)=>calls.filter(c=>c.target===target && c.args.includes(verb)).length;
- assert.equal(count('jira','create'),2); assert.equal(count('coderabbit','new'),1); assert.equal(count('coderabbit','resume'),2); assert.equal(count('coderabbit','review'),1); assert.equal(count('gh','create'),1);
+ assert.equal(count('jira','create'),2); assert.equal(count('coderabbit','new'),1); assert.equal(count('coderabbit','resume'),2); assert.equal(count('coderabbit','review'),1); assert.equal(count('coderabbit','push'),1); assert.ok(count('git','worktree')>=1); assert.equal(count('gh','create'),1);
+ const otherCard=(await state.call('cards')).find(c=>c.episode!==card.episode); assert.equal(await tasks.start(otherCard,'U123'),'approval_required'); assert.equal(count('coderabbit','new'),1);
  const artifacts=await state.call('artifacts');
  const receipt={scenario:'offline_fixture',result:'pass',external:'fake',jiraCreates:2,normalTasks:1,implementationResumes:1,fixtureReviews:1,fixturePRs:1,handoff:delivered.status,acknowledgements:acks,artifactStates:artifacts.map(a=>({kind:a.kind,state:a.state})),statuses,limitations:'External calls and review/PR evidence are synthetic; native Verify was not executed.'};
  await writeFile(join(root,'receipt.json'),JSON.stringify(receipt,null,2)+'\n',{mode:0o600});

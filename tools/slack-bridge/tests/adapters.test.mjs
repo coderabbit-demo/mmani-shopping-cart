@@ -7,7 +7,7 @@ const fixture=fileURLToPath(new URL('./fixtures/cli.mjs',import.meta.url));
 test('spawn uses fixed argument array and minimal environment',async()=>{
  const marker='$(touch /tmp/never-bridge-injection)';
  const r=await run(process.execPath,[fixture,'args',marker],{cwd:process.cwd()}); assert.equal(r.kind,'ok');
- const result=JSON.parse(r.stdout); assert.deepEqual(result.args,[marker]); assert.deepEqual(result.envKeys,['HOME','LANG','PATH']);
+ const result=JSON.parse(r.stdout); assert.deepEqual(result.args,[marker]); assert.deepEqual(result.envKeys,process.platform==='darwin'?['HOME','LANG','PATH','__CF_USER_TEXT_ENCODING']:['HOME','LANG','PATH']); assert.equal(result.envKeys.includes('SLACK_BOT_TOKEN'),false); assert.equal(result.envKeys.includes('BRIDGE_SENTINEL'),false);
 });
 test('Jira create accepts only native shape and readback validates identity',async()=>{
  const marker='deskdrop-bridge-'+'a'.repeat(64), calls=[];
@@ -43,11 +43,28 @@ test('foreground receiver registers fixed actions and refuses mismatched Slack i
 test('review completion and exact-head checks fail closed on partial or changed evidence',async()=>{
  const {reviewAdapter,checksAdapter}=await import('../src/coderabbit.mjs');
  const line=x=>({kind:'ok',stdout:JSON.stringify(x)+'\n'});
- const valid={type:'complete',status:'review_completed',outcome:'completed',unreviewedFileCount:0,reused:false};
- assert.equal((await reviewAdapter(async()=>line(valid))('b'.repeat(40),'d'.repeat(40))).kind,'complete');
- assert.equal((await reviewAdapter(async()=>line({...valid,unreviewedFileCount:1}))('b'.repeat(40),'d'.repeat(40))).kind,'unknown');
+ const valid={type:'complete',status:'review_completed',outcome:'completed',findings:0,gate:{threshold:'major',status:'passed',blockingFindings:0},reviewedFiles:['lib/fixture.ts']}; const reviewGit=async args=>({kind:'ok',stdout:args[0]==='rev-parse'?'d'.repeat(40):'lib/fixture.ts\n'});
+ assert.equal((await reviewAdapter(async()=>line(valid),reviewGit)('b'.repeat(40),'d'.repeat(40))).kind,'complete');
+ assert.equal((await reviewAdapter(async()=>line({...valid,unreviewedFileCount:1,reviewedFiles:[]} ),reviewGit)('b'.repeat(40),'d'.repeat(40))).kind,'unknown');
  const grant={base:'b'.repeat(40),baseBranch:'codex/base',deliveryBranch:'codex/head'};
  const original=['d'.repeat(40),grant.base,grant.baseBranch,grant.deliveryBranch,'coderabbit-demo/mmani-shopping-cart','coderabbit-demo/mmani-shopping-cart']; let n=0;
  const gh=async()=>line(n++===0?original:['e'.repeat(40),...original.slice(1)]);
  assert.equal(await checksAdapter(gh,async()=>({kind:'ok'}))('https://github.com/coderabbit-demo/mmani-shopping-cart/pull/123','d'.repeat(40),grant),false);
+});
+test('last stdout event without newline persists submitted identity before close',async()=>{
+ const {CodeRabbitAdapter}=await import('../src/coderabbit.mjs'); let saved;
+ const id='11111111-1111-4111-8111-111111111111';
+ const cr=new CodeRabbitAdapter((args,o)=>run(process.execPath,['-e',`process.stdout.write(JSON.stringify({status:'task_submitted',taskId:'${id}'}))`],{cwd:process.cwd(),...o}));
+ assert.equal((await cr.create('plan',async value=>{await new Promise(r=>setTimeout(r,10));saved=value},1000)).kind,'submitted'); assert.equal(saved,id);
+});
+test('delivery permits scoped regression additions and rejects deleted assertions',async()=>{
+ const {Delivery}=await import('../src/coderabbit.mjs'); let deleted='0'; const head='d'.repeat(40),base='b'.repeat(40), grant={base,baseBranch:'main',deliveryBranch:'codex/fix',allowedFiles:['tests/store.test.mjs','lib/store.ts']};
+ const git=async a=>({kind:'ok',stdout:a[0]==='remote'?'https://github.com/coderabbit-demo/mmani-shopping-cart.git':a[0]==='ls-remote'?`${head}\trefs/heads/codex/fix\n${base}\trefs/heads/main`:a[0]==='rev-parse'?head:a.includes('--name-only')?'lib/store.ts\ntests/store.test.mjs':a.includes('--numstat')?`4\t${deleted}\ttests/store.test.mjs`:''});
+ const d=new Delivery({git}); assert.equal(await d.verifyFiles(grant,head),true); deleted='1'; assert.equal(await d.verifyFiles(grant,head),false);
+});
+test('GitHub publisher sends first-line issue URL through stdin body-file',async()=>{
+ const {githubAdapter}=await import('../src/coderabbit.mjs'); let captured;
+ const api=githubAdapter(async(args,options)=>{captured={args,options}; return {kind:'ok',stdout:'https://github.com/coderabbit-demo/mmani-shopping-cart/pull/123'};});
+ await api.create({deliveryBranch:'codex/fix',baseBranch:'main',issueUrl:'https://coderabbit-demo.atlassian.net/browse/SC-38'},'d'.repeat(40));
+ assert.deepEqual(captured.args.slice(-2),['--body-file','-']); assert.equal(captured.options.stdin.split('\n')[0],'Fixes https://coderabbit-demo.atlassian.net/browse/SC-38'); assert.match(captured.options.stdin,/Jira: SC-38/);
 });

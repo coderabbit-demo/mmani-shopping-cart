@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS incidents (episode TEXT PRIMARY KEY, monitor TEXT NOT
 CREATE TABLE IF NOT EXISTS cards (ts TEXT PRIMARY KEY, episode TEXT NOT NULL REFERENCES incidents(episode), digest TEXT NOT NULL, actionable INTEGER NOT NULL, jira_handle TEXT UNIQUE NOT NULL, debug_handle TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS deliveries (event TEXT PRIMARY KEY, episode TEXT NOT NULL, digest TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS artifacts (episode TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, fence INTEGER NOT NULL, remote_id TEXT, remote_key TEXT, PRIMARY KEY(episode,kind));
+CREATE TABLE IF NOT EXISTS reviews (episode TEXT PRIMARY KEY, receipt TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS grants (revision TEXT PRIMARY KEY, episode TEXT UNIQUE NOT NULL, cap REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS budgets (episode TEXT PRIMARY KEY, revision TEXT NOT NULL, cap REAL NOT NULL, used REAL NOT NULL DEFAULT 0, usage_unknown INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS approvals (episode TEXT NOT NULL, revision TEXT NOT NULL, task_id TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(episode,revision,task_id));
 CREATE TABLE IF NOT EXISTS handoffs (episode TEXT PRIMARY KEY, pr TEXT NOT NULL, head TEXT NOT NULL, status TEXT NOT NULL);
@@ -54,9 +56,13 @@ const operations = {
   getCard({ts}) { const c=card(ts); if (!c) return null; const i=q('SELECT monitor, synthetic FROM incidents WHERE episode=?').get(c.episode); return {...c,...i}; },
   getArtifact({episode,kind}) { return art(episode,kind) || null; },
   setHandoff({episode,pr,head}) { q("INSERT INTO handoffs VALUES (?,?,?,'awaiting_native_verify') ON CONFLICT(episode) DO UPDATE SET pr=excluded.pr,head=excluded.head,status=excluded.status").run(episode,pr,head); return true; },
+  invalidateHandoff({episode}) { q("UPDATE handoffs SET status='stale_exact_head' WHERE episode=?").run(episode); return true; },
   handoffs() { return q('SELECT * FROM handoffs').all(); },
+  saveReview({episode,receipt}) { q('INSERT OR IGNORE INTO reviews VALUES (?,?)').run(episode,receipt); const row=q('SELECT receipt FROM reviews WHERE episode=?').get(episode); if(row.receipt!==receipt) throw new Error('review already recorded'); return true; },
+  getReview({episode}) { return q('SELECT receipt FROM reviews WHERE episode=?').get(episode) || null; },
+  completedPlans() { return q("SELECT a.episode,a.remote_id,b.revision FROM artifacts a JOIN budgets b ON b.episode=a.episode JOIN runs r ON r.episode=a.episode AND r.stage='plan' WHERE a.kind='task' AND a.state='confirmed' AND r.status='complete' AND b.usage_unknown=0").all(); },
   getBudget({episode}) { return q('SELECT * FROM budgets WHERE episode=?').get(episode) || null; },
-  initBudget({episode,revision,cap}) { return transact(() => { q('INSERT OR IGNORE INTO budgets(episode,revision,cap) VALUES (?,?,?)').run(episode,revision,cap); const b=q('SELECT * FROM budgets WHERE episode=?').get(episode); if (b.revision!==revision || b.cap!==cap || b.usage_unknown || b.used>=b.cap) throw new Error('budget unavailable'); return b; }); },
+  initBudget({episode,revision,cap}) { return transact(() => { q('INSERT OR IGNORE INTO grants VALUES (?,?,?)').run(revision,episode,cap); const g=q('SELECT * FROM grants WHERE revision=?').get(revision); if (!g || g.episode!==episode || g.cap!==cap) throw new Error('grant already bound'); q('INSERT OR IGNORE INTO budgets(episode,revision,cap) VALUES (?,?,?)').run(episode,revision,cap); const b=q('SELECT * FROM budgets WHERE episode=?').get(episode); if (b.revision!==revision || b.cap!==cap || b.usage_unknown || b.used>=b.cap) throw new Error('budget unavailable'); return b; }); },
   usage({episode,minutes}) { if (minutes===null || !Number.isFinite(minutes) || minutes<0) { q('UPDATE budgets SET usage_unknown=1 WHERE episode=?').run(episode); return false; } q('UPDATE budgets SET used=used+? WHERE episode=?').run(minutes,episode); return true; },
   approval({episode,revision,taskId}) { return transact(() => {
     const task=art(episode,'task');
@@ -69,7 +75,7 @@ const operations = {
     const task=art(episode,'task'), c=card(ts);
     if (!c || c.episode!==episode || !task || task.remote_id!==taskId || task.state!=='confirmed') throw new Error('control mismatch');
     let existing=q('SELECT * FROM controls WHERE episode=? AND ts=? AND task_id=? AND revision=?').get(episode,ts,taskId,revision);
-    if (!existing) { q('INSERT INTO controls VALUES (?,?,?,?,?)').run(randomBytes(32).toString('hex'),episode,ts,taskId,revision); existing=q('SELECT * FROM controls WHERE episode=? AND ts=? AND task_id=? AND revision=?').get(episode,ts,taskId,revision); }
+    if (!existing) { q('INSERT INTO controls VALUES (?,?,?,?,?)').run(randomBytes(32).toString('hex'),episode,ts,taskId,revision); existing=q('SELECT * FROM controls WHERE episode=? AND ts=? AND task_id=? AND revision=?').get(episode,ts,taskId,revision); q('INSERT INTO outbox(episode,ts,status) VALUES (?,?,?)').run(episode,ts,`plan_ready https://app.coderabbit.ai/code/tasks/${taskId}`); }
     return existing;
   }); },
   controlForCard({ts}) { return q('SELECT * FROM controls WHERE ts=? ORDER BY rowid DESC LIMIT 1').get(ts) || null; },
@@ -93,7 +99,7 @@ const operations = {
   cards() { return q('SELECT * FROM cards').all(); },
   enqueue({episode,ts,status}) { return Number(q('INSERT INTO outbox(episode,ts,status) VALUES (?,?,?)').run(episode,ts,status).lastInsertRowid); },
   pending() { return q('SELECT * FROM outbox WHERE delivered=0 ORDER BY id').all(); },
-  delivered({id}) { q('UPDATE outbox SET delivered=1 WHERE id=?').run(id); return true; },
+  delivered({id}) { q('UPDATE outbox SET delivered=1 WHERE ts=(SELECT ts FROM outbox WHERE id=?) AND id<=?').run(id,id); return true; },
   close() { db.close(); return true; }
 };
 parentPort.on('message', ({id,op,args}) => { try { if (!Object.hasOwn(operations,op)) throw new Error('unknown operation'); parentPort.postMessage({id,value:operations[op](args || {})}); } catch { parentPort.postMessage({id,error:'state operation failed'}); } });

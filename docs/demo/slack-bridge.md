@@ -34,6 +34,20 @@ The following commands describe a future separately approved setup; do not enter
 
 `node tools/slack-bridge/src/main.mjs doctor` performs read-only preflight. `node tools/slack-bridge/src/main.mjs run` runs the foreground receiver; `node tools/slack-bridge/src/main.mjs status` shows durable state. An authorized operator may reconcile an unknown Jira write using `node tools/slack-bridge/src/main.mjs reconcile-jira EPISODE_HASH SC_KEY NUMERIC_ID`; native readback must verify the exact marker before confirmation. Never retry an unknown write based on an empty search. The task approval binds repository, source and base commits, branches, allowed paths, owner, window and budget; a changed record invalidates its revision. Gross turn minutes are observations, not a vendor billing cap.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f4619f2aeea1b9a2ca0697da5081df384b9b9f28378a6b3b769f6a0c68ec5d02 -->
+
 Run `npm --prefix tools/slack-bridge ci`, `npm --prefix tools/slack-bridge test` and `node tools/slack-bridge/qa/scenario.mjs` for offline verification. The scenario leaves a private temporary database and synthetic call/transition receipt and prints their paths. Its fake CLI review and PR are not live evidence. Native Verify on the exact feature head remains required. Private infrastructure, deployment, reboot, telemetry and publication checks retain their existing requirements.
+
+Protected approval requires objective, exact brief, UTF-8 SHA256 briefHash and approvalRevision(record). A revision is reserved globally for one episode. The fixed plan-first prompt includes confirmed Jira key/link and canonical incident facts as bounded JSON data. issueUrl may be the exact confirmed Jira browse URL; no extra GitHub issue is created.
+
+Native task_pushed result.commitSha/branchName drives isolated private checkout preparation. The authored commit is fetched and preserved; scoped test additions are allowed while removed existing test lines, goldens/framework/root manifests remain blocked. Only the approved separate delivery branch is pushed without force. Known task observations reattach read-only; unknown minutes block further paid work.
+
+reconcile-artifact EPISODE_HASH task|push|review|pr ID verifies known uncertain artifacts. A lost initial task ID requires vendor episode proof and stays blocked, never search-absence retry. Review reconciliation reads private review-receipt.json containing taskId, revision, base, head and native events. Exact diff coverage and checkout head are required. Completed receipts persist; blocked findings require operator disposition proof without another review. Unknown PRs require exact owned base/head and gates. Verify handoffs become stale when head/gates stop matching.
+
+One external CLI review completed on 641ab9e/base f7a859 covering all 27 files: one Major and three Minor. This repair addresses final stdout without newline, catch scope/double completion, same-card outbox supersession, and durable control/outbox recovery. No duplicate review ran. Native QA, final-head PR feedback and live activation remain pending. Lost task identity and review disposition remain explicit operator boundaries when vendor evidence cannot prove the outcome.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->

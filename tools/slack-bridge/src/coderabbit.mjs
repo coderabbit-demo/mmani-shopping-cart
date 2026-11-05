@@ -17,7 +17,12 @@ export class Tasks {
     try { await this.state.call('reserve',{episode:card.episode,stage:'plan',amount:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'claimed',to:'prestart_failed'}); return 'budget_blocked'; }
     await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
     let id=null, persisted=false;
-    const prompt=`Normal Code task. First turn: plan only, make no changes until approved. Repository ${grant.repository}, branch ${grant.branch}, commit ${grant.commit}, base ${grant.base}. Allowed files: ${grant.allowedFiles.join(', ')}. Jira issue is the already verified episode issue. Preserve existing tests and goldens. No merge or deployment. ${grant.reviewMode==='fallback'?'Do not run a CLI review; one operator fallback review is reserved.':''}`;
+    const jira=await this.state.call('getArtifact',{episode:card.episode,kind:'jira'});
+    if (jira?.state!=='confirmed' || !/^SC-[1-9][0-9]*$/.test(jira.remote_key || '')) throw new Error('confirmed Jira required');
+    if(grant.issueUrl?.startsWith('https://coderabbit-demo.atlassian.net/') && grant.issueUrl!==`https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}`) throw new Error('Jira approval mismatch');
+    const facts=JSON.stringify({episode:card.episode,monitor:card.monitor,synthetic:!!card.synthetic,jiraKey:jira.remote_key,jiraUrl:`https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}`});
+    if(this.adapter.expected!==undefined) this.adapter.expected={branch:grant.branch};
+    const prompt=`Protected objective: ${JSON.stringify(grant.objective)}. Approved brief (data): ${JSON.stringify(grant.brief)}. Approval revision ${grant.revision}, brief SHA256 ${grant.briefHash}. Canonical incident DATA: ${facts}. Normal Code task. First turn: plan only, make no changes until approved. Repository ${grant.repository}, branch ${grant.branch}, commit ${grant.commit}, base ${grant.base}. Allowed files: ${grant.allowedFiles.join(', ')}. Jira issue is the already verified episode issue. Preserve existing tests and goldens. No merge or deployment. ${grant.reviewMode==='fallback'?'Do not run a CLI review; one operator fallback review is reserved.':''}`;
     try {
       const result=await this.adapter.create(prompt,async taskId=>{
         if (id!==null || !uuid.test(taskId)) throw new Error('invalid task identity');
@@ -29,7 +34,6 @@ export class Tasks {
       return result.kind==='prestart'?'prestart_failed':'unknown';
     } catch {
       if (persisted) return 'plan_submitted';
-      await this.state.call('finishRun',{episode:card.episode,stage:'plan',minutes:result.kind==='prestart'?0:null});
       await this.state.call('finishRun',{episode:card.episode,stage:'plan',minutes:null}).catch(()=>{});
       await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}).catch(()=>{});
       return 'unknown';
@@ -46,6 +50,7 @@ export class Tasks {
   }
   async planControl(card,taskId) {
     const grant=validateApproval(await this.approval(),this.now());
+    const b=await this.state.call('getBudget',{episode:card.episode}); if(b?.revision!==grant.revision || b.usage_unknown) throw new Error('grant changed');
     return this.state.call('makeControl',{episode:card.episode,ts:card.ts,taskId,revision:grant.revision});
   }
   async recordPlan(episode,taskId,minutes) {
@@ -68,6 +73,7 @@ export class Tasks {
     await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
     const prompt='The approved human has accepted the plan. Implement only the approved scope, preserve tests and goldens, and report results. Do not merge or deploy.';
     let result; try { result=await this.adapter.resume(taskId,prompt,Math.max(1,deadline-this.now())); } catch { result={kind:'unknown'}; }
+    if(result.kind==='detached') return 'implementation_running';
     if (result.kind!=='complete') {
       if (result.kind!=='prestart' && this.adapter.cancel) await this.cancelOnce(episode,'implementation',taskId);
       await this.state.call('finishRun',{episode,stage:'implementation',minutes:result.kind==='prestart'?0:null});
@@ -86,7 +92,12 @@ export function verifyHandoff({pr,head,reviewHead,ciHead,securityHead,reviewPass
 }
 
 export class CodeRabbitAdapter {
-  constructor(invoke) { this.invoke=invoke; }
+  constructor(invoke,expected=null) { this.invoke=invoke; this.expected=expected; }
+  identity(task,id) {
+    if (task?.taskId!==id || task.repository?.provider!=='github' || task.repository?.repoId!=='1437431331' || task.repository?.name!=='mmani-shopping-cart') throw new Error('task identity mismatch');
+    if(this.expected && (task.branchName!==this.expected.branch || task.baseBranchName!==this.expected.branch)) throw new Error('task source mismatch');
+    return task;
+  }
   async create(prompt,submitted,timeout) {
     let seen=false;
     const result=await this.invoke(['code','new','--agent','--access','manual','-'],{stdin:prompt,timeout,onLine:async line=>{
@@ -100,15 +111,16 @@ export class CodeRabbitAdapter {
   async show(id,timeout=20000) {
     if (!uuid.test(id)) throw new Error('invalid task identity');
     const {events}=await import('./process.mjs'); const list=events(await this.invoke(['code','show','--agent',id],{timeout})); const e=list.at(-1);
-    if (e.type!=='complete' || e.status!=='task_shown' || e.taskId!==id || !e.task) throw new Error('task status unknown');
-    return e.task;
+    if (e.type!=='complete' || e.status!=='task_shown' || !e.task) throw new Error('task status unknown');
+    return this.identity(e.task,id);
   }
   async resume(id,prompt,timeout) {
     if (!uuid.test(id)) throw new Error('invalid task identity');
     const {events}=await import('./process.mjs');
     const r=await this.invoke(['code','resume','--agent',id,'--message','-'],{stdin:prompt,timeout});
     if (r.kind==='prestart') return {kind:'prestart'};
-    try { const list=events(r), sent=list.some(e=>e.status==='message_sent' && e.clientOperationId), end=list.at(-1);
+    try { const list=r.stdout?r.stdout.split('\n').filter(Boolean).map(line=>JSON.parse(line)):[], sent=list.some(e=>e.status==='message_sent' && e.clientOperationId), end=list.at(-1);
+      if(sent && r.kind!=='ok') return {kind:'detached'};
       if (!sent || end.type!=='complete' || end.status!=='turn_completed' || end.taskId!==id || end.turn?.outcome!=='completed') throw new Error('uncertain continuation');
       return {kind:'complete',minutes:end.agentMinutes};
     } catch { return {kind:'unknown'}; }
@@ -126,25 +138,34 @@ export class CodeRabbitAdapter {
   async push(id) {
     if (!uuid.test(id)) throw new Error('invalid task identity');
     const {events}=await import('./process.mjs');
-    try { const e=events(await this.invoke(['code','push','--agent',id])).at(-1); return e.type==='complete' && e.status==='push_completed' ? e : null; } catch { return null; }
+    try { const e=events(await this.invoke(['code','push','--agent',id])).at(-1); return e.type==='complete' && e.status==='task_pushed' && this.identity(e.task,id).deliveryStatus==='succeeded' && /^[a-f0-9]{40}$/.test(e.task.result?.commitSha || '') ? e : null; } catch { return null; }
   }
 }
 
 export class Supervisor {
-  constructor({state,tasks,adapter,slack,now=Date.now}) { Object.assign(this,{state,tasks,adapter,slack,now}); this.busy=false; }
+  constructor({state,tasks,adapter,slack,delivery=null,now=Date.now}) { Object.assign(this,{state,tasks,adapter,slack,delivery,now}); this.busy=false; }
   async tick() {
     if (this.busy) return; this.busy=true;
     try {
       for (const run of await this.state.call('activeRuns')) {
         const task=await this.state.call('getArtifact',{episode:run.episode,kind:'task'});
-        if (this.now()>=run.deadline) {
+        if(this.tasks.approval) { try { const g=await this.tasks.approval(), b=await this.state.call('getBudget',{episode:run.episode}); if(b?.revision!==g.revision) continue; this.adapter.expected={branch:g.branch}; } catch {continue;} }
+        let completed=null; if(task?.remote_id) { try { completed=await this.adapter.show(task.remote_id,Math.max(1,Math.min(5000,run.deadline-this.now()))); } catch {} }
+        if (this.now()>=run.deadline && completed?.turnStatus!=='completed') {
           if (run.stage!=='review' && task?.remote_id) await this.tasks.cancelOnce(run.episode,run.stage,task.remote_id);
           await this.state.call('finishRun',{episode:run.episode,stage:run.stage,minutes:null}).catch(()=>{});
           continue;
         }
+        if(run.stage==='implementation' && completed?.turnStatus==='completed' && completed.cancellationPending===false && task?.remote_id) {
+          const observed=await this.adapter.observe(task.remote_id); if(!observed) continue;
+          await this.state.call('finishRun',{episode:run.episode,stage:run.stage,minutes:observed.minutes});
+          const grant=await this.tasks.approval(), kind=`resume-${grant.revision}`, a=await this.state.call('getArtifact',{episode:run.episode,kind});
+          if(a?.state==='dispatch_intent') { await this.state.call('transition',{episode:run.episode,kind,fence:a.fence,from:'dispatch_intent',to:'known',id:task.remote_id}); await this.state.call('transition',{episode:run.episode,kind,fence:a.fence,from:'known',to:'confirmed'}); }
+          if(Number.isFinite(observed.minutes) && this.delivery) await this.delivery.deliver({episode:run.episode,taskId:task.remote_id}); continue;
+        }
         if (run.stage!=='plan' || !task?.remote_id || task.state!=='known') continue;
         let shown; try { shown=await this.adapter.show(task.remote_id,Math.max(1,Math.min(20000,run.deadline-this.now()))); } catch { continue; }
-        if (shown.turnStatus!=='completed' || shown.cancellationPending!==false) continue;
+        if (shown.turnStatus!=='completed' || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus)) continue;
         const observed=await this.adapter.observe(task.remote_id,Math.max(1,Math.min(20000,run.deadline-this.now())));
         if (!observed) continue;
         try {
@@ -153,10 +174,14 @@ export class Supervisor {
           for (const raw of await this.state.call('cards')) if (raw.episode===run.episode) {
             const card=await this.state.call('getCard',{ts:raw.ts});
             await this.tasks.planControl(card,task.remote_id);
-            const id=await this.state.call('enqueue',{episode:card.episode,ts:card.ts,status:'plan_ready'});
-            try { await this.slack.status(card.ts,'plan_ready'); await this.state.call('delivered',{id}); } catch {}
+            try { await this.slack.flush(); } catch {}
           }
         } catch {}
+      }
+      for(const plan of await this.state.call('completedPlans')) {
+        for(const raw of await this.state.call('cards')) if(raw.episode===plan.episode && !await this.state.call('controlForCard',{ts:raw.ts})) {
+          try { const card=await this.state.call('getCard',{ts:raw.ts}); await this.tasks.planControl(card,plan.remote_id); } catch {}
+        }
       }
       for (const run of await this.state.call('pendingStops')) {
         const task=await this.state.call('getArtifact',{episode:run.episode,kind:'task'});
@@ -166,13 +191,42 @@ export class Supervisor {
           if (shown.cancellationPending===false && shown.turnStatus!=='in_progress' && shown.turnStatus) await this.state.call('stopped',{episode:run.episode,stage:run.stage});
         } catch {}
       }
+      if(this.delivery) await this.delivery.refreshHandoffs();
       try { await this.slack.flush(); } catch {}
     } finally { this.busy=false; }
   }
 }
 
 export class Delivery {
-  constructor({state,git,review,github,checks,approval,adapter,now=Date.now}) { Object.assign(this,{state,git,review,github,checks,approval,adapter,now}); }
+  constructor({state,git,review,github,checks,approval,adapter,prepare=null,now=Date.now}) { Object.assign(this,{state,git,review,github,checks,approval,adapter,prepare,now}); }
+  async reconcile({episode,kind,id,receipt=null}) {
+    if(!/^[a-f0-9]{64}$/.test(episode) || !['task','push','review','pr'].includes(kind)) throw new Error('invalid reconciliation');
+    const grant=validateApproval(await this.approval(),this.now()), budget=await this.state.call('getBudget',{episode});
+    if(budget?.revision!==grant.revision) throw new Error('grant mismatch');
+    const task=await this.state.call('getArtifact',{episode,kind:'task'}), artifact=await this.state.call('getArtifact',{episode,kind});
+    if(!artifact || !['unknown','dispatch_intent','known'].includes(artifact.state)) throw new Error('no uncertain artifact');
+    if(!task?.remote_id || (kind==='task' && id!==task.remote_id)) throw new Error('vendor episode proof required for lost task ID; no replay permitted');
+    this.adapter.expected={branch:grant.branch}; const shown=await this.adapter.show(task.remote_id);
+    if(kind==='task') return shown;
+    const head=shown.result?.commitSha;
+    if(shown.deliveryStatus!=='succeeded' || !/^[a-f0-9]{40}$/.test(head || '')) throw new Error('delivery proof missing');
+    if(kind==='push' && id!==head) throw new Error('head mismatch');
+    if(kind==='review') {
+      if(!receipt || receipt.taskId!==task.remote_id || receipt.revision!==grant.revision || receipt.base!==grant.base || receipt.head!==head || !Array.isArray(receipt.events)) throw new Error('review receipt mismatch');
+      const checked=await reviewAdapter(async()=>({kind:'ok',stdout:receipt.events.map(e=>JSON.stringify(e)).join('\n')}),this.git)(grant.base,head);
+      if(checked.kind!=='complete') throw new Error('review coverage unavailable');
+      await this.state.call('saveReview',{episode,receipt:JSON.stringify({...checked,taskId:task.remote_id,revision:grant.revision})});
+      if(checked.gate.status!=='passed' || checked.findings!==0) throw new Error('completed review blocked; reconcile findings manually without rerunning review');
+    }
+    if(kind==='pr' && !await this.checks(id,head,grant)) throw new Error('PR ownership and gates unverified');
+    const ref={episode,kind,fence:artifact.fence};
+    if(artifact.state!=='known') await this.state.call('transition',{...ref,from:artifact.state,to:'known',id:head,key:kind==='pr'?id:null});
+    return this.state.call('transition',{...ref,from:'known',to:'confirmed'});
+  }
+  async refreshHandoffs() {
+    const grant=await this.approval();
+    for(const h of await this.state.call('handoffs')) if(h.status==='awaiting_native_verify' && !await this.checks(h.pr,h.head,grant)) await this.state.call('invalidateHandoff',{episode:h.episode});
+  }
   async verifyFiles(grant,head) {
     if (!/^[a-f0-9]{40}$/.test(head)) return false;
     if (!/^codex\/[A-Za-z0-9._/-]+$/.test(grant.deliveryBranch || '') || grant.deliveryBranch.includes('..') || grant.deliveryBranch.includes('//')) return false;
@@ -189,8 +243,10 @@ export class Delivery {
     if (changes.kind!=='ok') return false;
     const paths=changes.stdout.trim().split('\n').filter(Boolean);
     if (!paths.length || paths.some(p=>!grant.allowedFiles.includes(p) || p==='package.json' || p==='package-lock.json' || p.startsWith('tests/golden/'))) return false;
-    const protectedFiles=await this.git(['diff','--quiet',grant.base,head,'--','tests','scripts/golden','package.json','package-lock.json']);
-    return protectedFiles.kind==='ok';
+    const protectedFiles=await this.git(['diff','--quiet',grant.base,head,'--','tests/golden','scripts/golden','package.json','package-lock.json']);
+    if(protectedFiles.kind!=='ok') return false;
+    const regression=await this.git(['diff','--numstat','--no-renames',grant.base,head,'--','tests']);
+    return regression.kind==='ok' && regression.stdout.trim().split('\n').filter(Boolean).every(line=>{const [added,deleted,path]=line.split('\t'); return /^\d+$/.test(added) && deleted==='0' && grant.allowedFiles.includes(path);});
   }
   async deliver({episode,taskId}) {
     let grant; try { grant=validateApproval(await this.approval(),this.now()); } catch { return 'delivery_blocked'; }
@@ -199,31 +255,40 @@ export class Delivery {
     const tracked=await this.state.call('getArtifact',{episode,kind:'task'});
     const budget=await this.state.call('getBudget',{episode});
     if (tracked?.remote_id!==taskId || continuation?.state!=='confirmed' || !budget || budget.usage_unknown || budget.used>=budget.cap) return 'delivery_blocked';
+    this.adapter.expected={branch:grant.branch};
     let task; try { task=await this.adapter.show(taskId); } catch { return 'delivery_blocked'; }
-    const head=task.result?.commit;
-    if (task.turnStatus!=='completed' || task.cancellationPending!==false || !/^[a-f0-9]{40}$/.test(head || '')) return 'delivery_blocked';
-    if (task.delivery?.status!=='succeeded') {
-      if (task.delivery?.status!=='ready' || !await (await import('./process.mjs')).verifySource(this.git,grant)) return 'delivery_blocked';
+    let head=task.result?.commitSha;
+    if (task.turnStatus!=='completed' || task.cancellationPending!==false) return 'delivery_blocked';
+    if (task.deliveryStatus!=='succeeded') {
+      if (task.patchStatus!=='ready' || !await (await import('./process.mjs')).verifySource(this.git,grant)) return 'delivery_blocked';
       const claim=await this.state.call('claim',{episode,kind:'push'});
       if (!claim.acquired) return 'push_reconcile_required';
       const ref={episode,kind:'push',fence:claim.artifact.fence}; await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
       const pushed=await this.adapter.push(taskId).catch(()=>null);
       if (!pushed) { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'push_reconcile_required'; }
+      head=pushed.task.result.commitSha; task=pushed.task;
       await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id:head});
       await this.state.call('transition',{...ref,from:'known',to:'confirmed'});
     }
+    if(!/^[a-f0-9]{40}$/.test(head || '') || !/^coderabbit\/[A-Za-z0-9._/-]+$/.test(task.result?.branchName || '') || task.result.branchName.includes('..')) return 'delivery_blocked';
+    if(this.prepare) { try { const prepared=await this.prepare(grant,head,task.result.branchName); Object.assign(this,prepared); } catch { return 'checkout_preparation_blocked'; } }
     return this.publish({episode,taskId,head});
   }
   async publish({episode,taskId,head}) {
     const grant=validateApproval(await this.approval(),this.now());
-    if (grant.delivery!==true || grant.reviewMode!=='fallback' || !/^[-A-Za-z0-9._/]+$/.test(grant.baseBranch || '') || grant.baseBranch.startsWith('-') || grant.baseBranch.includes('..') || grant.baseBranch.includes('//') || !/^https:\/\/github\.com\/coderabbit-demo\/mmani-shopping-cart\/issues\/[1-9]\d*$/.test(grant.issueUrl || '') || !uuid.test(taskId)) return 'delivery_blocked';
+    if (grant.delivery!==true || grant.reviewMode!=='fallback' || !/^[-A-Za-z0-9._/]+$/.test(grant.baseBranch || '') || grant.baseBranch.startsWith('-') || grant.baseBranch.includes('..') || grant.baseBranch.includes('//') || !/^https:\/\/(?:github\.com\/coderabbit-demo\/mmani-shopping-cart\/issues\/[1-9]\d*|coderabbit-demo\.atlassian\.net\/browse\/SC-[1-9]\d*)$/.test(grant.issueUrl || '') || !uuid.test(taskId)) return 'delivery_blocked';
+    const jira=await this.state.call('getArtifact',{episode,kind:'jira'});
+    if(jira?.state!=='confirmed' || (grant.issueUrl.startsWith('https://coderabbit-demo.atlassian.net/') && grant.issueUrl!==`https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}`)) return 'delivery_blocked';
     const task=await this.state.call('getArtifact',{episode,kind:'task'});
     const continuation=await this.state.call('getArtifact',{episode,kind:`resume-${grant.revision}`});
     const budget=await this.state.call('getBudget',{episode});
     if (!task || task.remote_id!==taskId || task.state!=='confirmed' || continuation?.state!=='confirmed' || !budget || budget.usage_unknown || budget.used>=budget.cap || !this.adapter) return 'delivery_blocked';
     let shown; try { shown=await this.adapter.show(taskId); } catch { return 'delivery_blocked'; }
-    if (shown.turnStatus!=='completed' || shown.cancellationPending!==false || shown.result?.commit!==head || shown.delivery?.status!=='succeeded' || !await this.verifyFiles(grant,head)) return 'delivery_blocked';
+    if (shown.turnStatus!=='completed' || shown.cancellationPending!==false || shown.result?.commitSha!==head || shown.deliveryStatus!=='succeeded' || !await this.verifyFiles(grant,head)) return 'delivery_blocked';
+    const prior=await this.state.call('getReview',{episode});
+    if(prior) { const receipt=JSON.parse(prior.receipt); if(receipt.base!==grant.base || receipt.head!==head || receipt.taskId!==taskId || receipt.revision!==grant.revision || receipt.gate?.status!=='passed' || receipt.findings!==0) return 'review_reconcile_required'; }
     const reviewClaim=await this.state.call('claim',{episode,kind:'review'}); let review=reviewClaim.artifact;
+    if(prior && review.state!=='confirmed') return 'review_reconcile_required';
     if (reviewClaim.acquired) {
       const ref={episode,kind:'review',fence:review.fence};
       await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
@@ -231,7 +296,8 @@ export class Delivery {
       try { await this.state.call('reserve',{episode,stage:'review',amount:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'review_reconcile_required'; }
       let result; try { result=await this.review(grant.base,head,Math.max(1,deadline-start)); } catch { result={kind:'unknown'}; }
       await this.state.call('finishRun',{episode,stage:'review',minutes:result.kind==='complete'?Math.max(0,(this.now()-start)/60000):null});
-      if (result.kind!=='complete' || result.head!==head || result.base!==grant.base || result.findings!==0) { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'review_reconcile_required'; }
+      if(result.kind==='complete') await this.state.call('saveReview',{episode,receipt:JSON.stringify({...result,taskId,revision:grant.revision})});
+      if (result.kind!=='complete' || result.head!==head || result.base!==grant.base || result.gate?.status!=='passed' || result.findings!==0) { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'review_reconcile_required'; }
       await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id:head});
       review=await this.state.call('transition',{...ref,from:'known',to:'confirmed'});
     }
@@ -254,21 +320,28 @@ export class Delivery {
     return handoff;
   }
 }
-export function reviewAdapter(invoke) {
+export function reviewAdapter(invoke,git=null) {
   return async(base,head,timeout=900000)=>{
     const {events}=await import('./process.mjs');
     try {
-      const list=events(await invoke(['review','--agent','--committed','--base-commit',base,'--gate','major'],{timeout}));
+      if(!git) return {kind:'unknown'};
+      const current=await git(['rev-parse','HEAD']), diff=await git(['diff','--name-only','--no-renames',base,head,'--']);
+      if(current.kind!=='ok' || current.stdout.trim()!==head || diff.kind!=='ok') return {kind:'unknown'};
+      const expected=diff.stdout.trim().split('\n').filter(Boolean).sort();
+      const raw=await invoke(['review','--agent','--committed','--base-commit',base,'--gate','major'],{timeout});
+      const list=events(raw.kind==='unknown' && raw.exitCode===2 && typeof raw.stdout==='string'?{kind:'ok',stdout:raw.stdout}:raw);
+      if(list.some(e=>e.type==='review_context' && e.baseCommit!==base)) return {kind:'unknown'};
       const last=list.at(-1), findings=list.filter(e=>e.type==='finding').length;
-      if (last.type!=='complete' || last.status!=='review_completed' || !['completed','completed_with_warnings'].includes(last.outcome) || last.unreviewedFileCount!==0 || last.reused===true) return {kind:'unknown'};
-      return {kind:'complete',base,head,findings};
+      const after=await git(['rev-parse','HEAD']);
+      if (last.type!=='complete' || last.status!=='review_completed' || last.outcome!=='completed' || !Array.isArray(last.reviewedFiles) || JSON.stringify([...last.reviewedFiles].sort())!==JSON.stringify(expected) || !Number.isInteger(last.findings) || last.findings!==findings || last.gate?.threshold!=='major' || !Number.isInteger(last.gate?.blockingFindings) || !['passed','blocked'].includes(last.gate?.status) || after.kind!=='ok' || after.stdout.trim()!==head) return {kind:'unknown'};
+      return {kind:'complete',base,head,findings,reviewedFiles:last.reviewedFiles,gate:last.gate};
     } catch { return {kind:'unknown'}; }
   };
 }
 export function githubAdapter(invoke) {
   return {async create(grant,head) {
     if (!/^codex\/[A-Za-z0-9._/-]+$/.test(grant.deliveryBranch || '') || grant.deliveryBranch.includes('..') || !/^[a-f0-9]{40}$/.test(head)) throw new Error('invalid PR input');
-    const r=await invoke(['pr','create','--repo','coderabbit-demo/mmani-shopping-cart','--base',grant.baseBranch,'--head',grant.deliveryBranch,'--title','DeskDrop incident fix','--body','-'],{stdin:`Fixes ${grant.issueUrl}\n\nCodeRabbit-authored incident fix.\n`});
+    const r=await invoke(['pr','create','--repo','coderabbit-demo/mmani-shopping-cart','--base',grant.baseBranch,'--head',grant.deliveryBranch,'--title','DeskDrop incident fix','--body-file','-'],{stdin:`Fixes ${grant.issueUrl}\n\nJira: ${grant.issueUrl.includes('/browse/SC-')?grant.issueUrl.split('/').at(-1):'see bound incident'}\nCodeRabbit-authored incident fix.\n`});
     if (r.kind!=='ok') return null; return r.stdout.trim();
   }};
 }

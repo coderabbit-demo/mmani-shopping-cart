@@ -34,8 +34,29 @@ test('deadline supervisor cancels at most once and fences unknown usage',async()
   await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});
   await s.call('initBudget',{episode,revision:'b'.repeat(64),cap:3}); await s.call('reserve',{episode,stage:'plan',amount:1,deadline:Date.now()-1});
   const c=await s.call('claim',{episode,kind:'task'}); const ref={episode,kind:'task',fence:c.artifact.fence}; await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'}); await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});
-  const adapter={async cancel(){cancels++;return 'cancel_pending'},async show(){return {turnStatus:'completed',cancellationPending:false}}};
+  const adapter={async cancel(){cancels++;return 'cancel_pending'},async show(){return {turnStatus:cancels?'completed':'in_progress',cancellationPending:false}}};
   const tasks=new Tasks({state:s,adapter}); const sup=new Supervisor({state:s,tasks,adapter,slack:{async flush(){}}}); await sup.tick(); await sup.tick();
   assert.equal(cancels,1); assert.equal((await s.call('getBudget',{episode})).usage_unknown,1); assert.equal((await s.call('activeRuns')).length,0);
  } finally { await s.close(); await rm(d,{recursive:true,force:true}); }
+});
+test('one approval revision is atomically bound across two process episodes and restart',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'bridge-grant-')); const s=new State(d,{initialize:true});
+ try {
+  await s.call('pending');
+  const results=await Promise.all(['a','b'].map(letter=>run(process.execPath,[fixture,'budget',d,letter.repeat(64)])));
+  assert.equal(results.map(x=>JSON.parse(x.stdout)).filter(Boolean).length,1);
+  await s.close(); const again=new State(d); try { const b=await again.call('getBudget',{episode:'b'.repeat(64)}); const losing=b?'a':'b'; await assert.rejects(again.call('initBudget',{episode:losing.repeat(64),revision:'c'.repeat(64),cap:5})); } finally {await again.close();}
+ } finally {await rm(d,{recursive:true,force:true});}
+});
+test('new status supersedes only older statuses of the same card',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'bridge-outbox-')),s=new State(d,{initialize:true});
+ try { const old=await s.call('enqueue',{episode:'a',ts:'1.1',status:'old'}); const other=await s.call('enqueue',{episode:'b',ts:'2.2',status:'other'}); const newer=await s.call('enqueue',{episode:'a',ts:'1.1',status:'new'}); await s.call('delivered',{id:newer}); assert.deepEqual((await s.call('pending')).map(x=>x.id),[other]); assert.ok(old<newer); } finally {await s.close();await rm(d,{recursive:true,force:true});}
+});
+test('completed plan recovers control after temporary failure without charging usage twice',async()=>{
+ const {Tasks,Supervisor}=await import('../src/coderabbit.mjs'); const {approvalRevision}=await import('../src/config.mjs'); const {createHash}=await import('node:crypto');
+ const d=await mkdtemp(join(tmpdir(),'bridge-plan-recover-')),s=new State(d,{initialize:true}),episode='a'.repeat(64),id='11111111-1111-4111-8111-111111111111'; const now=Date.now();
+ const grant={objective:'Fix fixture',brief:'Fix fixture',briefHash:createHash('sha256').update('Fix fixture').digest('hex'),repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',branch:'codex/fix',commit:'b'.repeat(40),base:'c'.repeat(40),owner:'U123',allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-10,endsAt:now+60000}; grant.revision=approvalRevision(grant); let unavailable=true;
+ try {await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'}); await s.call('initBudget',{episode,revision:grant.revision,cap:5}); await s.call('reserve',{episode,stage:'plan',amount:1,deadline:now+60000}); const a=await s.call('claim',{episode,kind:'task'}); const ref={episode,kind:'task',fence:a.artifact.fence};await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});
+ const tasks=new Tasks({state:s,approval:async()=>{if(unavailable)throw new Error('temporarily absent');return grant;}});await tasks.recordPlan(episode,id,0.5); const supervisor=new Supervisor({state:s,tasks,adapter:{},slack:{async flush(){}}}); await supervisor.tick(); assert.equal(await s.call('controlForCard',{ts:'1.1'}),null); unavailable=false;await supervisor.tick();assert.equal((await s.call('controlForCard',{ts:'1.1'})).task_id,id);await supervisor.tick();assert.equal((await s.call('getBudget',{episode})).used,0.5);assert.equal((await s.call('pending')).length,1);
+ } finally {await s.close();await rm(d,{recursive:true,force:true});}
 });

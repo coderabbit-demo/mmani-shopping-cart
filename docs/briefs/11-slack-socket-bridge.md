@@ -129,4 +129,3 @@ Prepare the exact Slack manifest, credential-file instructions, read-only doctor
 - Official SDK registry: https://registry.npmjs.org/@slack%2fbolt/latest (5.1.0 verified)
 - Node24.13 SQLite: https://nodejs.org/download/release/v24.13.0/docs/api/sqlite.html
 - CodeRabbit cloud CLI: https://docs.coderabbit.ai/cli/cloud-tasks
-

@@ -21,7 +21,7 @@ export function run(path, args, {cwd, stdin='', timeout=20000, maxOutput=1048576
     child.on('error',()=>finish({kind:started?'unknown':'prestart'}));
     child.stdin.on('error',()=>{});
     for (const [stream, which] of [[child.stdout,'out'],[child.stderr,'err']]) stream.on('data',chunk=>{ if (which==='out') { out+=chunk; if (onLine) { lineBuffer+=chunk; const lines=lineBuffer.split('\n'); lineBuffer=lines.pop(); for (const line of lines) callbacks=callbacks.then(()=>onLine(line)); } } else err+=chunk; if (Buffer.byteLength(out)+Buffer.byteLength(err)>maxOutput) { if (!overflow) { overflow=true; stop(); } } });
-    child.on('close',(code,signal)=>finish(!overflow && !timedOut && code===0 && !signal ? {kind:'ok',stdout:out} : {kind:'unknown'}));
+    child.on('close',(code,signal)=>{ if(onLine && lineBuffer) { const rest=lineBuffer; lineBuffer=''; callbacks=callbacks.then(()=>onLine(rest)); } finish(!overflow && !timedOut && code===0 && !signal ? {kind:'ok',stdout:out} : {kind:'unknown',exitCode:code,...(overflow?{}:{stdout:out})}); });
   });
 }
 export function object(result, command) {
@@ -53,4 +53,33 @@ export async function verifySource(git,grant) {
     const rows=remote.split('\n').map(line=>line.split('\t'));
     return rows.length===2 && rows.some(([sha,ref])=>sha===grant.commit && ref===`refs/heads/${grant.branch}`) && rows.some(([sha,ref])=>sha===grant.base && ref===`refs/heads/${grant.baseBranch}`);
   } catch { return false; }
+}
+
+export async function prepareCheckout({git,gitPath,ghPath,bashPath,codePath,root,grant,head,authoredBranch,makeProcess=fixedProcess}) {
+  const {join}=await import('node:path'); const {existsSync}=await import('node:fs');
+  const {privatePath}=await import('./config.mjs'); privatePath(root,true);
+  if (!/^[a-f0-9]{40}$/.test(head) || !/^coderabbit\/[A-Za-z0-9._/-]+$/.test(authoredBranch) || authoredBranch.includes('..') || !/^codex\/[A-Za-z0-9._/-]+$/.test(grant.deliveryBranch || '') || grant.deliveryBranch.includes('..') || grant.deliveryBranch===grant.branch || grant.deliveryBranch===grant.baseBranch) throw new Error('invalid checkout identity');
+  const must=async args=>{const r=await git(args); if(r.kind!=='ok') throw new Error('checkout unavailable'); return r.stdout.trim();};
+  const origin=await must(['remote','get-url','origin']); if(!['https://github.com/coderabbit-demo/mmani-shopping-cart.git','git@github.com:coderabbit-demo/mmani-shopping-cart.git'].includes(origin)) throw new Error('origin mismatch');
+  const refs=await must(['ls-remote','--heads','origin',`refs/heads/${authoredBranch}`,`refs/heads/${grant.baseBranch}`]);
+  if(!refs.split('\n').includes(`${head}\trefs/heads/${authoredBranch}`) || !refs.split('\n').includes(`${grant.base}\trefs/heads/${grant.baseBranch}`)) throw new Error('remote identity mismatch');
+  await must(['fetch','--no-tags','origin',`refs/heads/${authoredBranch}`]);
+  await must(['merge-base','--is-ancestor',grant.base,head]);
+  const dir=join(root,`delivery-${grant.revision}`);
+  if (!existsSync(dir)) await must(['worktree','add','--detach',dir,head]);
+  const commandPath=[(await import('node:path')).dirname(executable(process.execPath)),(await import('node:path')).dirname(executable(ghPath)),'/usr/bin','/bin'].join(':');
+  const local=makeProcess(gitPath,dir,{path:commandPath});
+  for(const [args,expected] of [[['rev-parse','HEAD'],head],[['status','--porcelain'],'']]) { const r=await local(args); if(r.kind!=='ok' || r.stdout.trim()!==expected) throw new Error('checkout mismatch'); }
+  const names=await local(['diff','--name-only','--no-renames',grant.base,head,'--']);
+  if(names.kind!=='ok' || names.stdout.trim().split('\n').some(p=>!grant.allowedFiles.includes(p))) throw new Error('scope mismatch');
+  const current=await local(['branch','--show-current']);
+  if(current.kind!=='ok') throw new Error('branch unavailable');
+  if(!current.stdout.trim()) { const r=await local(['checkout','-b',grant.deliveryBranch]); if(r.kind!=='ok') throw new Error('delivery branch exists; reconcile'); }
+  else if(current.stdout.trim()!==grant.deliveryBranch) throw new Error('branch mismatch');
+  const remote=await local(['ls-remote','--heads','origin',`refs/heads/${grant.deliveryBranch}`]); if(remote.kind!=='ok' || (remote.stdout.trim() && remote.stdout.trim()!==`${head}\trefs/heads/${grant.deliveryBranch}`)) throw new Error('existing delivery branch differs');
+  const protectedDiff=await local(['diff','--quiet',grant.base,head,'--','tests/golden','scripts/golden','package.json','package-lock.json']); if(protectedDiff.kind!=='ok') throw new Error('protected changes');
+  const regression=await local(['diff','--numstat',grant.base,head,'--','tests']); if(regression.kind!=='ok' || regression.stdout.trim().split('\n').filter(Boolean).some(row=>row.split('\t')[1]!=='0')) throw new Error('existing assertions removed');
+  const pushed=await local(['push','origin',`HEAD:refs/heads/${grant.deliveryBranch}`]); if(pushed.kind!=='ok') throw new Error('push requires reconciliation');
+  const gh=makeProcess(ghPath,dir,{path:commandPath}), bash=makeProcess(bashPath,dir,{path:commandPath}), code=makeProcess(codePath,dir,{path:commandPath});
+  return {git:local,gh,bash,code,dir};
 }

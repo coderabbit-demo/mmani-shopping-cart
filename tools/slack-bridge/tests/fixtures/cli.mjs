@@ -6,7 +6,7 @@ export function config() { return {appId:'A123',botId:'B123',actionStart:Date.no
 export function envelope(raw, action='mmani_create_jira', ts='1234567890.123456') {
   return {type:'block_actions',api_app_id:'A123',team:{id:'T0AU433PG75'},channel:{id:'C0CEPB2LURY'},container:{channel_id:'C0CEPB2LURY',message_ts:ts},user:{id:'U123'},message:{ts,bot_id:'B123',blocks:[{type:'actions',block_id:'mmani_incident_controls_v1',elements:['mmani_create_jira','mmani_debug_pr'].map(action_id=>({type:'button',action_id,value:raw}))}]},actions:[{action_id:action,block_id:'mmani_incident_controls_v1',value:raw}]};
 }
-if (process.argv[2]==='claim') {
+if(process.argv[2]==='budget') { const s=new State(process.argv[3]); try {await s.call('initBudget',{episode:process.argv[4],revision:'c'.repeat(64),cap:5});console.log('true');} catch {console.log('false');} finally {await s.close();} } else if (process.argv[2]==='claim') {
   const s=new State(process.argv[3]);
   try { const r=await s.call('claim',{episode:process.argv[4],kind:'jira'}); console.log(JSON.stringify(r)); } finally { await s.close(); }
 } else if (process.argv[2]==='fake') {
@@ -22,19 +22,22 @@ if (process.argv[2]==='claim') {
    else process.exitCode=1;
  } else if(target==='coderabbit') {
    const taskId='11111111-1111-4111-8111-111111111111';
-   if(args[0]==='review') emit({type:'complete',status:'review_completed',outcome:'completed',unreviewedFileCount:0,reused:false});
+   if(args[0]==='review') emit({type:'complete',status:'review_completed',outcome:'completed',findings:0,gate:{threshold:'major',status:'passed',blockingFindings:0},reviewedFiles:['lib/fixture.ts']});
    else if(args[1]==='new') emit({type:'complete',status:'task_submitted',taskId});
    else if(args[1]==='resume') { if (args.includes('--message')) writeFileSync(join(process.env.HOME,'implemented'),'1',{mode:0o600}); emit({type:'progress',status:'message_sent',clientOperationId:'fixture'}); emit({type:'complete',status:'turn_completed',taskId,turn:{outcome:'completed'},agentMinutes:0.5}); }
-   else if(args[1]==='show') emit({type:'complete',status:'task_shown',taskId,task:{turnStatus:'completed',cancellationPending:false,result:{commit:'d'.repeat(40)},delivery:{status:'succeeded'}}});
+   else if(['show','push'].includes(args[1])) { if(args[1]==='push') writeFileSync(join(process.env.HOME,'pushed'),'1',{mode:0o600}); const pushed=existsSync(join(process.env.HOME,'pushed')); emit({type:'complete',status:args[1]==='push'?'task_pushed':'task_shown',task:{taskId,repository:{provider:'github',repoId:'1437431331',name:'mmani-shopping-cart'},branchName:'codex/offline-fixture',baseBranchName:'codex/offline-fixture',workingBranchName:'coderabbit/fixture',turnStatus:'completed',patchStatus:pushed?'applied':existsSync(join(process.env.HOME,'implemented'))?'ready':'none',deliveryStatus:pushed?'succeeded':'none',cancellationPending:false,result:pushed?{commitSha:'d'.repeat(40),branchName:'coderabbit/fixture'}:null}}); }
    else if(args[1]==='cancel') emit({type:'complete',status:'cancel_pending',taskId});
    else process.exitCode=1;
  } else if(target==='git') {
    if(args[0]==='remote') console.log('https://github.com/coderabbit-demo/mmani-shopping-cart.git');
-   else if(args[0]==='ls-remote') { for (const ref of args.filter(x=>x.startsWith('refs/heads/'))) { const hash=ref.endsWith('fixture-base')?'b':ref.endsWith('fixture-delivery')?'d':'a'; console.log(hash.repeat(40)+'\t'+ref); } }
+   else if(args[0]==='ls-remote') { for (const ref of args.filter(x=>x.startsWith('refs/heads/'))) { const hash=ref.endsWith('fixture-base')?'b':ref.endsWith('fixture-delivery') || ref.endsWith('coderabbit/fixture')?'d':'a'; console.log(hash.repeat(40)+'\t'+ref); } }
    else if(args[0]==='status') {}
-   else if(args[0]==='branch') console.log('codex/offline-fixture');
-   else if(args[0]==='rev-parse') console.log((existsSync(join(process.env.HOME,'implemented'))?'d':'a').repeat(40));
+   else if(args[0]==='branch') console.log(existsSync(join(process.env.HOME,'prepared'))?'codex/fixture-delivery':'codex/offline-fixture');
+   else if(args[0]==='rev-parse') console.log((existsSync(join(process.env.HOME,'prepared'))?'d':'a').repeat(40));
+   else if(args[0]==='diff' && args.includes('--numstat')) {}
    else if(args[0]==='diff' && args.includes('--name-only')) console.log('lib/fixture.ts');
+   else if(args[0]==='worktree') writeFileSync(join(process.env.HOME,'prepared'),'1',{mode:0o600});
+   else if(['fetch','worktree','push','checkout','show-ref','merge-base'].includes(args[0])) {}
    else if(args[0]!=='diff') process.exitCode=1;
  } else if(target==='gh') { if(args[0]==='pr') console.log('https://github.com/coderabbit-demo/mmani-shopping-cart/pull/123'); else if(args[0]==='api') console.log(JSON.stringify(['d'.repeat(40),'b'.repeat(40),'codex/fixture-base','codex/fixture-delivery','coderabbit-demo/mmani-shopping-cart','coderabbit-demo/mmani-shopping-cart'])); else process.exitCode=1; }
  else if(target==='strict') console.log('PASS');

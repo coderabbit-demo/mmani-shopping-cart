@@ -59,7 +59,7 @@ test('expired action window blocks all side effects',async()=>context(async c=>{
 }));
 test('task approval binds stored task and null usage blocks continuation',async()=>context(async c=>{
  const {Tasks}=await import('../src/coderabbit.mjs'); const now=Date.now(), id='11111111-1111-4111-8111-111111111111';
- const grant={repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/test',owner:'U123',revision:'c'.repeat(64),allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; let resumes=0; grant.revision=approvalRevision(grant);
+ const grant={objective:'Repair the approved fixture defect',brief:'Fix lib/fixture.ts only; preserve all assertions.',briefHash:'91c6ef',repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/test',owner:'U123',revision:'c'.repeat(64),allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; let resumes=0; grant.briefHash=(await import('node:crypto')).createHash('sha256').update(grant.brief).digest('hex'); grant.revision=approvalRevision(grant);
  const t=new Tasks({state:c.state,approval:async()=>grant,source:async()=>true,adapter:{async create(p,save){await save(id); return {kind:'complete'}},async resume(){resumes++;return {kind:'complete',minutes:1}}}});
  const result=await c.actions.receive(envelope(JSON.stringify(incident())),async()=>{}); assert.equal(result.status,'jira_confirmed');
  assert.equal(await t.start(c.bound,'U123'),'plan_submitted'); await t.recordPlan(c.bound.episode,id,null);
@@ -83,7 +83,7 @@ test('unknown Jira reconciles only with verified identity without recreating',as
 }));
 test('continuation requires completed plan, exact task, actor and revision and is one-shot',async()=>context(async c=>{
  const {Tasks}=await import('../src/coderabbit.mjs'); const now=Date.now(), id='11111111-1111-4111-8111-111111111111';
- const grant={repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/test',owner:'U123',allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; grant.revision=approvalRevision(grant); let resumes=0;
+ const grant={objective:'Repair the approved fixture defect',brief:'Fix lib/fixture.ts only; preserve all assertions.',briefHash:'91c6ef',repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/test',owner:'U123',allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; grant.briefHash=(await import('node:crypto')).createHash('sha256').update(grant.brief).digest('hex'); grant.revision=approvalRevision(grant); let resumes=0;
  const t=new Tasks({state:c.state,approval:async()=>grant,source:async()=>true,adapter:{async create(p,save){await save(id);return {kind:'complete'}},async resume(){resumes++;return {kind:'complete',minutes:1}}}});
  await c.actions.receive(envelope(JSON.stringify(incident())),async()=>{}); await t.start(c.bound,'U123');
  const approve={episode:c.bound.episode,taskId:id,revision:grant.revision,actor:'U123'};

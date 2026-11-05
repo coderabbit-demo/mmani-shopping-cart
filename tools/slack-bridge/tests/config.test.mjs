@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync,writeFileSync,chmodSync,linkSync,symlinkSync,rmSync } from 'node:fs';
@@ -13,7 +14,7 @@ test('token file only accepts two specified variables',()=>{
  try { writeFileSync(p,'SLACK_BOT_TOKEN=xoxb-synthetic\nSLACK_APP_TOKEN=xapp-synthetic\n',{mode:0o600}); assert.equal(Object.keys(tokens(p)).length,2); writeFileSync(p,'SLACK_BOT_TOKEN=xoxb-synthetic\nEVIL=xapp-synthetic\n'); assert.throws(()=>tokens(p)); } finally { rmSync(d,{recursive:true,force:true}); }
 });
 test('approval must have exact target, bounded window and budget',()=>{
- const now=Date.now(), a={repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/fix',owner:'U123',revision:'c'.repeat(64),allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-1,endsAt:now+1000};
+ const now=Date.now(), a={objective:'Repair fixture',brief:'Repair fixture',briefHash:createHash('sha256').update('Repair fixture').digest('hex'),repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/fix',owner:'U123',revision:'c'.repeat(64),allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:now-1,endsAt:now+1000};
  a.revision=approvalRevision(a); assert.equal(validateApproval(a,now),a); assert.throws(()=>validateApproval({...a,endsAt:now},now)); assert.throws(()=>validateApproval({...a,minutes:0},now)); assert.throws(()=>validateApproval({...a,allowedFiles:['../escape']},now));
 });
 test('proposed manifest requests only approved bot scopes and Socket Mode',async()=>{

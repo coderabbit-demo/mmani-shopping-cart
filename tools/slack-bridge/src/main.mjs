@@ -6,7 +6,7 @@ import { State } from './state.mjs';
 import { readPrivate,tokens,validateConfig,privateHome } from './config.mjs';
 import { readMonitor } from './incidents.mjs';
 import { Jira } from './jira.mjs';
-import { fixedProcess,verifySource,executable } from './process.mjs';
+import { fixedProcess,verifySource,executable,prepareCheckout } from './process.mjs';
 import { Actions } from './actions.mjs';
 import { CodeRabbitAdapter,Tasks,Supervisor,Delivery,reviewAdapter,githubAdapter,checksAdapter } from './coderabbit.mjs';
 import { slackAdapter } from './slack.mjs';
@@ -23,7 +23,8 @@ export async function createBridge({root,App=bolt.App,fetcher=fetch,makeProcess=
   const secrets=tokens(join(root,'slack.env')); const dd=ddCredentials(config.datadogCredentialsFile);
   const state=new State(root);
   try {
-    const invokeJira=makeProcess(config.twgPath,config.workdir), invokeCode=makeProcess(config.coderabbitPath,config.workdir), git=makeProcess(config.gitPath,config.workdir);
+    const toolPath=[dirname(executable(process.execPath)),'/usr/bin','/bin'].join(':');
+    const invokeJira=makeProcess(config.twgPath,config.workdir,{path:toolPath}), invokeCode=makeProcess(config.coderabbitPath,config.workdir,{path:toolPath}), git=makeProcess(config.gitPath,config.workdir,{path:toolPath});
     const app=new App({token:secrets.SLACK_BOT_TOKEN,appToken:secrets.SLACK_APP_TOKEN,socketMode:true,logger:log});
     const identity=await app.client.auth.test();
     if (identity.ok!==true || identity.team_id!==config.teamId || identity.bot_id!==config.botId) throw new Error('Slack identity mismatch');
@@ -36,15 +37,15 @@ export async function createBridge({root,App=bolt.App,fetcher=fetch,makeProcess=
     if (commandPath.split(':').some(p=>!p.startsWith('/'))) throw new Error('invalid command path');
     const bash=makeProcess(config.bashPath,config.workdir,{path:commandPath});
     const strict=args=>bash([join(config.workdir,'scripts/golden/strict-gate.sh'),...args]);
-    const delivery=new Delivery({state,git,adapter,approval,review:reviewAdapter(invokeCode),github:githubAdapter(gh),checks:checksAdapter(gh,strict)});
+    const delivery=new Delivery({state,git,adapter,approval,review:reviewAdapter(invokeCode,git),github:githubAdapter(gh),checks:checksAdapter(gh,strict),prepare:async(grant,head,authoredBranch)=>{const p=await prepareCheckout({git,gitPath:config.gitPath,ghPath:config.ghPath,bashPath:config.bashPath,codePath:config.coderabbitPath,root,grant,head,authoredBranch,makeProcess}); return {git:p.git,review:reviewAdapter(p.code,p.git),github:githubAdapter(p.gh),checks:checksAdapter(p.gh,args=>p.bash([join(p.dir,'scripts/golden/strict-gate.sh'),...args]))};}});
     const actions=new Actions({state,config,monitor,jira,slack,task:tasks,delivery});
-    const supervisor=new Supervisor({state,tasks,adapter,slack});
+    const supervisor=new Supervisor({state,tasks,adapter,slack,delivery});
     for (const action of ACTIONS) app.action(action,async({body,ack,respond})=>{
       const result=await actions.receive(body,ack);
       if(result.status==='blocked' && respond) { try { validateIdentity(body,config); if(config.actors[action].includes(body.user.id)) await respond({response_type:'ephemeral',text:'Action blocked: check the operator status.'}); } catch {} }
     });
     app.action('mmani_approve_plan',async({body,ack})=>actions.approve(body,ack));
-    return {app,state,actions,tasks,supervisor,async reconcileJira(episode,key,id) {
+    return {app,state,actions,tasks,supervisor,delivery,async reconcileJira(episode,key,id) {
       if (!/^[a-f0-9]{64}$/.test(episode) || !/^SC-[1-9][0-9]*$/.test(key) || !/^[0-9]+$/.test(id)) throw new Error('invalid reconciliation identity');
       const raw=(await state.call('cards')).find(c=>c.episode===episode); if (!raw) throw new Error('unknown incident');
       const card=await state.call('getCard',{ts:raw.ts}), artifact=await state.call('getArtifact',{episode,kind:'jira'});
@@ -60,8 +61,9 @@ async function cli() {
   process.umask(0o077); const root=join(homedir(),'.deskdrop-slack-bridge'), command=process.argv[2];
   if(command==='init') { const state=new State(root,{initialize:true}); await state.call('pending'); await state.close(); console.log('Bridge state initialized'); return; }
   if(command==='status') { const state=new State(root); try { console.log(JSON.stringify({artifacts:await state.call('artifacts'),pending:(await state.call('pending')).length,handoffs:await state.call('handoffs'),activeRuns:await state.call('activeRuns')})); } finally { await state.close(); } return; }
-  if(!['doctor','run','reconcile-jira'].includes(command)) throw new Error('invalid command');
+  if(!['doctor','run','reconcile-jira','reconcile-artifact'].includes(command)) throw new Error('invalid command');
   const bridge=await createBridge({root});
+  if(command==='reconcile-artifact') { try { const receipt=process.argv[4]==='review'?JSON.parse(readPrivate(join(root,'review-receipt.json'))):null; await bridge.delivery.reconcile({episode:process.argv[3],kind:process.argv[4],id:process.argv[5],receipt}); console.log('Authoritative artifact verified; uncertain outcomes remain fenced'); } finally {await bridge.state.close();} return; }
   if(command==='reconcile-jira') { try { await bridge.reconcileJira(process.argv[3],process.argv[4],process.argv[5]); console.log('Jira identity verified'); } finally { await bridge.state.close(); } return; }
   if(command==='doctor') { try { await bridge.doctor(); console.log('Bridge read-only preflight passed'); } finally { await bridge.state.close(); } return; }
   try { await bridge.doctor(); await bridge.app.start(); } catch { await bridge.state.close(); throw new Error('bridge start failed'); }

@@ -8,7 +8,7 @@ export function render(card,status,control=null) {
   return blocks;
 }
 export function slackAdapter(client,state) {
-  async function update(card,status) { const control=await state.call('controlForCard',{ts:card.ts}); await client.chat.update({channel:'C0CEPB2LURY',ts:card.ts,text:'DeskDrop incident action status',blocks:render(card,status,control)}); }
+  async function update(card,status) { const jira=await state.call('getArtifact',{episode:card.episode,kind:'jira'}), task=await state.call('getArtifact',{episode:card.episode,kind:'task'}); if(jira?.state==='confirmed') status+=` | ${jira.remote_key} https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}`; if(task?.remote_id) status+=` | https://app.coderabbit.ai/code/tasks/${task.remote_id}`; const control=await state.call('controlForCard',{ts:card.ts}); await client.chat.update({channel:'C0CEPB2LURY',ts:card.ts,text:'DeskDrop incident action status',blocks:render(card,status,control)}); }
   return {
     async bind(message,card) { await update(card,'registered'); },
     async status(ts,status) {
