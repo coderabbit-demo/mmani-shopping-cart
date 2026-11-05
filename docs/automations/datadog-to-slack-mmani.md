@@ -1,123 +1,109 @@
-<!-- coderabbit-ai-generated:v1 -->
-
 # Datadog to Slack Automation - MMANI
 
-<!-- coderabbit-ai-generated:v1 -->
+For presenter preparation and usage, see [setup and architecture](../demo/local-setup.md), the [Do / Say / See walkthrough](../demo/incident-walkthrough.md), and the [GCP team handoff](../demo/gcp-team-handoff.md). This page retains the provider-level evidence and limits.
 
-<!-- coderabbit-ai-generated-section:v1:576c33d1a1b8012994fdea3f8a94806b52e7805b91e4ef0dd00af312fb97faed -->
+Status recorded November 5, 2026: native Datadog delivery, both clickable controls, independent repository investigation and Jira creation are verified under `mmani-shopping-cart`. Debug ran first, before a ticket existed, and reported 68 domain tests and three checkout browser tests passing without reproducing a defect. The Jira button then created SC-41, independently verified by native Jira readback. No Coding Agent task or PR was created; the complete fix-PR/review/Verify path remains unverified.
 
-## Proposed dedicated bridge
+The revised button policy defines two independent paths. The earlier Debug run's ticket reuse is historical behavior, not a requirement for a future Debug run. The concise native-display adjustment was saved, read back and verified by the separately approved 2:32:10 PM Pacific TEST. One Debug click and one Jira click completed on that incident, with no further prompt change during the test.
 
-The separately approved Socket Mode bridge described in `docs/demo/slack-bridge.md` is under implementation. Its app-owned incoming webhook is a bearer credential; receiving-app and monitor checks do not prove Datadog authorship. Payload substitution, title and category formats, callback identity and live routing remain activation gates. Keep the existing automation and route until a separately approved cutover. Its existing rehearsal and evidence requirements below remain applicable.
+## Active route
 
-<!-- /coderabbit-ai-generated:v1 -->
+US3 Datadog uses the existing `webhook-deskdrop-mmani-local` notification rule to invoke [Datadog to Slack Automation - MMANI](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). Results go to CodeRabbit Demo (`T0AU433PG75`), channel `#mmani-shopping-cart` (`C0CEPB2LURY`). The dedicated MMANI Demo Bridge receiver is stopped; its separate repair is paused.
 
-## Operator preparation
+Allowed monitor identities:
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:c9f0ba84c18637a7a3ba180a7298deafd0631653c7e5697131800db609aabb5d -->
-
-These are reviewable instructions for the existing [automation](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). The Mac operator's read-only browser check on 2026-11-04 found it Active with no active runs and its saved Slack destination set to Existing Channel `#mmani-shopping-cart`. The target channel `C0CEPB2LURY` exists in CodeRabbit Demo workspace `T0AU433PG75`; CodeRabbit had joined and a welcome message was present. This establishes the observed channel and saved destination, not an automation delivery or posting capability test.
-
-The same check found the saved Agent instructions contain no button instructions, no `Create Jira Ticket` action and no `Debug and Create PR` action. They allow an automatic PR during generic triage if a fix is known. Channel routing is configured, while the requested button workflow remains unconfigured. Aligning the automation requires separate explicit approval; this document does not authorize changing it or sending an event.
-
-An authorized operator should review its trigger, saved destination, Agent scope, connections, author identity, budget and failure reporting, and verify effective access to this repository, US3 Datadog and Jira SC. Recheck the channel and membership before rehearsal. The webhook wizard supplies an authenticated endpoint and required header. Keep both out of examples, logs, repository files and evidence. Its `monitor.alert` and `incident.triggered` event filters are CodeRabbit event types, not Datadog `$EVENT_TYPE` substitutions.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:d6cd96bfa8e686b07a28694aa15109c4a041fe8e3060fc13241a00f9c9d27a54 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:e93243393db72bee5982418e382cb534af34749243737ebc76f435c6707716bb -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:2158a657c26bdeae64242ac756efb2e503af3a23dd0fd163c9f111cb48cfb172 -->
-
-## Approved local runtime scope
-
-Mahesh approved the local runtime tags on 2026-11-04: `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local` and host `deskdrop-mmani-local`. The monitors are `[MMANI local] DeskDrop availability`, `[MMANI local] DeskDrop checkout` and `[MMANI local] DeskDrop checker heartbeat`. The intended failure classes are `http_unavailable`, `journey_failed` and missing checker data. The local diagnostics include source commit and local image identity as separate sanitized evidence; a local image ID does not establish registry publication.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:1e9ae3629d1aa47a56d070286a45b5b674c50ed69dee568940da9f965cfb5ad4 -->
-
-The intended destination is CodeRabbit Demo workspace `T0AU433PG75`, channel `C0CEPB2LURY`, as observed in the saved channel selection above. Native event fields, filter enforcement, representative payloads and matching/unrelated-event tests remain pending actual evidence and separate approval. Do not infer that a diagnostic failure class is automatically present in the native Datadog webhook payload. The proposed workflow below requires button-gated initial triage; the currently saved instructions do not implement it. Reuse, concurrency and failure-reporting requirements remain unchanged.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-## Scope record required before activation
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:016c7d191dac1285d1a939d9760ef2d2601931f0ed07f094decd467758b3e0e0 -->
-
-The confirmed native trigger event types are `monitor.alert` and `incident.triggered`. The intended cases are DeskDrop availability, the cart journey and missing checker data in the [parent issue's monitoring contract](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10). The local runtime tags above are approved scope; native payload mappings and filter enforcement remain unverified. GCP deployment tags are not approved or configured by this document.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-Before activation, the authorized operator must maintain an authoritative, reviewed scope record identifying the exact service and environment values, each permitted failure class and native event type, the actual payload field paths and values used to match them, and the filter configuration and its enforcement capability. Record sanitized representative deployed payload evidence for every case, test results for matching and unrelated events, the approver, approval date and evidence links. Mark each item proposed, verified or pending decision. Do not record webhook credentials. If any value, mapping, approval or evidence is missing, block activation and rehearsal until the record is complete. If native filters cannot enforce the recorded scope, record the gap and block activation; instructions to ignore events are not a trigger filter or access boundary.
-
-[CodeRabbit automation documentation](https://docs.coderabbit.ai/slack-agent/automations) describes native buttons and a one-minute webhook delivery deduplication window. Neither establishes atomic serialization of ticket, task and PR creation.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:a1811b369b4ac9dbd3813a0c6f41a3b8903bef1702b3ee17976dc60ff979b6e1 -->
-
-## Proposed Agent instructions
-
-After separate authorization and review, the operator must REPLACE the complete saved instruction set with the reviewed block below, using the completed scope record. Remove the existing initial-triage PR permission. Never append this block to conflicting saved instructions. Verify the complete saved instructions before activation.
-
-> Process only the service, environment, failure classes and native event types in the approved scope record, using its verified payload field mappings. Ignore unrelated events and report missing or ambiguous identity without taking action. Summarize impact, monitor, deployment revision, diagnostic evidence and links in the incident thread. Initial execution is triage only: do not create a Jira ticket, start a CodeRabbit coding task or open a PR. Add two independent buttons on the initial reply:
->
-> **Create Jira Ticket:** create or reuse an SC Bug for this incident. Include impact, reproduction, expected and actual behavior, sanitized Datadog evidence, deployed commit and image digest, and Slack permalink. Reply with status and the ticket link.
->
-> **Debug and Create PR:** investigate the incident, create or reuse the same SC Bug, and hand CodeRabbit Code the evidence, faulty isolated demo branch and commit, reproduction, approved ALLOW scope and acceptance criteria. Reply with diagnosis, task status, tests and PR link. Report permission errors, timeouts and budget exhaustion in the thread.
->
-> Use a durable incident key derived from monitor, environment and failure episode. Reuse the associated ticket, task and PR across webhook retries and either button order; a new episode after recovery gets a new identity. Do not start duplicate work. Do not claim atomic reuse unless the platform actually guarantees it. Keep fault seeds and fixes on isolated demo branches; target the faulty branch for remediation. Do not merge, deploy, apply Terraform, access VM administrative credentials, bypass gates or alter goldens.
->
-> For each new coding task, require one completed CodeRabbit CLI review before task completion or PR publication. An in-task completed review counts; a Mac fallback is needed only when no review completed. PR-fix tasks and rounds are exempt. Record task ID, reviewed commit/base, completion and finding dispositions. Require exact-head CodeRabbit PR review and security gates, deterministic tests, and CodeRabbit QA Agent Verify evidence. Report unsupported, failed, stale or inconclusive outcomes as such.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:f4dc528073161c42129b847d786f735346de382880deb7579895f7384f13212a -->
-
-## Capability proof and controlled rehearsal
-
-Before rehearsal, record separate evidence for each capability, the acting identity, target, date and outcome. Connection badges, read access and effective Agent scope are separate prerequisites and do not prove any write capability. Inspect permissions where possible; any write probe requires its own authorization and disposable targets. Preparing this document performs no service write or capability check.
-
-- **Slack channel writes:** verify the automation's effective identity can post and reply in `#mmani-shopping-cart`; retain a permitted channel message/thread link or equivalent definitive capability evidence.
-- **Jira SC Bug creation:** verify that identity can create and link an SC issue of type Bug; retain a disposable issue link or equivalent definitive capability evidence. SC read access alone is insufficient.
-- **CodeRabbit task and GitHub PR creation:** verify the effective identity can create a task for this repository and that the task's authorized GitHub identity can create a PR against the isolated demo branch; retain task and PR links or equivalent definitive capability evidence. Repository listing alone is insufficient.
-
-Review the saved instructions, destination, scope record, native filters and button support before activation. The rehearsal itself requires separate explicit authorization. The synthetic alert must originate through the configured native Datadog webhook and then reach the selected Slack channel; injecting a Slack message does not test the trigger or filters. Capture sanitized event and episode identity, delivery and thread links, issue/task/PR identities and links, and exact tested revisions. Exercise matching and unrelated events against the scope record.
-
-| Case | Observable expected artifacts |
+| Monitor | ID |
 | --- | --- |
-| Initial triage | One incident thread with both buttons and diagnostic status; no Jira ticket, CodeRabbit task or PR. |
-| Create Jira Ticket alone | One SC Bug created or reused and linked in the thread; no task or PR. |
-| Debug and Create PR alone | One SC Bug, one CodeRabbit task and one PR created or reused; the thread links all three. |
-| Ticket then Debug | The second action reuses the same SC Bug and creates or reuses one task and one PR; both replies identify the same ticket. |
-| Debug then Ticket | The second action reuses the same SC Bug; one task and one PR remain, and both replies identify the same ticket. |
-| Webhook replay with no button | Assert that the existing triage incident and thread are reused under a proven platform contract and that no ticket, task or PR is created. If reuse is unproven, record the gap and stop rather than claim a pass. |
-| Repeated or concurrent Create Jira Ticket only | In an episode with no Debug selection, observe at most one SC Bug and zero tasks or PRs; successful responses reuse the same ticket link. |
-| Repeated or concurrent Debug and mixed-button selections | Observe exactly one shared SC Bug and at most one in-flight task and one in-flight PR. After successful authorized completion, observe exactly one task and one PR; responses show identical links for each shared artifact. Record counts and links for in-flight and final outcomes. |
-| Recovery followed by a new failure | Record recovery, then a new episode key and new incident identity; subsequent actions create or reuse artifacts for the new episode without reusing the recovered episode's identities. |
+| DeskDrop availability | 29524154 |
+| DeskDrop checkout | 29524290 |
+| DeskDrop checker heartbeat | 29524292 |
 
-Check that the Slack thread, SC Bug, task and PR cross-link their matching episode and each other, and retain the identities and links. Test permission failures, timeouts and budget exhaustion for visible status without claiming success. Prompt-only searches do not serialize concurrent actions; do not claim native atomicity without evidence. If replay or concurrent-click evidence is missing or safe reuse fails, report the integration gap and stop further rehearsal pending an approved bounded solution. Failed, unsupported or inconclusive behavior is not a pass.
+Require `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local`, and host `deskdrop-mmani-local`. Keep authenticated webhook URLs, headers and tokens out of messages, documentation and logs. Initial triage creates no ticket, coding task or PR automatically.
 
-After an authorized rehearsal, pause or restore the automation as agreed, close or remove only disposable demo artifacts under the operator's permissions, and record cleanup, residual resources and costs. Never include real incident or customer data in fixtures or reports.
+## Independent button actions
 
-<!-- /coderabbit-ai-generated:v1 -->
+The user may choose either button first or use either one alone. A result or failure in one path does not authorize or block the other.
+
+| Button | Requested work | Independent artifact handling |
+| --- | --- | --- |
+| Create Jira Ticket | Create or reuse one SC Bug from the accepted incident and return its verified link. No repository work, coding task or PR. | Search Jira by the actual alert cycle and Slack permalink; do not require Debug, repository access or a PR. |
+| Debug and Create PR | Ask `@CodeRabbit` to investigate the application directly in `coderabbit-demo/mmani-shopping-cart`, reproduce the defect, implement a warranted fix through CodeRabbit Code and open a fix PR in that repository. | Find matching repository tasks/PRs by the episode and Slack permalink. Never read, search, create, update, link or require a Jira ticket. Exclude Jira identifiers, URLs and metadata from the task, branch, commits, PR and result. |
+
+Use the installed CodeRabbit app mention (`<@U0AV4T6LSP2>`) when prompting it to act. Native button rendering belongs to the automation platform; a missing agent-side button tool does not mean the platform cannot render the buttons. Each action must acknowledge the click and report a verified result or specific blocker in the incident thread. Stop that action after an ambiguous write/dispatch outcome rather than risking a duplicate; neither prompt nor platform dispatch is proof of atomic artifact deduplication.
+
+Debug uses the accepted Datadog event and Slack evidence to inspect the actual repository base, source, tests and configuration. A previous ticket, shipping fixture, preselected faulty commit or expired rehearsal window is not a prerequisite to investigation. A synthetic TEST alone does not establish a source defect. If no bug is reproduced, report the diagnosis or missing evidence rather than inventing a fix PR.
+
+## Verified native results
+
+The [recorded Slack incident](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793908652458109) came from one Datadog TEST at 11:57:24 AM Pacific on November 5. Its episode is `29524290/local-demo/8885981629077624962`; its event ID is `8885981630605896736`. The alert-cycle key and event ID are different values.
+
+| Action | Observed result |
+| --- | --- |
+| Datadog TEST → Slack | Delivered through the original route with both native buttons. |
+| Create Jira Ticket | One click created [SC-40](https://coderabbit-demo.atlassian.net/browse/SC-40), an SC Bug marked synthetic TEST. Independent Jira readback verified the monitor, cycle, event and Slack links. [Slack confirmation](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793908883905469?thread_ts=1793908652.458109). |
+| Debug and Create PR, before the independence correction | One click started an agent, restored thread context and reused SC-40 under the former coupled instructions. It then [reported BLOCKED](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793911252918579?thread_ts=1793908652.458109) at 12:40:52 PM Pacific because no current approved faulty source/brief was supplied. Task and PR inventories were unchanged. Ticket reuse and that investigation gate are superseded by the independent policy above. |
+| Debug after fixture/access approval | The context-only mention at 1:18:06 PM Pacific and the additional Debug action at 1:19:59 PM both failed at Prepare: “CodeRabbit could not finish setup for this run. Please try again.” No agent execution or Coding Agent task was observed. |
+| Complete native remediation PR and QA | Not verified. Task and PR inventories remained unchanged. No new CLI review or native QA run was applicable because no coding task/patch existed. |
+| Independent-action retest, requested repository scope | One fresh TEST at 2:08:32 PM Pacific delivered [a new root message](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793916519404749), event `8886113637975642993`. The [2:08:44 PM reply](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793916524873649?thread_ts=1793916519.404749) failed during Prepare, before either control rendered. No button was clicked and no Bug, coding task or PR was created. |
+| After approved duplicate-MCP exclusion | The fresh TEST at 2:21:29 PM Pacific delivered [this incident](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793917296611739). Episode `29524290/local-demo/8886126676907122220`; event `8886126678872085367`. Prepare started a sandbox, Sync completed and the agent ran under `mmani-shopping-cart` with one repository. [Triage completed at 2:23:01 PM](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793917381708729?thread_ts=1793917296.611739). It printed a literal `slack_buttons` JSON block; UI and DOM inspection found zero actual action buttons. No click, Bug, coding task or PR occurred. |
+| After concise native-display adjustment | The separately approved TEST at 2:32:10 PM Pacific delivered [this incident](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793917939713579). Episode `29524290/local-demo/8886137430985137706`; event `8886137432658488407`. The [2:33:32 PM triage](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793918012672909?thread_ts=1793917939.713579) rendered both actual native buttons, without raw JSON. |
+| Independent Debug, selected first | One click started the [2:34:19 PM follow-up](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793918059791479?thread_ts=1793917939.713579). Native work logs loaded `mmani-shopping-cart` with one repository and reused the sandbox. The [2:36:35 PM result](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793918195166449?thread_ts=1793917939.713579) reported 68 domain and three checkout browser tests passing on `main@80bf508`, no defect reproduced and no task or PR created. Its response contained no Jira artifact reference or ticket prerequisite. Jira readback before this action found no Bug for the episode. |
+| Independent Jira, selected afterward | One click started the [2:37:56 PM follow-up](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793918276669139?thread_ts=1793917939.713579). It discovered create fields, searched episode/label/thread, then created and read back [SC-41](https://coderabbit-demo.atlassian.net/browse/SC-41). The [2:39:38 PM confirmation](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793918378783599?thread_ts=1793917939.713579) returned its link. Independent native readback verified SC project 10107, Bug type 10047, synthetic TEST label, monitor/cycle/event identity and Slack link. The episode query returned exactly SC-41; coding-task and PR inventories stayed unchanged. |
+
+Both agents got past the former `automation_context_protocol_pin_unavailable` startup failure. This does not prove replay/concurrent-click serialization or every downstream action. The triage reply's claim that native buttons were unavailable is misleading: the platform rendered the buttons and their follow-up sessions executed.
+
+## Run the on-demand demo
+
+1. Open the [checkout monitor](https://us3.datadoghq.com/monitors/29524290), choose **Edit**, then **Test Notifications**.
+2. Select only **Alert**. If a group picker is available, select `host:deskdrop-mmani-local`; this service-check test may instead show a fixed `*`, with the monitor query already restricted to the owned host and tags. Verify the existing notification recipient is `webhook-deskdrop-mmani-local`; do not add another route.
+3. Choose **Run Test** once. Close the test dialog and leave the editor with **Cancel**. Do not choose Save and Publish or change suppression.
+4. Wait for the new CodeRabbit incident thread in `#mmani-shopping-cart` and its first triage reply. Capture the native cycle, event and Slack permalink. If delivery is uncertain, inspect the existing run before sending another test.
+5. Choose either independent action when its work is authorized. **Create Jira Ticket** returns a verified issue link; reuse an existing issue only for its recorded episode, since a fresh cycle is a different incident. The latest tested episode owns SC-41, with actual label `deskdrop-29524290-local-demo-8886137430985137706`; historical SC-40 used a different label prefix, so search by cycle and permalink rather than assuming a prefix. **Debug and Create PR** investigates the repository directly and requires no Jira action or association. If no defect is reproduced, an evidence-based diagnosis without a PR is the correct result, not proof of the complete fix-PR path.
+
+The successful TESTs were delivered while all three owned exact-ID downtimes remained active. No unmute was needed. Saved monitor configurations matched their preserved baseline after the last notification; final readback also verified all three owned suppressions active. These observations do not authorize enabling routine live notifications.
+
+## Requirements for an actual Debug-to-PR run
+
+At Mahesh's request, the current saved automation scope and Mahesh-only channel assignment use `mmani-shopping-cart` (`168d0e97-000e-4dc5-a118-0349a63fa266`), with one selected repository and the existing `mmani-ecommerce` environment. Both assignments were saved and read back. With explicit shared-scope approval, inherited Meena Atlassian - RO was excluded to resolve the duplicate endpoint; Jira MCP remains selected. The native Jira/Datadog selections, other inherited selections and environment were retained. The former Everyone assignment remains narrowed to Mahesh. Slack Default was not edited.
+
+An earlier approved trial of that scope used the [context message](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793913473524319?thread_ts=1793908652.458109) and [additional Debug action](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793913599965389?thread_ts=1793908652.458109), both of which failed before the agent started. Those assignments were temporarily rolled back to Jira-only `MMANI Jira automation` (`05ba32a9-6ff6-49ef-9ea0-be7fe907d22b`) before the current request to use the repository scope again. That rollback is historical, not the current setting. Repository Reviews/Coding selection and environment contents were unchanged.
+
+A working investigation needs repository access and a runtime that can complete Prepare; both were exercised successfully. The agent should first inspect the actual current default or explicitly approved base and investigate the accepted incident directly. It should then present the concrete reproduction, proposed minimal fix, ALLOW paths and required verification for any applicable repository approval checkpoint. An actual fix-PR run also needs authenticated CodeRabbit Code discovery/handoff so existing work can be checked safely; the latest sandbox reported task discovery unauthenticated. An exact faulty fixture/commit need only be supplied when deliberately choosing a fixture rehearsal. Never require or consult a Jira association. Use Slack's mention picker to select the installed **CodeRabbit** app when supplying or approving context. A plain-text tag or a mention alone is not proof of a coding handoff.
+
+Mahesh's standing coding policy has no time or cost cap. Do not revive historical execution cutoffs. Source scope, applicable human plan approval, independent artifact reuse and unknown-outcome safeguards still apply. Follow the repository author rules, preserve tests/assertions and all six cart rules, add an observable regression, and require explicit applicable ALLOW authorization for dependencies/manifests or goldens. CodeRabbit Code must author the implementation, with Autofix off, exactly one completed CLI review for each new coding task, exact-head PR/security/CI feedback, and relevant native CodeRabbit QA Agent Verify. A completed in-task CLI review counts; PR-fix rounds need no extra CLI review. Native QA Agent Verify remains required for an implemented fix. Leave the PR unmerged unless separately approved.
+
+## Historical isolated shipping rehearsal
+
+The earlier `codex/demo-checkout-fault` branch already contains merged [PR17](https://github.com/coderabbit-demo/mmani-shopping-cart/pull/17). Do not reset it or present it as currently faulty. The approved SC-40 replay created `codex/native-debug-fault-sc40` and `codex/native-debug-fix-sc40`, both at the previously reviewed $24 express-shipping seed `ee9cf971da0ecfd1e56f026a74d5b3dff077c5d0`. The source scope was exactly `lib/store.ts` and `tests/store.test.mjs`, restoring express to $12 and adding the $100 / DESK15 / $97 regression. Both branches remained at the seed after the failed Prepare; no implementation commit or PR was produced. These are synthetic source fixtures, not deployed faults. The old fault branch and main were not changed.
+
+## Repaired Prepare conflict
+
+The [context-only run](https://coderabbitdemo.slack.com/archives/C0CEPB2LURY/p1793913486874229?thread_ts=1793908652.458109), additional Debug run and fresh independent-action test exposed only a generic setup failure in Slack. The [automation's native run history](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203) subsequently exposed the specific error for the current run and an earlier failure: `access_scope_duplicate_connection_runtime_override`.
+
+The conflict names two MCP connection IDs for the same Atlassian endpoint (`https://mcp.atlassian.com/v1/mcp/authv2`): selected Jira MCP (`0034e3dc-9c7e-46a5-a4a6-5e2b49d002ab`) and inherited Meena Atlassian - RO (`653ba9d6-dbc0-46ac-b685-f5d0775f9055`). The scope UI independently confirms both are selected. This provides a concrete connection-resolution blocker before agent startup. No manual CLI-created task was substituted for native completion.
+
+Earlier read-only inspection found `mmani-ecommerce` marked Ready, its repository setup prepared at revision 6, and a snapshot from 7:51 AM Pacific on November 5. Its startup script launches Next.js on port 3100 with a cleanup trap and waits in the foreground for that server. The earlier hypothesis that this wait caused Slack Prepare to fail was unproven; the newly exposed error identifies duplicate connection resolution instead. No failed environment snapshot, fixed-branch checkout command or shared secret was found. The shared environment was not edited, rebuilt or tested during this diagnosis.
+
+Automatic approval review initially rejected the shared-scope Save because it would apply everywhere this reusable scope is selected. Mahesh explicitly approved that shared effect, and the reviewed confirmation listed Slack assignment, Reviews/Coding and Slack/Messaging Automations consumers. The repair was then saved and read back: only inherited Meena Atlassian - RO is excluded, with Jira MCP selected and the native Jira connection, repository and existing environment retained. Base Scope and organization connections were not changed. The subsequent run passed Prepare and completed triage, verifying that this conflict no longer blocks startup.
+
+The work log still reported Jira MCP unavailable and the agent's Datadog re-query returned 401 Unauthorized. Mac-side Datadog authentication and owned-monitor reads passed separately. This does not prove the saved native Datadog connection is healthy. The separate native Jira connection successfully created SC-41 under the same scope, confirming that the Jira MCP warning and failed Datadog re-query did not block this ticket action.
+
+## Repaired native button display
+
+The first triage after the scope repair emitted a literal `slack_buttons` JSON code block containing the two prompts, instead of rendering clickable controls. No action callback was exercised on that earlier episode; its prompt text alone did not establish working buttons.
+
+The saved instructions now separate detailed action/repository policies from concise native button definitions (217 and 356 characters). They require human-readable triage and leave rendering to the platform, explicitly prohibiting JSON, Block Kit or a `slack_buttons` marker as a substitute for controls. Exact saved readback matched; scope, Active status, trigger and channel were preserved. The separately approved additional TEST verified both native controls and both follow-up dispatches. One Debug selection and one Jira selection were used; those specific test permissions are consumed.
+
+## Remaining fix-PR verification limits
+
+The latest Debug result reproduced no source defect on the default branch, so it correctly created no implementation task or PR. It reported CodeRabbit task discovery unauthenticated inside the sandbox, even though the Mac harness can list the repository's tasks. Native task creation was not attempted or independently proven. Fix-PR publication, its CLI review, PR/security checks and native QA Agent Verify therefore remain unexercised on this path. No review or Verify was waived or claimed passed for this test.
+
+A complete source-fix rehearsal still needs reproducible faulty source on an explicitly approved isolated base and working native CodeRabbit Code discovery/handoff. It does not need a Jira issue. Keep any future fixture branches and task/PR metadata free of Jira identifiers. Restoring the saved native Datadog connection would provide live re-query evidence; sandbox checkout tests do not prove the current Mac/Docker runtime is healthy. Do not copy Mac credentials into the agent or silently substitute a harness-launched task for native handoff proof.
+
+## Evidence limits and operator controls
+
+At 11:56 AM Pacific on November 5, readback showed availability OK, checkout Alert, and heartbeat No Data; all three had active non-expiring exact-ID suppression. These timestamped observations are not a current health claim. A synthetic notification does not establish affected users, root cause, faulty deployed source or image recovery.
+
+Within the Jira path, do not create a second Bug for a known episode. Within the Debug path, reuse matching repository work independently, without consulting tickets. The single matching Bug query verifies the observed result, not concurrent-click serialization or replay handling; those were not tested. Do not retry an ambiguous artifact write, infer an alert cycle from a timestamp, or substitute a manually launched task for native handoff evidence. PR17's earlier harness-managed fix and QA are historical manual-fallback evidence. PRs16 and19's merged implementations and offline QA do not establish native end-to-end remediation.
+
+No Docker fault, image publication, cloud deployment or source merge is part of the recorded native button tests. The only shared-scope content change was the separately approved duplicate-MCP exclusion described above. For the paused custom bridge, see [its status](../demo/slack-bridge.md).
