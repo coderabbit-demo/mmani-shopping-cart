@@ -28,5 +28,9 @@
     }
   },
   "actionStart": 0,
-  "actionEnd": 0
+  "actionEnd": 0,
+  "gitPath": "/absolute/path/to/git",
+  "datadogCredentialsFile": "/absolute/path/to/approved-dd-env",
+  "ghPath": "/absolute/path/to/gh",
+  "bashPath": "/bin/bash"
 }

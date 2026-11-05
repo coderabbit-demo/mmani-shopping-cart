@@ -27,3 +27,15 @@ test('initialized state refuses missing database and incompatible marker',async(
  try { await s.call('pending'); await s.close(); await unlink(join(d,'state.sqlite')); assert.throws(()=>new State(d),/database missing/); await writeFile(join(d,'initialized'),'wrong\n'); assert.throws(()=>new State(d),/incompatible state marker/); }
  finally { await rm(d,{recursive:true,force:true}); }
 });
+test('deadline supervisor cancels at most once and fences unknown usage',async()=>{
+ const {Supervisor,Tasks}=await import('../src/coderabbit.mjs');
+ const d=await mkdtemp(join(tmpdir(),'bridge-watch-')), s=new State(d,{initialize:true}), episode='a'.repeat(64), id='11111111-1111-4111-8111-111111111111'; let cancels=0;
+ try {
+  await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});
+  await s.call('initBudget',{episode,revision:'b'.repeat(64),cap:3}); await s.call('reserve',{episode,stage:'plan',amount:1,deadline:Date.now()-1});
+  const c=await s.call('claim',{episode,kind:'task'}); const ref={episode,kind:'task',fence:c.artifact.fence}; await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'}); await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});
+  const adapter={async cancel(){cancels++;return 'cancel_pending'},async show(){return {turnStatus:'completed',cancellationPending:false}}};
+  const tasks=new Tasks({state:s,adapter}); const sup=new Supervisor({state:s,tasks,adapter,slack:{async flush(){}}}); await sup.tick(); await sup.tick();
+  assert.equal(cancels,1); assert.equal((await s.call('getBudget',{episode})).usage_unknown,1); assert.equal((await s.call('activeRuns')).length,0);
+ } finally { await s.close(); await rm(d,{recursive:true,force:true}); }
+});

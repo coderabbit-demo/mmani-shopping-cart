@@ -1,13 +1,32 @@
 import { createHash } from 'node:crypto';
-import { validateEnvelope, ACTIONS } from './cards.mjs';
+import { validateEnvelope, validateApprovalEnvelope, ACTIONS } from './cards.mjs';
 import { parseIncident } from './incidents.mjs';
 
 export class Actions {
-  constructor({state, config, monitor, jira, slack, task, now=Date.now}) { Object.assign(this,{state,config,monitor,jira,slack,task,now}); }
+  constructor({state, config, monitor, jira, slack, task, delivery=null, now=Date.now}) { Object.assign(this,{state,config,monitor,jira,slack,task,delivery,now}); }
   async receive(body, ack) {
     await ack();
     try { return await this.handle(body); }
     catch { return {status:'blocked'}; }
+  }
+  async approve(body,ack) {
+    await ack();
+    try {
+      const click=validateApprovalEnvelope(body,this.config);
+      if (this.now()<this.config.actionStart || this.now()>=this.config.actionEnd) throw new Error('action window closed');
+      const control=await this.state.call('getControl',{handle:click.handle,ts:click.ts});
+      if (!control || !this.task) throw new Error('unknown approval');
+      const card=await this.state.call('getCard',{ts:click.ts});
+      if (!card || card.episode!==control.episode) throw new Error('card mismatch');
+      await this.monitor(card.monitor);
+      const result=await this.task.approveAndResume({episode:control.episode,taskId:control.task_id,revision:control.revision,actor:click.actor});
+      if (result==='implementation_complete' && this.delivery) {
+        const delivered=await this.delivery.deliver({episode:control.episode,taskId:control.task_id});
+        if (typeof delivered==='object' && delivered.status==='awaiting_native_verify') return this.status(card,`awaiting_native_verify ${delivered.pr} ${delivered.head}`);
+        return this.status(card,delivered);
+      }
+      return this.status(card,result);
+    } catch { return {status:'blocked'}; }
   }
   async handle(body) {
     const card=validateEnvelope(body,this.config);

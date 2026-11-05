@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS deliveries (event TEXT PRIMARY KEY, episode TEXT NOT 
 CREATE TABLE IF NOT EXISTS artifacts (episode TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, fence INTEGER NOT NULL, remote_id TEXT, remote_key TEXT, PRIMARY KEY(episode,kind));
 CREATE TABLE IF NOT EXISTS budgets (episode TEXT PRIMARY KEY, revision TEXT NOT NULL, cap REAL NOT NULL, used REAL NOT NULL DEFAULT 0, usage_unknown INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS approvals (episode TEXT NOT NULL, revision TEXT NOT NULL, task_id TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(episode,revision,task_id));
+CREATE TABLE IF NOT EXISTS handoffs (episode TEXT PRIMARY KEY, pr TEXT NOT NULL, head TEXT NOT NULL, status TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS controls (handle TEXT PRIMARY KEY, episode TEXT NOT NULL, ts TEXT NOT NULL, task_id TEXT NOT NULL, revision TEXT NOT NULL, UNIQUE(episode,ts,task_id,revision));
+CREATE TABLE IF NOT EXISTS runs (episode TEXT NOT NULL, stage TEXT NOT NULL, reserved REAL NOT NULL, deadline INTEGER NOT NULL, status TEXT NOT NULL, PRIMARY KEY(episode,stage));
 CREATE TABLE IF NOT EXISTS outbox (id INTEGER PRIMARY KEY, episode TEXT NOT NULL, ts TEXT NOT NULL, status TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);
 PRAGMA user_version=1;`);
 const q = sql => db.prepare(sql);
@@ -50,6 +53,9 @@ const operations = {
   }); },
   getCard({ts}) { const c=card(ts); if (!c) return null; const i=q('SELECT monitor, synthetic FROM incidents WHERE episode=?').get(c.episode); return {...c,...i}; },
   getArtifact({episode,kind}) { return art(episode,kind) || null; },
+  setHandoff({episode,pr,head}) { q("INSERT INTO handoffs VALUES (?,?,?,'awaiting_native_verify') ON CONFLICT(episode) DO UPDATE SET pr=excluded.pr,head=excluded.head,status=excluded.status").run(episode,pr,head); return true; },
+  handoffs() { return q('SELECT * FROM handoffs').all(); },
+  getBudget({episode}) { return q('SELECT * FROM budgets WHERE episode=?').get(episode) || null; },
   initBudget({episode,revision,cap}) { return transact(() => { q('INSERT OR IGNORE INTO budgets(episode,revision,cap) VALUES (?,?,?)').run(episode,revision,cap); const b=q('SELECT * FROM budgets WHERE episode=?').get(episode); if (b.revision!==revision || b.cap!==cap || b.usage_unknown || b.used>=b.cap) throw new Error('budget unavailable'); return b; }); },
   usage({episode,minutes}) { if (minutes===null || !Number.isFinite(minutes) || minutes<0) { q('UPDATE budgets SET usage_unknown=1 WHERE episode=?').run(episode); return false; } q('UPDATE budgets SET used=used+? WHERE episode=?').run(minutes,episode); return true; },
   approval({episode,revision,taskId}) { return transact(() => {
@@ -59,6 +65,32 @@ const operations = {
     return true;
   }); },
   consumeApproval({episode,revision,taskId}) { const r=q('UPDATE approvals SET consumed=1 WHERE episode=? AND revision=? AND task_id=? AND consumed=0').run(episode,revision,taskId); if (r.changes !== 1) throw new Error('approval mismatch'); return true; },
+  makeControl({episode,ts,taskId,revision}) { return transact(() => {
+    const task=art(episode,'task'), c=card(ts);
+    if (!c || c.episode!==episode || !task || task.remote_id!==taskId || task.state!=='confirmed') throw new Error('control mismatch');
+    let existing=q('SELECT * FROM controls WHERE episode=? AND ts=? AND task_id=? AND revision=?').get(episode,ts,taskId,revision);
+    if (!existing) { q('INSERT INTO controls VALUES (?,?,?,?,?)').run(randomBytes(32).toString('hex'),episode,ts,taskId,revision); existing=q('SELECT * FROM controls WHERE episode=? AND ts=? AND task_id=? AND revision=?').get(episode,ts,taskId,revision); }
+    return existing;
+  }); },
+  controlForCard({ts}) { return q('SELECT * FROM controls WHERE ts=? ORDER BY rowid DESC LIMIT 1').get(ts) || null; },
+  getControl({handle,ts}) { return q('SELECT * FROM controls WHERE handle=? AND ts=?').get(handle,ts) || null; },
+  reserve({episode,stage,amount,deadline}) { return transact(() => {
+    const b=q('SELECT * FROM budgets WHERE episode=?').get(episode);
+    const active=q("SELECT COALESCE(SUM(reserved),0) AS total FROM runs WHERE episode=? AND status IN ('active','unknown')").get(episode).total;
+    if (!b || b.usage_unknown || !Number.isFinite(amount) || amount<=0 || !Number.isSafeInteger(deadline) || b.used+active+amount>b.cap || q('SELECT * FROM runs WHERE episode=? AND stage=?').get(episode,stage)) throw new Error('budget unavailable');
+    q("INSERT INTO runs VALUES (?,?,?,?,'active')").run(episode,stage,amount,deadline); return true;
+  }); },
+  finishRun({episode,stage,minutes}) { return transact(() => {
+    const r=q('SELECT * FROM runs WHERE episode=? AND stage=?').get(episode,stage);
+    if (!r || r.status!=='active') throw new Error('run unavailable');
+    if (!Number.isFinite(minutes) || minutes<0) { q("UPDATE runs SET status='unknown' WHERE episode=? AND stage=?").run(episode,stage); q('UPDATE budgets SET usage_unknown=1 WHERE episode=?').run(episode); return false; }
+    q("UPDATE runs SET status='complete' WHERE episode=? AND stage=?").run(episode,stage); q('UPDATE budgets SET used=used+? WHERE episode=?').run(minutes,episode); return true;
+  }); },
+  activeRuns() { return q("SELECT * FROM runs WHERE status='active'").all(); },
+  pendingStops() { return q("SELECT * FROM runs WHERE status='unknown'").all(); },
+  stopped({episode,stage}) { q("UPDATE runs SET status='unknown_stopped' WHERE episode=? AND stage=? AND status='unknown'").run(episode,stage); return true; },
+  artifacts() { return q('SELECT * FROM artifacts').all(); },
+  cards() { return q('SELECT * FROM cards').all(); },
   enqueue({episode,ts,status}) { return Number(q('INSERT INTO outbox(episode,ts,status) VALUES (?,?,?)').run(episode,ts,status).lastInsertRowid); },
   pending() { return q('SELECT * FROM outbox WHERE delivered=0 ORDER BY id').all(); },
   delivered({id}) { q('UPDATE outbox SET delivered=1 WHERE id=?').run(id); return true; },
