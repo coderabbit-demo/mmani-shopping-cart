@@ -66,3 +66,95 @@ test('private browser endpoint uses the explicit reserved alias and rejects the 
   assert.deepEqual(validate(endpoint), endpoint);
   assert.throws(() => validate({ ...endpoint, url: 'http://app:3000' }));
 });
+
+test('local identity is explicit and does not relax GCP validation', async () => {
+  const { validateLocal } = await import('../deploy/checker.mjs');
+  const local = { url: good.url, source: good.source, image: `sha256:${'c'.repeat(64)}` };
+  assert.deepEqual(validateLocal(local), local);
+  assert.throws(() => validate(local));
+  assert.throws(() => validateLocal(good));
+  assert.throws(() => validateLocal({ ...local, url: 'http://127.0.0.1:3177' }));
+  assert.throws(() => validateLocal({ ...local, image: 'deskdrop:latest' }));
+});
+
+test('local journey reports only bounded observations for checkout and receipt or history failures', async () => {
+  const { journeyLocal } = await import('../deploy/checker.mjs');
+  const local = { url: good.url, source: good.source, image: `sha256:${'c'.repeat(64)}` };
+  async function exercise(failure, observedText = '$96') {
+    let history = false;
+    const observations = [];
+    function locator(key) {
+      return {
+        key,
+        getByRole(role, opts = {}) { return locator(`${key}/${role}:${String(opts.name ?? '')}`); },
+        getByTestId(id) { return locator(id); },
+        getByLabel() { return locator('label'); },
+        filter({ hasText }) { return locator(hasText); },
+        async click() { if (key.includes('View order history')) history = true; },
+        async fill() {}, async check() {},
+        async textContent() { return observedText; },
+        async count() { return 1; },
+      };
+    }
+    const page = { ...locator('page'), setDefaultTimeout() {}, async goto() {} };
+    const browser = { async newContext() { return { async newPage() { return page; }, async close() {} }; }, async close() {} };
+    const assertion = target => ({
+      async toHaveText() { if (failure === 'total' && target.key === 'total') throw new Error('private browser data'); },
+      async toHaveURL() { if (failure === 'receipt_url') throw new Error('private browser data'); }, async toHaveCount() { if (failure === 'receipt_count' && !history) throw new Error('private browser data'); },
+      async toContainText() { if (failure === 'receipt_lamp' && !history && target.key === 'Arc desk lamp') throw new Error('private browser data'); if (failure === 'history_organizer' && history && target.key === 'Tidy desk organizer') throw new Error('private browser data'); },
+    });
+    await assert.rejects(journeyLocal(local, { launch: async () => browser }, assertion, value => observations.push(value)));
+    return observations.at(-1);
+  }
+  assert.deepEqual(await exercise('total'), { stage: 'checkout_total', expected: '$97', actual: '$96' });
+  assert.deepEqual(await exercise('total', '$96|secret'), { stage: 'checkout_total', expected: '$97', actual: 'unavailable' });
+  assert.deepEqual(await exercise('receipt_lamp'), { stage: 'receipt_lamp', expected: 'lamp_terracotta', actual: 'mismatch' });
+  assert.deepEqual(await exercise('receipt_count'), { stage: 'receipt_count', expected: '2', actual: '1' });
+  assert.deepEqual(await exercise('receipt_url'), { stage: 'receipt_url', expected: 'checkout_success', actual: 'failed' });
+  assert.deepEqual(await exercise('history_organizer'), { stage: 'history_organizer', expected: 'organizer_natural_oak', actual: 'mismatch' });
+});
+
+test('journeys validate before loading defaults and retain injected browser and assertion arguments', { timeout: 10000 }, async () => {
+  const { mkdtemp, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-browser-loader-')));
+  try {
+    const loader = join(dir, 'browser.mjs');
+    const fixture = `globalThis.fixtureLoads = (globalThis.fixtureLoads || 0) + 1;
+      export const chromium = { launch: async () => { throw new Error('default browser used'); } };
+      export const expect = () => { throw new Error('default assertion used'); };`;
+    await writeFile(loader, `export async function resolve(specifier, context, next) {
+      if (specifier === '@playwright/test') return { url: ${JSON.stringify(`data:text/javascript,${encodeURIComponent(fixture)}`)}, shortCircuit: true };
+      return next(specifier, context);
+    }`);
+    const checker = new URL('../deploy/checker.mjs', import.meta.url).href;
+    const program = `import assert from 'node:assert/strict';
+      import { journey, journeyLocal } from ${JSON.stringify(checker)};
+      const base = { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40) };
+      const cloud = { ...base, image: 'us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:' + 'b'.repeat(64) };
+      const local = { ...base, image: 'sha256:' + 'c'.repeat(64) };
+      await assert.rejects(journey({ ...cloud, image: local.image }));
+      await assert.rejects(journeyLocal({ ...local, image: cloud.image }));
+      assert.equal(globalThis.fixtureLoads, undefined);
+      const injected = { launch: async () => { throw new Error('injected browser used'); } };
+      const assertion = () => {};
+      await assert.rejects(journey(cloud, injected, assertion), /injected browser used/);
+      await assert.rejects(journeyLocal(local, injected, assertion), /injected browser used/);
+      assert.equal(globalThis.fixtureLoads, undefined);
+      await assert.rejects(journey(cloud, undefined, assertion), /default browser used/);
+      await assert.rejects(journeyLocal(local, undefined, assertion), /default browser used/);
+      assert.equal(globalThis.fixtureLoads, 1);
+      await assert.rejects(journey(cloud, injected), /injected browser used/);
+      await assert.rejects(journeyLocal(local, injected), /injected browser used/);
+      const locator = { getByRole: () => locator, getByLabel: () => locator, getByTestId: () => locator,
+        click: async () => {}, fill: async () => {}, check: async () => {} };
+      const page = { ...locator, setDefaultTimeout() {}, goto: async () => {} };
+      const browser = { launch: async () => ({ newContext: async () => ({ newPage: async () => page, close: async () => {} }), close: async () => {} }) };
+      await assert.rejects(journey(cloud, browser), /default assertion used/);
+      await assert.rejects(journeyLocal(local, browser), /default assertion used/);`;
+    await promisify(execFile)(process.execPath, ['--no-warnings', '--experimental-loader', loader, '--input-type=module', '-e', program], { timeout: 8000 });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

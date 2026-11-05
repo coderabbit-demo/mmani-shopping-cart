@@ -2,7 +2,17 @@
 
 # DeskDrop Phase 1 preflight runbook
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:567769fd140023d64dfbd2acf0fcdc6acef60974b2ab6accd9370c61fa8c7460 -->
+
+## Local Docker monitoring
+
+For the separate local runtime, see [local Docker monitoring](local-docker.md). Local results and image IDs are not GCP deployment evidence; the GCP requirements below remain in force.
+
 ## Targets and responsibilities
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The operator runs this read-only harness on the Mac from the `coderabbit-demo/mmani-shopping-cart` checkout. Targets are Google Cloud project `se-demos-project`, Datadog US3, Jira ShoppingCart (`SC`), and CodeRabbit Demo Slack workspace `T0AU433PG75`, channel `#mmani-shopping-cart` (`C0CEPB2LURY`). Phase 1 is tracked by [GitHub #11](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/11) and Jira SC-35; [#10](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10) remains the parent tracker for later work.
 

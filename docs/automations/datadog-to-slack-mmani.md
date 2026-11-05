@@ -10,21 +10,59 @@
 
 The separately approved Socket Mode bridge described in `docs/demo/slack-bridge.md` is under implementation. Its app-owned incoming webhook is a bearer credential; receiving-app and monitor checks do not prove Datadog authorship. Payload substitution, title and category formats, callback identity and live routing remain activation gates. Keep the existing automation and route until a separately approved cutover. Its existing rehearsal and evidence requirements below remain applicable.
 
-## Operator preparation
-
 <!-- /coderabbit-ai-generated:v1 -->
 
-These are reviewable instructions for the existing [automation](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). As last reported it is active, sends to a saved CodeRabbit DM, allows a PR during initial triage and has no runs. It must be deliberately aligned before rehearsal. This document does not authorize changing it or sending an event.
+## Operator preparation
 
-An authorized operator should review its trigger, destination, Agent scope, connections, author identity, budget and failure reporting. Select CodeRabbit Demo workspace `T0AU433PG75` and `#mmani-shopping-cart` (`C0CEPB2LURY`); verify actual channel membership and access to this repository, US3 Datadog and Jira SC. The webhook wizard supplies an authenticated endpoint and required header. Keep both out of examples, logs, repository files and evidence. Its `monitor.alert` and `incident.triggered` event filters are CodeRabbit event types, not Datadog `$EVENT_TYPE` substitutions.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c9f0ba84c18637a7a3ba180a7298deafd0631653c7e5697131800db609aabb5d -->
+
+These are reviewable instructions for the existing [automation](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). The Mac operator's read-only browser check on 2026-11-04 found it Active with no active runs and its saved Slack destination set to Existing Channel `#mmani-shopping-cart`. The target channel `C0CEPB2LURY` exists in CodeRabbit Demo workspace `T0AU433PG75`; CodeRabbit had joined and a welcome message was present. This establishes the observed channel and saved destination, not an automation delivery or posting capability test.
+
+The same check found the saved Agent instructions contain no button instructions, no `Create Jira Ticket` action and no `Debug and Create PR` action. They allow an automatic PR during generic triage if a fix is known. Channel routing is configured, while the requested button workflow remains unconfigured. Aligning the automation requires separate explicit approval; this document does not authorize changing it or sending an event.
+
+An authorized operator should review its trigger, saved destination, Agent scope, connections, author identity, budget and failure reporting, and verify effective access to this repository, US3 Datadog and Jira SC. Recheck the channel and membership before rehearsal. The webhook wizard supplies an authenticated endpoint and required header. Keep both out of examples, logs, repository files and evidence. Its `monitor.alert` and `incident.triggered` event filters are CodeRabbit event types, not Datadog `$EVENT_TYPE` substitutions.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated-section:v1:d6cd96bfa8e686b07a28694aa15109c4a041fe8e3060fc13241a00f9c9d27a54 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e93243393db72bee5982418e382cb534af34749243737ebc76f435c6707716bb -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:2158a657c26bdeae64242ac756efb2e503af3a23dd0fd163c9f111cb48cfb172 -->
+
+## Approved local runtime scope
+
+Mahesh approved the local runtime tags on 2026-11-04: `service:deskdrop`, `env:local-demo`, `demo_id:mmani-shopping-cart-local` and host `deskdrop-mmani-local`. The monitors are `[MMANI local] DeskDrop availability`, `[MMANI local] DeskDrop checkout` and `[MMANI local] DeskDrop checker heartbeat`. The intended failure classes are `http_unavailable`, `journey_failed` and missing checker data. The local diagnostics include source commit and local image identity as separate sanitized evidence; a local image ID does not establish registry publication.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1e9ae3629d1aa47a56d070286a45b5b674c50ed69dee568940da9f965cfb5ad4 -->
+
+The intended destination is CodeRabbit Demo workspace `T0AU433PG75`, channel `C0CEPB2LURY`, as observed in the saved channel selection above. Native event fields, filter enforcement, representative payloads and matching/unrelated-event tests remain pending actual evidence and separate approval. Do not infer that a diagnostic failure class is automatically present in the native Datadog webhook payload. The proposed workflow below requires button-gated initial triage; the currently saved instructions do not implement it. Reuse, concurrency and failure-reporting requirements remain unchanged.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
 ## Scope record required before activation
 
-The confirmed native trigger event types are `monitor.alert` and `incident.triggered`. The intended cases are DeskDrop availability, the cart journey and missing checker data in the [parent issue's monitoring contract](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10). These cases are proposed scope, not verified deployed values. Exact service, environment and failure-class values and payload field mappings have not been validated on deployed payloads; no deployment tags are approved or configured by this document.
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:016c7d191dac1285d1a939d9760ef2d2601931f0ed07f094decd467758b3e0e0 -->
+
+The confirmed native trigger event types are `monitor.alert` and `incident.triggered`. The intended cases are DeskDrop availability, the cart journey and missing checker data in the [parent issue's monitoring contract](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10). The local runtime tags above are approved scope; native payload mappings and filter enforcement remain unverified. GCP deployment tags are not approved or configured by this document.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Before activation, the authorized operator must maintain an authoritative, reviewed scope record identifying the exact service and environment values, each permitted failure class and native event type, the actual payload field paths and values used to match them, and the filter configuration and its enforcement capability. Record sanitized representative deployed payload evidence for every case, test results for matching and unrelated events, the approver, approval date and evidence links. Mark each item proposed, verified or pending decision. Do not record webhook credentials. If any value, mapping, approval or evidence is missing, block activation and rehearsal until the record is complete. If native filters cannot enforce the recorded scope, record the gap and block activation; instructions to ignore events are not a trigger filter or access boundary.
 

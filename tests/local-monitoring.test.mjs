@@ -1,0 +1,210 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { datagram, availability, scheduler } from '../deploy/local-checker.mjs';
+
+const flush = () => new Promise(resolve => setImmediate(resolve));
+test('DogStatsD service checks use fixed host, scoped tags and only allowed statuses', () => {
+  assert.equal(datagram('checkout', 2).toString(), '_sc|deskdrop.local.checkout|2|h:deskdrop-mmani-local|#service:deskdrop,env:local-demo,demo_id:mmani-shopping-cart-local');
+  assert.throws(() => datagram('other', 0));
+  assert.throws(() => datagram('checkout', 3));
+});
+test('availability reports network failures, redirect errors and non-success without a body', async () => {
+  assert.equal(await availability(async (_, opts) => { assert.equal(opts.redirect, 'error'); return { status: 200, body: { cancel: async () => {} } }; }), true);
+  assert.equal(await availability(async () => ({ status: 503 })), false);
+  assert.equal(await availability(async () => { throw new Error('private'); }), false);
+});
+test('independent ticks do not overlap journeys and continue heartbeat and availability', async () => {
+  let time = 0, release, iterations = 0;
+  const events = [], journey = new Promise(resolve => { release = resolve; });
+  const runner = scheduler({ now: () => time, report: (name, status) => events.push([name, status]), runAvailability: async () => true, runJourney: () => { iterations++; return { promise: journey, stop: () => release(false) }; }, markHealthy: () => {}, setTimer: () => 1, clearTimer: () => {} });
+  await flush();
+  time = 30000; runner.tick(); await flush();
+  assert.equal(iterations, 1);
+  assert.equal(events.filter(e => e[0] === 'heartbeat').length, 2);
+  assert.equal(events.filter(e => e[0] === 'availability').length, 2);
+  assert.deepEqual(events.find(e => e[0] === 'checkout'), ['checkout', 2]);
+  release(false); await flush();
+  time = 60000; runner.tick(); await flush();
+  assert.equal(iterations, 2);
+  await runner.stop();
+});
+test('late check results cannot emit a false recovery after an overrun', async () => {
+  let time = 0, releaseHttp, releaseJourney;
+  const events = [], http = new Promise(resolve => { releaseHttp = resolve; }), journey = new Promise(resolve => { releaseJourney = resolve; });
+  const runner = scheduler({ now: () => time, report: (name, status) => events.push([name, status]), runAvailability: () => http, runJourney: () => ({ promise: journey, stop: () => releaseJourney(false) }), markHealthy: () => {}, setTimer: () => 1, clearTimer: () => {} });
+  await flush(); time = 30000; runner.tick(); await flush();
+  releaseHttp(true); releaseJourney(true); await flush();
+  assert.deepEqual(events.filter(([name]) => name === 'availability' || name === 'checkout'), [['availability', 2], ['checkout', 2]]);
+  await runner.stop();
+});
+test('stopping the runner stops heartbeat submission without inventing no-data evidence', async () => {
+  let time = 0, running = true;
+  const events = [];
+  const runner = scheduler({ now: () => time, report: (name, status) => events.push([name, status]), runAvailability: async () => true, runJourney: () => ({ promise: Promise.resolve(true), stop() { running = false; } }), markHealthy: () => {}, setTimer: () => 1, clearTimer: () => {} });
+  await flush();
+  await runner.stop(); time = 120000; runner.tick(); await flush();
+  assert.equal(events.filter(([name]) => name === 'heartbeat').length, 1);
+  assert.equal(running, true);
+});
+test('send emits fixed private DogStatsD bytes and diagnostics only allow safe fields', async () => {
+  const { send, diagnostic } = await import('../deploy/local-checker.mjs');
+  let sent;
+  const socket = { send(bytes, port, host, cb) { sent = { bytes: bytes.toString(), port, host }; cb(); } };
+  await send(socket, 'availability', 0);
+  assert.deepEqual(sent, { bytes: '_sc|deskdrop.local.availability|0|h:deskdrop-mmani-local|#service:deskdrop,env:local-demo,demo_id:mmani-shopping-cart-local', port: 8125, host: 'agent' });
+  const data = diagnostic('checkout', { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `sha256:${'b'.repeat(64)}`, secret: 'private' });
+  assert.equal(data.failure_class, 'journey_failed');
+  assert.equal(data.stage, 'checkout');
+  assert.equal(JSON.stringify(data).includes('private'), false);
+});
+
+test('validated journey observations travel in Agent service-check messages and hostile data is rejected', async () => {
+  const { diagnostic, parseJourneyFailure } = await import('../deploy/local-checker.mjs');
+  const observation = parseJourneyFailure(Buffer.from(JSON.stringify({ type: 'deskdrop-journey-failure', stage: 'checkout_total', expected: '$97', actual: '$96' })));
+  const detail = diagnostic('checkout', { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `sha256:${'b'.repeat(64)}` }, observation);
+  const output = datagram('checkout', 2, detail).toString();
+  const [prefix, message] = output.split('|m:');
+  assert.equal(prefix, '_sc|deskdrop.local.checkout|2|h:deskdrop-mmani-local|#service:deskdrop,env:local-demo,demo_id:mmani-shopping-cart-local');
+  assert.deepEqual(JSON.parse(message), { source: 'a'.repeat(40), image_id: `sha256:${'b'.repeat(64)}`, stage: 'checkout_total', expected: '$97', actual: '$96' });
+  for (const actual of ['$96|secret', 'private browser data', '$1234', '1\nprivate']) assert.throws(() => parseJourneyFailure(Buffer.from(JSON.stringify({ type: 'deskdrop-journey-failure', stage: 'checkout_total', expected: '$97', actual }))));
+  assert.throws(() => parseJourneyFailure(Buffer.from(JSON.stringify({ type: 'deskdrop-journey-failure', stage: 'checkout_total', expected: '$97', actual: '$96', secret: 'private' }))));
+  assert.throws(() => datagram('heartbeat', 2, detail));
+});
+
+test('Agent container selector includes exact owned one-shot names and rejects unrelated containers', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  const match = /DD_CONTAINER_INCLUDE: "name:([^"]+)"/.exec(yaml);
+  assert.ok(match);
+  const include = new RegExp(match[1]);
+  for (const name of ['deskdrop-mmani-local-app-1', '/deskdrop-mmani-local-runner-1', `deskdrop-mmani-local-journey-${'a'.repeat(32)}`]) assert.equal(include.test(name), true);
+  for (const name of ['other-app-1', 'deskdrop-mmani-local-journey-secret', `deskdrop-mmani-local-journey-${'a'.repeat(33)}`, 'deskdrop-mmani-local-agent-1']) assert.equal(include.test(name), false);
+});
+
+test('service-check message reaches a local UDP collector without browser or credential data', { timeout: 3000 }, async () => {
+  const { send, diagnostic } = await import('../deploy/local-checker.mjs');
+  const { createSocket } = await import('node:dgram');
+  const collector = createSocket('udp4'), sender = createSocket('udp4');
+  await new Promise(resolve => collector.bind(0, '127.0.0.1', resolve));
+  try {
+    const received = new Promise(resolve => collector.once('message', bytes => resolve(bytes.toString())));
+    const detail = diagnostic('checkout', { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `sha256:${'b'.repeat(64)}` }, { stage: 'history_organizer', expected: 'organizer_natural_oak', actual: 'mismatch' });
+    await send({ send(bytes, port, host, callback) { assert.equal(port, 8125); assert.equal(host, 'agent'); sender.send(bytes, collector.address().port, '127.0.0.1', callback); } }, 'checkout', 2, detail);
+    const packet = await received;
+    assert.ok(packet.includes('|m:')); assert.ok(packet.includes('history_organizer')); assert.ok(packet.includes('organizer_natural_oak')); assert.ok(packet.includes('mismatch'));
+    assert.ok(!packet.includes('shopper@example.test'));
+  } finally { collector.close(); sender.close(); }
+});
+
+test('checker and runner each resolve one bounded absolute tmpfs mount', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { posix } = await import('node:path');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  for (const name of ['checker', 'runner']) {
+    const section = new RegExp(`^  ${name}:[ \\t]*\\r?\\n([\\s\\S]*?)(?=^  [a-z][\\w-]*:[ \\t]*$|^networks:)`, 'm').exec(yaml);
+    assert.ok(section, `${name} service must exist`);
+    const lists = [...section[1].matchAll(/^    tmpfs:[ \t]*(\[[^\r\n]*\])[ \t]*$/gm)];
+    assert.equal(lists.length, 1, `${name} must specify one tmpfs list`);
+    const flow = lists[0][1];
+    const mounts = /^\[\s*"/.test(flow) ? JSON.parse(flow) : flow.slice(1, -1).split(',').map(value => value.trim());
+    assert.equal(mounts.length, 1, `${name} must resolve one mount`);
+    const parts = mounts[0].split(':');
+    assert.equal(parts.length, 2);
+    assert.equal(posix.isAbsolute(parts[0]), true);
+    assert.equal(parts[0], '/tmp');
+    assert.deepEqual(parts[1].split(',').sort(), ['mode=1777', 'nodev', 'nosuid', 'rw', 'size=256m'].sort());
+  }
+});
+
+
+test('Agent initializes the pinned image configuration before core-only exec and fails closed', async () => {
+  const { readFile, mkdtemp, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  const agent = /^  agent:\n([\s\S]*?)^networks:/m.exec(yaml)?.[1];
+  assert.ok(agent);
+  const flow = key => JSON.parse(new RegExp(`^    ${key}: (\\[[^\\n]+\\])$`, 'm').exec(agent)?.[1] ?? 'null');
+  assert.deepEqual(flow('entrypoint'), ['/bin/bash', '-ec']);
+  assert.deepEqual(flow('command'), ['bash /opt/entrypoints/init-config; exec agent run']);
+  assert.match(agent, /^    init: true$/m);
+  assert.match(agent, /^    cap_drop: \[ALL\]$/m);
+  assert.match(agent, /^    security_opt: \[no-new-privileges:true\]$/m);
+  assert.doesNotMatch(agent, /^    (?:privileged|cap_add|ports):/m);
+  for (const key of ['DD_APM_ENABLED', 'DD_PROCESS_AGENT_ENABLED', 'DD_RUNTIME_SECURITY_CONFIG_ENABLED']) assert.match(agent, new RegExp(`${key}: "false"`));
+  assert.match(agent, /test: \[CMD, agent, health\]/);
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-agent-core-')));
+  try {
+    const marker = join(dir, 'observed'), init = join(dir, 'init-config');
+    await writeFile(init, 'printf "init\\n" >> "$OBSERVED"\nexit "$INIT_STATUS"\n');
+    await writeFile(join(dir, 'agent'), '#!/bin/bash\nprintf "core %s %s\\n" "$1" "$#" >> "$OBSERVED"\nexit 37\n', { mode: 0o700 });
+    const command = flow('command')[0].replace('/opt/entrypoints/init-config', '"$INIT_FIXTURE"');
+    const run = status => spawnSync(flow('entrypoint')[0], [...flow('entrypoint').slice(1), command], { env: { PATH: `${dir}:/usr/bin:/bin`, OBSERVED: marker, INIT_FIXTURE: init, INIT_STATUS: String(status) }, encoding: 'utf8', timeout: 3000 });
+    const failed = run(19);
+    assert.equal(failed.status, 19);
+    assert.equal(await readFile(marker, 'utf8'), 'init\n');
+    await writeFile(marker, '');
+    const started = run(0);
+    assert.equal(started.status, 37);
+    assert.equal(await readFile(marker, 'utf8'), 'init\ncore run 1\n');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('telemetry CLI emits all three service checks without loading Playwright', { timeout: 15000 }, async () => {
+  const { mkdtemp, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createSocket } = await import('node:dgram');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { fileURLToPath } = await import('node:url');
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'deskdrop-telemetry-')));
+  const collector = createSocket('udp4');
+  try {
+    const loader = join(dir, 'block-browser.mjs'), preload = join(dir, 'local-udp.mjs');
+    await writeFile(loader, `export async function resolve(specifier, context, next) {
+      if (specifier === '@playwright/test') return { url: 'data:text/javascript,export const chromium = {}; export const expect = () => {}; throw new Error("browser was loaded")', shortCircuit: true };
+      return next(specifier, context);
+    }`);
+    await writeFile(preload, `import dgram from 'node:dgram'; import { syncBuiltinESMExports } from 'node:module';
+      const create = dgram.createSocket;
+      dgram.createSocket = (...args) => { const socket = create(...args), send = socket.send.bind(socket);
+        socket.send = (bytes, port, host, callback) => {
+          if (port !== 8125 || host !== 'agent') throw new Error('unexpected destination');
+          socket.send = send;
+          return send(bytes, Number(process.env.FIXTURE_PORT), '127.0.0.1', callback);
+        }; return socket;
+      }; syncBuiltinESMExports();`);
+    await new Promise((resolve, reject) => { collector.once('error', reject); collector.bind(0, '127.0.0.1', resolve); });
+    const packets = [];
+    collector.on('message', value => packets.push(value.toString()));
+    const node = promisify(execFile);
+    const script = fileURLToPath(new URL('../deploy/local-checker.mjs', import.meta.url));
+    const detail = { source: 'a'.repeat(40), image_id: `sha256:${'b'.repeat(64)}`, stage: 'checkout_total', expected: '$97', actual: '$96' };
+    const requests = [['availability', '0'], ['checkout', '2', JSON.stringify(detail)], ['heartbeat', '0']];
+    const results = await Promise.allSettled(requests.map(args => node(process.execPath, ['--no-warnings', '--experimental-loader', loader, '--import', preload, script, '--emit', ...args], { env: { PATH: process.env.PATH, FIXTURE_PORT: String(collector.address().port) }, timeout: 10000 })));
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+    if (packets.length < 3) await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { collector.off('message', check); reject(new Error('missing datagrams')); }, 2000);
+      const check = () => { if (packets.length === 3) { clearTimeout(timer); collector.off('message', check); resolve(); } };
+      collector.on('message', check);
+    });
+    assert.deepEqual(packets.sort(), [datagram('availability', 0).toString(), datagram('checkout', 2, detail).toString(), datagram('heartbeat', 0).toString()].sort());
+  } finally { collector.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('only the journey checker uses one CPU while retaining bounded sandbox settings', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const yaml = await readFile(new URL('../deploy/compose.local.yaml', import.meta.url), 'utf8');
+  const service = name => new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][\\w-]*:|^networks:)`, 'm').exec(yaml)?.[1];
+  const checker = service('checker'), runner = service('runner');
+  assert.ok(checker && runner);
+  assert.match(checker, /^    cpus: 1\.0$/m);
+  assert.match(runner, /^    cpus: 0\.5$/m);
+  assert.match(checker, /^    mem_limit: 512m$/m);
+  assert.match(checker, /^    shm_size: 512m$/m);
+  assert.match(checker, /^    cap_drop: \[ALL\]$/m);
+  assert.match(checker, /^      - no-new-privileges:true$/m);
+  assert.match(checker, /^      - seccomp=\$\{LOCAL_SECCOMP_PROFILE:\?required\}$/m);
+});
