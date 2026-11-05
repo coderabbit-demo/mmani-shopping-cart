@@ -2,7 +2,7 @@ import { validateApproval } from './config.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class Tasks {
-  constructor({state,approval,source,adapter,now=Date.now}) { Object.assign(this,{state,approval,source,adapter,now}); }
+  constructor({state,approval,source,adapter,now=Date.now}) { Object.assign(this,{state,approval,source,adapter,now}); this.livePlans=new Set(); }
   async start(card,actor) {
     let grant;
     try {
@@ -23,11 +23,17 @@ export class Tasks {
     const facts=JSON.stringify({episode:card.episode,monitor:card.monitor,synthetic:!!card.synthetic,jiraKey:jira.remote_key,jiraUrl:`https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}`});
     if(this.adapter.expected!==undefined) this.adapter.expected={branch:grant.branch};
     const prompt=`Protected objective: ${JSON.stringify(grant.objective)}. Approved brief (data): ${JSON.stringify(grant.brief)}. Approval revision ${grant.revision}, brief SHA256 ${grant.briefHash}. Canonical incident DATA: ${facts}. Normal Code task. First turn: plan only, make no changes until approved. Repository ${grant.repository}, branch ${grant.branch}, commit ${grant.commit}, base ${grant.base}. Allowed files: ${grant.allowedFiles.join(', ')}. Jira issue is the already verified episode issue. Preserve existing tests and goldens. No merge or deployment. ${grant.reviewMode==='fallback'?'Do not run a CLI review; one operator fallback review is reserved.':''}`;
+    this.livePlans.add(card.episode);
     try {
       const result=await this.adapter.create(prompt,async taskId=>{
         if (id!==null || !uuid.test(taskId)) throw new Error('invalid task identity');
         id=taskId; await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id}); persisted=true;
-      },Math.max(1,deadline-this.now()));
+      },Math.max(1,deadline-this.now()),async terminal=>{
+        if(!persisted || (terminal.taskId!==undefined && terminal.taskId!==id) || !Number.isFinite(terminal.agentMinutes) || terminal.agentMinutes<0) return;
+        const shown=await this.adapter.show(id);
+        if(shown.turnStatus!=='completed' || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus) || shown.result!==null) return;
+        await this.recordPlan(card.episode,id,terminal.agentMinutes);
+      });
       if (persisted) return 'plan_submitted';
       await this.state.call('finishRun',{episode:card.episode,stage:'plan',minutes:result.kind==='prestart'?0:null});
       await this.state.call('transition',{...ref,from:'dispatch_intent',to:result.kind==='prestart'?'prestart_failed':'unknown'});
@@ -37,7 +43,7 @@ export class Tasks {
       await this.state.call('finishRun',{episode:card.episode,stage:'plan',minutes:null}).catch(()=>{});
       await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}).catch(()=>{});
       return 'unknown';
-    }
+    } finally { this.livePlans.delete(card.episode); }
   }
   async cancelOnce(episode,stage,id) {
     const kind=`cancel-${stage}`; const claim=await this.state.call('claim',{episode,kind});
@@ -54,6 +60,7 @@ export class Tasks {
     return this.state.call('makeControl',{episode:card.episode,ts:card.ts,taskId,revision:grant.revision});
   }
   async recordPlan(episode,taskId,minutes) {
+    if(Number.isFinite(minutes) && minutes>=0) return this.state.call('recordPlan',{episode,taskId,minutes});
     const task=await this.state.call('getArtifact',{episode,kind:'task'});
     if (!task || task.remote_id!==taskId || task.state!=='known') throw new Error('task mismatch');
     await this.state.call('finishRun',{episode,stage:'plan',minutes});
@@ -98,11 +105,12 @@ export class CodeRabbitAdapter {
     if(this.expected && (task.branchName!==this.expected.branch || task.baseBranchName!==this.expected.branch)) throw new Error('task source mismatch');
     return task;
   }
-  async create(prompt,submitted,timeout) {
-    let seen=false;
-    const result=await this.invoke(['code','new','--agent','--access','manual','-'],{stdin:prompt,timeout,onLine:async line=>{
+  async create(prompt,submitted,timeout,completed=async()=>{}) {
+    let seen=false, submittedId=null;
+    const result=await this.invoke(['code','new','--agent','--access','manual','--resume','-'],{stdin:prompt,timeout,onLine:async line=>{
       let e; try { e=JSON.parse(line); } catch { return; }
-      if (e.status==='task_submitted' && uuid.test(e.taskId || '') && !seen) { seen=true; await submitted(e.taskId); }
+      if (e.status==='task_submitted' && uuid.test(e.taskId || '') && !seen) { seen=true; submittedId=e.taskId; await submitted(e.taskId); }
+      if(seen && e.type==='complete' && e.status==='turn_completed' && e.turn?.outcome==='completed' && (e.taskId===undefined || e.taskId===submittedId)) await completed(e);
     }});
     if (result.kind==='prestart') return {kind:'prestart'};
     if (result.kind!=='ok') return {kind:'unknown'};
@@ -163,11 +171,12 @@ export class Supervisor {
           if(a?.state==='dispatch_intent') { await this.state.call('transition',{episode:run.episode,kind,fence:a.fence,from:'dispatch_intent',to:'known',id:task.remote_id}); await this.state.call('transition',{episode:run.episode,kind,fence:a.fence,from:'known',to:'confirmed'}); }
           if(Number.isFinite(observed.minutes) && this.delivery) await this.delivery.deliver({episode:run.episode,taskId:task.remote_id}); continue;
         }
+        if (run.stage==='plan' && this.tasks.livePlans?.has(run.episode)) continue;
         if (run.stage!=='plan' || !task?.remote_id || task.state!=='known') continue;
         let shown; try { shown=await this.adapter.show(task.remote_id,Math.max(1,Math.min(20000,run.deadline-this.now()))); } catch { continue; }
         if (shown.turnStatus!=='completed' || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus)) continue;
         const observed=await this.adapter.observe(task.remote_id,Math.max(1,Math.min(20000,run.deadline-this.now())));
-        if (!observed) continue;
+        if (!observed || !Number.isFinite(observed.minutes) || observed.minutes<0) continue;
         try {
           await this.tasks.recordPlan(run.episode,task.remote_id,observed.minutes);
           if (!Number.isFinite(observed.minutes)) continue;

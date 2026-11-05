@@ -86,6 +86,16 @@ const operations = {
     if (!b || b.usage_unknown || !Number.isFinite(amount) || amount<=0 || !Number.isSafeInteger(deadline) || b.used+active+amount>b.cap || q('SELECT * FROM runs WHERE episode=? AND stage=?').get(episode,stage)) throw new Error('budget unavailable');
     q("INSERT INTO runs VALUES (?,?,?,?,'active')").run(episode,stage,amount,deadline); return true;
   }); },
+  recordPlan({episode,taskId,minutes}) { return transact(() => {
+    const task=art(episode,'task'), run=q("SELECT * FROM runs WHERE episode=? AND stage='plan'").get(episode);
+    if(!task || task.remote_id!==taskId || !Number.isFinite(minutes) || minutes<0 || !run) throw new Error('invalid plan accounting');
+    if(task.state==='confirmed' && run.status==='complete') return task;
+    if(task.state!=='known' || run.status!=='active') throw new Error('plan accounting fenced');
+    q("UPDATE runs SET status='complete' WHERE episode=? AND stage='plan'").run(episode);
+    q('UPDATE budgets SET used=used+? WHERE episode=?').run(minutes,episode);
+    q("UPDATE artifacts SET state='confirmed' WHERE episode=? AND kind='task' AND fence=? AND state='known'").run(episode,task.fence);
+    return art(episode,'task');
+  }); },
   finishRun({episode,stage,minutes}) { return transact(() => {
     const r=q('SELECT * FROM runs WHERE episode=? AND stage=?').get(episode,stage);
     if (!r || r.status!=='active') throw new Error('run unavailable');
