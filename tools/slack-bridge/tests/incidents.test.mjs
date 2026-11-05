@@ -43,3 +43,18 @@ test('native timestamp must be fresh and cycle never derives from another field'
  assert.throws(()=>parseIncident(JSON.stringify(incident({at:String(Math.floor((now-86401000)/1000))})),now));
  assert.throws(()=>parseIncident(JSON.stringify(incident({at:String(Math.floor((now+301000)/1000))})),now));
 });
+
+test('owned monitor requires pinned host query and actual ownership metadata',()=>{
+ const i=parseIncident(JSON.stringify(incident()));
+ const query='avg(last_5m):avg:deskdrop.health{service:deskdrop,env:local-demo,host:deskdrop-mmani-local} > 0';
+ const expected={query,owner:'synthetic-owner@example.test',tags:['managed_by:demo','local_owner:synthetic']};
+ const monitor={id:29524154,query,creator:{handle:expected.owner},tags:['service:deskdrop','env:local-demo','demo_id:mmani-shopping-cart-local',...expected.tags]};
+ assert.equal(validateMonitor(monitor,expected,i),true);
+ assert.throws(()=>validateMonitor({...monitor,query:query.replace('> 0','> 1')},expected,i));
+ assert.throws(()=>validateMonitor({...monitor,creator:{handle:'different'}},expected,i));
+ assert.throws(()=>validateMonitor({...monitor,tags:monitor.tags.filter(t=>t!=='local_owner:synthetic')},expected,i));
+ for(const host of ['host:other','host:deskdrop-mmani-local-other','!host:deskdrop-mmani-local','host:deskdrop-mmani-local OR env:other']) {
+  const wrong=query.replace('host:deskdrop-mmani-local',host);
+  assert.throws(()=>validateMonitor({...monitor,query:wrong},{...expected,query:wrong},i));
+ }
+});

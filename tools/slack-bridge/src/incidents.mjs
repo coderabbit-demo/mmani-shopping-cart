@@ -24,9 +24,10 @@ export function parseIncident(raw, now = Date.now()) {
 export function validateMonitor(monitor, expected, incident) {
   if (!monitor || String(monitor.id) !== incident.monitor || !expected || typeof expected.query !== 'string' || !expected.query || !expected.owner || monitor.query !== expected.query) throw new Error('monitor ownership mismatch');
   const tags = new Set(monitor.tags || []);
-  for (const tag of ['service:deskdrop', 'env:local-demo', 'demo_id:mmani-shopping-cart-local', 'host:deskdrop-mmani-local', ...expected.tags]) if (!tags.has(tag)) throw new Error('monitor scope mismatch');
+  for (const tag of ['service:deskdrop', 'env:local-demo', 'demo_id:mmani-shopping-cart-local', ...expected.tags]) if (!tags.has(tag)) throw new Error('monitor scope mismatch');
   if (monitor.creator?.handle !== expected.owner) throw new Error('monitor owner mismatch');
-  if (!monitor.query.includes('deskdrop-mmani-local')) throw new Error('monitor host query mismatch');
+  const scopes=monitor.query.match(/\{[^{}]*\}/g) || [];
+  if (!scopes.some(scope => !/\bOR\b/i.test(scope) && /(?:^|,|\bAND\s+)\s*host:deskdrop-mmani-local\s*(?=$|,|\s+AND\b)/i.test(scope.slice(1,-1)))) throw new Error('monitor host query mismatch');
   return true;
 }
 
