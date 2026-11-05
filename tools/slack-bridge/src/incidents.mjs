@@ -27,7 +27,13 @@ export function validateMonitor(monitor, expected, incident) {
   for (const tag of ['service:deskdrop', 'env:local-demo', 'demo_id:mmani-shopping-cart-local', ...expected.tags]) if (!tags.has(tag)) throw new Error('monitor scope mismatch');
   if (monitor.creator?.handle !== expected.owner) throw new Error('monitor owner mismatch');
   const scopes=monitor.query.match(/\{[^{}]*\}/g) || [];
-  if (!scopes.some(scope => !/\bOR\b/i.test(scope) && /(?:^|,|\bAND\s+)\s*host:deskdrop-mmani-local\s*(?=$|,|\s+AND\b)/i.test(scope.slice(1,-1)))) throw new Error('monitor host query mismatch');
+  const serviceCheck=/^"[A-Za-z0-9_.-]+"\.over\(("[^"\\\r\n]*"(?:\s*,\s*"[^"\\\r\n]*")*)\)\.by\("host"\)\.last\([1-9][0-9]*\)\.count_by_status\(\)$/.exec(monitor.query);
+  let serviceHost=false;
+  if(serviceCheck) {
+    const terms=JSON.parse(`[${serviceCheck[1]}]`);
+    serviceHost=terms.length===new Set(terms).size && terms.every(t=>/^[a-z_]+:[A-Za-z0-9_.-]+$/.test(t)) && terms.filter(t=>t.startsWith('host:')).length===1 && terms.includes('host:deskdrop-mmani-local') && ['service:deskdrop','env:local-demo','demo_id:mmani-shopping-cart-local'].every(t=>terms.includes(t));
+  }
+  if (!serviceHost && (monitor.query.includes('.over(') || !scopes.some(scope => !/\bOR\b/i.test(scope) && /(?:^|,|\bAND\s+)\s*host:deskdrop-mmani-local\s*(?=$|,|\s+AND\b)/i.test(scope.slice(1,-1))))) throw new Error('monitor host query mismatch');
   return true;
 }
 

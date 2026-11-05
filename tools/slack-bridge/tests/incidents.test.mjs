@@ -58,3 +58,18 @@ test('owned monitor requires pinned host query and actual ownership metadata',()
   assert.throws(()=>validateMonitor({...monitor,query:wrong},{...expected,query:wrong},i));
  }
 });
+
+test('native service-check over scopes require exact protected query and host',()=>{
+ for(const [id,name] of [['29524154','availability'],['29524290','checkout'],['29524292','heartbeat']]) {
+  const query=`"deskdrop.local.${name}".over("service:deskdrop","env:local-demo","demo_id:mmani-shopping-cart-local","host:deskdrop-mmani-local").by("host").last(2).count_by_status()`;
+  const expected={query,owner:'synthetic@example.test',tags:['managed_by:demo','local_owner:fixture']};
+  const m={id:Number(id),type:'service check',query,creator:{handle:expected.owner},tags:['service:deskdrop','env:local-demo','demo_id:mmani-shopping-cart-local',...expected.tags]};
+  assert.equal(validateMonitor(m,expected,{monitor:id}),true);
+  assert.throws(()=>validateMonitor({...m,query:query.replace('last(2)','last(3)')},expected,{monitor:id}));
+  assert.throws(()=>validateMonitor({...m,creator:{handle:'other'}},expected,{monitor:id}));
+  assert.throws(()=>validateMonitor({...m,tags:m.tags.filter(x=>x!=='managed_by:demo')},expected,{monitor:id}));
+  for(const bad of ['host:other','host:*','!host:deskdrop-mmani-local','host:deskdrop-mmani-local OR host:other','host:deskdrop-mmani-local*','host:deskdrop-mmani-local,host:other']) {
+   const wrong=query.replace('host:deskdrop-mmani-local',bad); assert.throws(()=>validateMonitor({...m,query:wrong},{...expected,query:wrong},{monitor:id}));
+  }
+ }
+});

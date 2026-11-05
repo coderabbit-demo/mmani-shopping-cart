@@ -22,3 +22,12 @@ test('proposed manifest requests only approved bot scopes and Socket Mode',async
  assert.deepEqual(manifest.oauth_config.scopes.bot,['chat:write','incoming-webhook']); assert.equal(manifest.oauth_config.scopes.user,undefined);
  assert.equal(manifest.settings.socket_mode_enabled,true); assert.equal(manifest.settings.incoming_webhooks.incoming_webhooks_enabled,true); assert.equal(manifest.settings.interactivity.is_enabled,true); assert.equal(manifest.settings.event_subscriptions,undefined);
 });
+
+test('uncapped coding requires explicit protected mode and no contradictory limits',()=>{
+ const a={objective:'Repair fixture',brief:'Repair fixture',briefHash:createHash('sha256').update('Repair fixture').digest('hex'),repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/fix',owner:'U123',allowedFiles:['lib/a.ts'],uncapped:true,maxTasks:1};
+ a.revision=approvalRevision(a); assert.equal(validateApproval(a,Number.MAX_SAFE_INTEGER),a);
+ for(const fields of [{uncapped:false},{uncapped:'true'},{minutes:100},{startsAt:0},{endsAt:0},{maxTasks:2}]) { const bad={...a,...fields};bad.revision=approvalRevision(bad);assert.throws(()=>validateApproval(bad)); }
+ const changed={...a,uncapped:false,minutes:5,startsAt:0,endsAt:Date.now()+10000};assert.notEqual(approvalRevision(changed),a.revision);assert.throws(()=>validateApproval(changed));
+ const legacy={...changed};delete legacy.uncapped;const fields=[legacy.objective,legacy.brief,legacy.briefHash,legacy.repository,legacy.repositoryId,legacy.branch,legacy.commit,legacy.base,legacy.baseBranch,legacy.deliveryBranch,legacy.issueUrl,legacy.delivery,legacy.reviewMode,legacy.owner,legacy.allowedFiles,legacy.minutes,legacy.maxTasks,legacy.startsAt,legacy.endsAt];
+ assert.equal(approvalRevision(legacy),createHash('sha256').update(JSON.stringify(fields)).digest('hex'));
+});

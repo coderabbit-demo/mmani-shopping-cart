@@ -88,3 +88,31 @@ test('review reconciliation reopens the verified authored checkout without publi
  const receipt={taskId:id,revision:grant.revision,base,head,events:[{type:'complete',status:'review_completed',outcome:'completed',findings:0,gate:{threshold:'major',status:'passed',blockingFindings:0},reviewedFiles:['lib/a.ts']}]};
  assert.equal((await d.reconcile({episode,kind:'review',id:head,receipt})).state,'confirmed');assert.equal(reopened,1);assert.ok(ops.includes('saveReview'));
 });
+
+test('different grants keep source and authored contexts immutable in sequential and interleaved deliveries',async()=>{
+ const {mkdtemp,rm}=await import('node:fs/promises');const {join}=await import('node:path');const {tmpdir}=await import('node:os');const {createHash}=await import('node:crypto');const {State}=await import('../src/state.mjs');const {Delivery,CodeRabbitAdapter}=await import('../src/coderabbit.mjs');const {approvalRevision}=await import('../src/config.mjs');
+ const root=await mkdtemp(join(tmpdir(),'bridge-contexts-')),state=new State(root,{initialize:true}),calls=[],ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222'],head='d'.repeat(40),base='b'.repeat(40);
+ const grants=['one','two'].map(n=>{const g={objective:'Fix '+n,brief:'Fix '+n,repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',branch:'codex/source-'+n,commit:'a'.repeat(40),base,baseBranch:'main',deliveryBranch:'codex/delivery-'+n,issueUrl:'https://coderabbit-demo.atlassian.net/browse/SC-'+(n==='one'?'38':'39'),owner:'U123',allowedFiles:['lib/a.ts'],uncapped:true,maxTasks:1,delivery:true,reviewMode:'fallback'};g.briefHash=createHash('sha256').update(g.brief).digest('hex');g.revision=approvalRevision(g);return g;});
+ let revoked=false;
+ const adapter=new CodeRabbitAdapter(async args=>{const id=args.at(-1);return {kind:'ok',stdout:JSON.stringify({type:'complete',status:'task_shown',task:{taskId:id,repository:{provider:'github',repoId:'1437431331',name:'mmani-shopping-cart'},branchName:grants[ids.indexOf(id)].branch,baseBranchName:grants[ids.indexOf(id)].branch,turnStatus:'completed',cancellationPending:false,deliveryStatus:'succeeded',result:{commitSha:head,branchName:'coderabbit/'+id}}})};},{branch:'codex/original'});
+ const source=async args=>{calls.push(['source',args]);throw new Error('authored commands reached source')};
+ const deliveries=grants.map((g,i)=>new Delivery({state,adapter,git:source,approval:async()=>{if(i===1 && revoked)throw new Error('revoked');return g},prepare:async(grant,h,branch)=>{
+  assert.equal(grant.revision,g.revision);assert.equal(h,head);assert.equal(branch,'coderabbit/'+ids[i]);await new Promise(r=>setTimeout(r,i?2:5));
+  const git=async args=>{calls.push([g.deliveryBranch,args]);const cmd=args[0];return {kind:'ok',stdout:cmd==='remote'?'https://github.com/coderabbit-demo/mmani-shopping-cart.git':cmd==='ls-remote'?`${head}\trefs/heads/${g.deliveryBranch}\n${base}\trefs/heads/main`:cmd==='rev-parse'?head:cmd==='diff' && args.includes('--name-only')?'lib/a.ts':''};};
+  return {git,review:async(b,h)=>{calls.push([g.deliveryBranch,'review']);assert.equal(b,base);assert.equal(h,head);return {kind:'complete',base,head,findings:0,gate:{status:'passed'}}},github:{async create(grant,h){assert.equal(grant.revision,g.revision);assert.equal(h,head);calls.push([g.deliveryBranch,'pr']);return `https://github.com/coderabbit-demo/mmani-shopping-cart/pull/${i+100}`}},checks:async(pr,h,grant)=>{assert.equal(grant.deliveryBranch,g.deliveryBranch);assert.equal(h,head);assert.equal(pr,`https://github.com/coderabbit-demo/mmani-shopping-cart/pull/${i+100}`);return true}};
+ }}));
+ try {
+  for(let i=0;i<2;i++) {const episode=String(i+1).repeat(64),g=grants[i];await state.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:String(i),event:String(i),test:true,actionable:true},ts:String(i),digest:String(i)});await state.call('initBudget',{episode,revision:g.revision,uncapped:true});for(const [kind,id,key] of [['jira',String(i+1),'SC-'+(i?'39':'38')],['task',ids[i],null],[`resume-${g.revision}`,ids[i],null]]) {const a=await state.call('claim',{episode,kind}),ref={episode,kind,fence:a.artifact.fence};await state.call('transition',{...ref,from:'claimed',to:'known',id,key});await state.call('transition',{...ref,from:'known',to:'confirmed'});}}
+  const observed=await Promise.all(ids.map((id,i)=>adapter.show(id,20000,{branch:grants[i].branch})));assert.equal(observed[0].branchName,grants[0].branch);assert.equal(observed[1].branchName,grants[1].branch);await assert.rejects(adapter.show(ids[0],20000,{branch:grants[1].branch}));
+  const results=await Promise.all(deliveries.map((d,i)=>d.deliver({episode:String(i+1).repeat(64),taskId:ids[i]})));assert.ok(results.every(r=>r.status==='awaiting_native_verify'));
+  for(let i=0;i<2;i++)assert.equal((await deliveries[i].deliver({episode:String(i+1).repeat(64),taskId:ids[i]})).status,'awaiting_native_verify');
+  assert.equal(calls.filter(c=>c[0]==='source').length,0);assert.equal(calls.filter(c=>c[1]==='review').length,2);assert.equal(calls.filter(c=>c[1]==='pr').length,2);assert.equal(adapter.expected.branch,'codex/original');assert.ok(deliveries.every(d=>d.git===source));
+  revoked=true;const before=calls.length;assert.equal(await deliveries[1].deliver({episode:'2'.repeat(64),taskId:ids[1]}),'delivery_blocked');assert.equal(calls.length,before);
+ }finally{await state.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('native observation accepts absent outer task ID but rejects a conflicting identity',async()=>{
+ const {CodeRabbitAdapter}=await import('../src/coderabbit.mjs');const id='11111111-1111-4111-8111-111111111111';let taskId;
+ const adapter=new CodeRabbitAdapter(async args=>{assert.deepEqual(args,['code','resume','--agent',id]);return {kind:'ok',stdout:JSON.stringify({type:'complete',status:'turn_completed',taskId,turn:{outcome:'completed'},agentMinutes:null})}});
+ assert.deepEqual(await adapter.observe(id),{minutes:null});taskId='22222222-2222-4222-8222-222222222222';assert.equal(await adapter.observe(id),null);
+});

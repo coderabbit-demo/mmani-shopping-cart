@@ -1,4 +1,8 @@
 import { validateApproval } from './config.mjs';
+const policy = grant => ({cap:grant.uncapped===true?null:grant.minutes,uncapped:grant.uncapped===true});
+const deadlineFor = (grant,now) => grant.uncapped===true?null:Math.min(grant.endsAt,now+Math.floor(grant.minutes*20000));
+const viewTimeout = (deadline,now,max=540000) => deadline===null?max:Math.max(1,Math.min(max,deadline-now));
+const available = budget => budget && (budget.uncapped===1 || (!budget.usage_unknown && budget.used<budget.cap));
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class Tasks {
@@ -11,13 +15,13 @@ export class Tasks {
       jira=await this.state.call('getArtifact',{episode:card.episode,kind:'jira'});
       if (jira?.state!=='confirmed' || !/^SC-[1-9][0-9]*$/.test(jira.remote_key || '')) throw new Error('confirmed Jira required');
       if((grant.delivery || grant.issueUrl) && grant.issueUrl!==`https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}` && !/^https:\/\/github\.com\/coderabbit-demo\/mmani-shopping-cart\/issues\/(?!10$)[1-9]\d*$/.test(grant.issueUrl || '')) throw new Error('Jira approval mismatch');
-      await this.state.call('initBudget',{episode:card.episode,revision:grant.revision,cap:grant.minutes});
+      await this.state.call('initBudget',{episode:card.episode,revision:grant.revision,...policy(grant)});
     } catch { return 'approval_required'; }
     const claim=await this.state.call('claim',{episode:card.episode,kind:'task'});
     if (!claim.acquired) return claim.artifact.state;
     const ref={episode:card.episode,kind:'task',fence:claim.artifact.fence};
-    const deadline=Math.min(grant.endsAt,this.now()+Math.floor(grant.minutes*20000));
-    try { await this.state.call('reserve',{episode:card.episode,stage:'plan',amount:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'claimed',to:'prestart_failed'}); return 'budget_blocked'; }
+    const deadline=deadlineFor(grant,this.now());
+    try { await this.state.call('reserve',{episode:card.episode,stage:'plan',amount:grant.uncapped===true?null:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'claimed',to:'prestart_failed'}); return 'budget_blocked'; }
     await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
     let id=null, persisted=false;
     const facts=JSON.stringify({episode:card.episode,monitor:card.monitor,synthetic:!!card.synthetic,jiraKey:jira.remote_key,jiraUrl:`https://coderabbit-demo.atlassian.net/browse/${jira.remote_key}`});
@@ -27,8 +31,8 @@ export class Tasks {
       const result=await this.adapter.create(prompt,async taskId=>{
         if (id!==null || !uuid.test(taskId)) throw new Error('invalid task identity');
         id=taskId; await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id}); persisted=true;
-      },Math.max(1,deadline-this.now()),async terminal=>{
-        if(!persisted || (terminal.taskId!==undefined && terminal.taskId!==id) || !Number.isFinite(terminal.agentMinutes) || terminal.agentMinutes<0) return;
+      },viewTimeout(deadline,this.now()),async terminal=>{
+        if(!persisted || (terminal.taskId!==undefined && terminal.taskId!==id) || ((!Number.isFinite(terminal.agentMinutes) || terminal.agentMinutes<0) && !(grant.uncapped===true && terminal.agentMinutes===null))) return;
         const shown=await this.adapter.show(id,undefined,{branch:grant.branch});
         if(shown.turnStatus!=='completed' || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus) || shown.result!==null) return;
         await this.recordPlan(card.episode,id,terminal.agentMinutes);
@@ -55,11 +59,12 @@ export class Tasks {
   }
   async planControl(card,taskId) {
     const grant=validateApproval(await this.approval(),this.now());
-    const b=await this.state.call('getBudget',{episode:card.episode}); if(b?.revision!==grant.revision || b.usage_unknown) throw new Error('grant changed');
+    const b=await this.state.call('getBudget',{episode:card.episode}); if(b?.revision!==grant.revision || (!b.uncapped && b.usage_unknown)) throw new Error('grant changed');
     return this.state.call('makeControl',{episode:card.episode,ts:card.ts,taskId,revision:grant.revision});
   }
   async recordPlan(episode,taskId,minutes) {
-    if(Number.isFinite(minutes) && minutes>=0) return this.state.call('recordPlan',{episode,taskId,minutes});
+    const budget=await this.state.call('getBudget',{episode});
+    if((Number.isFinite(minutes) && minutes>=0) || (budget?.uncapped===1 && minutes===null)) return this.state.call('recordPlan',{episode,taskId,minutes});
     const task=await this.state.call('getArtifact',{episode,kind:'task'});
     if (!task || task.remote_id!==taskId || task.state!=='known') throw new Error('task mismatch');
     await this.state.call('finishRun',{episode,stage:'plan',minutes});
@@ -68,28 +73,30 @@ export class Tasks {
   async approveAndResume({episode,taskId,revision,actor}) {
     const grant=validateApproval(await this.approval(),this.now());
     if (actor!==grant.owner || revision!==grant.revision || !uuid.test(taskId) || !await this.source(grant)) throw new Error('approval mismatch');
-    await this.state.call('initBudget',{episode,revision,cap:grant.minutes});
+    await this.state.call('initBudget',{episode,revision,...policy(grant)});
     await this.state.call('approval',{episode,revision,taskId});
     await this.state.call('consumeApproval',{episode,revision,taskId});
     const kind=`resume-${revision}`, claim=await this.state.call('claim',{episode,kind});
     if (!claim.acquired) return claim.artifact.state;
     const ref={episode,kind,fence:claim.artifact.fence};
-    const deadline=Math.min(grant.endsAt,this.now()+Math.floor(grant.minutes*20000));
-    try { await this.state.call('reserve',{episode,stage:'implementation',amount:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'claimed',to:'prestart_failed'}); return 'budget_blocked'; }
+    const deadline=deadlineFor(grant,this.now());
+    try { await this.state.call('reserve',{episode,stage:'implementation',amount:grant.uncapped===true?null:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'claimed',to:'prestart_failed'}); return 'budget_blocked'; }
     await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
     const prompt='The approved human has accepted the plan. Implement only the approved scope, preserve tests and goldens, and report results. Do not merge or deploy.';
-    let result; try { result=await this.adapter.resume(taskId,prompt,Math.max(1,deadline-this.now())); } catch { result={kind:'unknown'}; }
+    let result; try { result=await this.adapter.resume(taskId,prompt,viewTimeout(deadline,this.now())); } catch { result={kind:'unknown'}; }
     if(result.kind==='detached') return 'implementation_running';
     if (result.kind!=='complete') {
-      if (result.kind!=='prestart' && this.adapter.cancel) await this.cancelOnce(episode,'implementation',taskId);
+      if (grant.uncapped!==true && result.kind!=='prestart' && this.adapter.cancel) await this.cancelOnce(episode,'implementation',taskId);
       if(result.kind==='prestart') await this.state.call('releasePrestart',{...ref,stage:'implementation',revision,taskId});
       else { await this.state.call('finishRun',{episode,stage:'implementation',minutes:null}); await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); }
       return result.kind==='prestart'?'prestart_failed':'unknown';
     }
-    await this.state.call('finishRun',{episode,stage:'implementation',minutes:result.minutes});
-    await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id:taskId});
-    await this.state.call('transition',{...ref,from:'known',to:'confirmed'});
-    return !Number.isFinite(result.minutes) || result.minutes<0 ? 'usage_unknown' : 'implementation_complete';
+    if(grant.uncapped===true) {
+      let shown; try { shown=await this.adapter.show(taskId,undefined,{branch:grant.branch}); } catch {}
+      if(shown?.turnStatus!=='completed' || shown.cancellationPending!==false) return 'implementation_running';
+    }
+    await this.state.call('recordImplementation',{episode,revision,taskId,minutes:result.minutes});
+    return (!Number.isFinite(result.minutes) || result.minutes<0) && grant.uncapped!==true ? 'usage_unknown' : 'implementation_complete';
   }
 }
 export function verifyHandoff({pr,head,reviewHead,ciHead,securityHead,reviewPassed,ciPassed,securityPassed}) {
@@ -128,14 +135,14 @@ export class CodeRabbitAdapter {
     if (r.kind==='prestart') return {kind:'prestart'};
     try { const list=r.stdout?r.stdout.split('\n').filter(Boolean).map(line=>JSON.parse(line)):[], sent=list.some(e=>e.status==='message_sent' && e.clientOperationId), end=list.at(-1);
       if(sent && r.kind!=='ok') return {kind:'detached'};
-      if (!sent || end.type!=='complete' || end.status!=='turn_completed' || end.taskId!==id || end.turn?.outcome!=='completed') throw new Error('uncertain continuation');
+      if (!sent || end.type!=='complete' || end.status!=='turn_completed' || (end.taskId!==undefined && end.taskId!==id) || end.turn?.outcome!=='completed') throw new Error('uncertain continuation');
       return {kind:'complete',minutes:end.agentMinutes};
     } catch { return {kind:'unknown'}; }
   }
   async observe(id,timeout=20000) {
     if (!uuid.test(id)) throw new Error('invalid task identity');
     const {events}=await import('./process.mjs');
-    try { const e=events(await this.invoke(['code','resume','--agent',id],{timeout})).at(-1); if (e.type!=='complete' || e.status!=='turn_completed' || e.taskId!==id || e.turn?.outcome!=='completed') throw new Error(); return {minutes:e.agentMinutes}; } catch { return null; }
+    try { const e=events(await this.invoke(['code','resume','--agent',id],{timeout})).at(-1); if (e.type!=='complete' || e.status!=='turn_completed' || (e.taskId!==undefined && e.taskId!==id) || e.turn?.outcome!=='completed') throw new Error(); return {minutes:e.agentMinutes}; } catch { return null; }
   }
   async cancel(id) {
     if (!uuid.test(id)) throw new Error('invalid task identity');
@@ -156,29 +163,33 @@ export class Supervisor {
     try {
       for (const run of await this.state.call('activeRuns')) {
         const task=await this.state.call('getArtifact',{episode:run.episode,kind:'task'});
-        let completed=null; if(task?.remote_id) { try { completed=await this.adapter.show(task.remote_id,Math.max(1,Math.min(5000,run.deadline-this.now())),null); } catch {} }
-        if (this.now()>=run.deadline && completed?.turnStatus!=='completed') {
+        let completed=null; if(task?.remote_id) { try { completed=await this.adapter.show(task.remote_id,viewTimeout(run.deadline,this.now(),5000),null); } catch {} }
+        if (!run.uncapped && this.now()>=run.deadline && completed?.turnStatus!=='completed') {
           if (run.stage!=='review' && task?.remote_id) await this.tasks.cancelOnce(run.episode,run.stage,task.remote_id);
           await this.state.call('finishRun',{episode:run.episode,stage:run.stage,minutes:null}).catch(()=>{});
           continue;
         }
-        if(this.tasks.approval) { try { const g=validateApproval(await this.tasks.approval(),this.now()), b=await this.state.call('getBudget',{episode:run.episode}); if(b?.revision!==g.revision) continue; if(completed && (completed.branchName!==g.branch || completed.baseBranchName!==g.branch)) continue; } catch {continue;} }
-        if(run.stage==='implementation' && completed?.turnStatus==='completed' && completed.cancellationPending===false && task?.remote_id) {
-          const observed=await this.adapter.observe(task.remote_id); if(!observed) continue;
-          await this.state.call('finishRun',{episode:run.episode,stage:run.stage,minutes:observed.minutes});
-          const grant=await this.tasks.approval(), kind=`resume-${grant.revision}`, a=await this.state.call('getArtifact',{episode:run.episode,kind});
-          if(a?.state==='dispatch_intent') { await this.state.call('transition',{episode:run.episode,kind,fence:a.fence,from:'dispatch_intent',to:'known',id:task.remote_id}); await this.state.call('transition',{episode:run.episode,kind,fence:a.fence,from:'known',to:'confirmed'}); }
-          if(Number.isFinite(observed.minutes) && this.delivery) await this.delivery.deliver({episode:run.episode,taskId:task.remote_id}); continue;
+        let grant=null;
+        if(this.tasks.approval) { try { grant=validateApproval(await this.tasks.approval(),this.now()); const b=await this.state.call('getBudget',{episode:run.episode}); if(b?.revision!==grant.revision) continue; if(completed && (completed.branchName!==grant.branch || completed.baseBranchName!==grant.branch)) continue; } catch {continue;} }
+        if(run.stage==='implementation' && task?.remote_id) {
+          if(!completed || !['in_progress','completed'].includes(completed.turnStatus)) continue;
+          const observed=await this.adapter.observe(task.remote_id,viewTimeout(run.deadline,this.now(),20000)); if(!observed) continue;
+          const verified=await this.adapter.show(task.remote_id,5000,{branch:grant.branch});
+          if(verified.turnStatus!=='completed' || verified.cancellationPending!==false) continue;
+          await this.state.call('recordImplementation',{episode:run.episode,revision:grant.revision,taskId:task.remote_id,minutes:observed.minutes});
+          if((Number.isFinite(observed.minutes) || run.uncapped && observed.minutes===null) && this.delivery) await this.delivery.deliver({episode:run.episode,taskId:task.remote_id}); continue;
         }
         if (run.stage==='plan' && this.tasks.livePlans?.has(run.episode)) continue;
         if (run.stage!=='plan' || !task?.remote_id || task.state!=='known') continue;
-        let shown; try { shown=await this.adapter.show(task.remote_id,Math.max(1,Math.min(20000,run.deadline-this.now())),{branch:(await this.tasks.approval()).branch}); } catch { continue; }
-        if (shown.turnStatus!=='completed' || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus)) continue;
-        const observed=await this.adapter.observe(task.remote_id,Math.max(1,Math.min(20000,run.deadline-this.now())));
-        if (!observed || !Number.isFinite(observed.minutes) || observed.minutes<0) continue;
+        let shown; try { shown=await this.adapter.show(task.remote_id,viewTimeout(run.deadline,this.now(),20000),{branch:grant.branch}); } catch { continue; }
+        if(!['in_progress','completed'].includes(shown.turnStatus) || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus) || shown.result!==null) continue;
+        const observed=await this.adapter.observe(task.remote_id,viewTimeout(run.deadline,this.now(),20000));
+        if (!observed || ((!Number.isFinite(observed.minutes) || observed.minutes<0) && !(run.uncapped && observed.minutes===null))) continue;
+        try { shown=await this.adapter.show(task.remote_id,5000,{branch:grant.branch}); } catch { continue; }
+        if(shown.turnStatus!=='completed' || shown.cancellationPending!==false || !['none','empty'].includes(shown.patchStatus) || shown.result!==null) continue;
         try {
           await this.tasks.recordPlan(run.episode,task.remote_id,observed.minutes);
-          if (!Number.isFinite(observed.minutes)) continue;
+          if (!Number.isFinite(observed.minutes) && !run.uncapped) continue;
           for (const raw of await this.state.call('cards')) if (raw.episode===run.episode) {
             const card=await this.state.call('getCard',{ts:raw.ts});
             await this.tasks.planControl(card,task.remote_id);
@@ -271,7 +282,8 @@ export class Delivery {
     const continuation=await this.state.call('getArtifact',{episode,kind:`resume-${grant.revision}`});
     const tracked=await this.state.call('getArtifact',{episode,kind:'task'});
     const budget=await this.state.call('getBudget',{episode});
-    if (tracked?.remote_id!==taskId || continuation?.state!=='confirmed' || !budget || budget.usage_unknown || budget.used>=budget.cap) return 'delivery_blocked';
+    if (budget?.revision!==undefined && budget.revision!==grant.revision) return 'delivery_blocked';
+    if (tracked?.remote_id!==taskId || continuation?.state!=='confirmed' || !available(budget)) return 'delivery_blocked';
     let task; try { task=await this.adapter.show(taskId,undefined,{branch:grant.branch}); } catch { return 'delivery_blocked'; }
     let head=task.result?.commitSha;
     if (task.turnStatus!=='completed' || task.cancellationPending!==false) return 'delivery_blocked';
@@ -288,7 +300,7 @@ export class Delivery {
     }
     if(!/^[a-f0-9]{40}$/.test(head || '') || !/^coderabbit\/[A-Za-z0-9._/-]+$/.test(task.result?.branchName || '') || task.result.branchName.includes('..')) return 'delivery_blocked';
     let context=this;
-    if(this.prepare) { try { const prepared=await this.prepare(grant,head,task.result.branchName); context=new Delivery({...this,...prepared,prepare:null}); } catch { return 'checkout_preparation_blocked'; } }
+    if(this.prepare) { try { const prepared=await this.prepare(grant,head,task.result.branchName); context=new Delivery({...this,...prepared,prepare:null,approval:async()=>{const current=validateApproval(await this.approval(),this.now()); if(current.revision!==grant.revision) throw new Error('grant changed'); return grant;}}); } catch { return 'checkout_preparation_blocked'; } }
     return context.publish({episode,taskId,head});
   }
   async publish({episode,taskId,head}) {
@@ -299,7 +311,8 @@ export class Delivery {
     const task=await this.state.call('getArtifact',{episode,kind:'task'});
     const continuation=await this.state.call('getArtifact',{episode,kind:`resume-${grant.revision}`});
     const budget=await this.state.call('getBudget',{episode});
-    if (!task || task.remote_id!==taskId || task.state!=='confirmed' || continuation?.state!=='confirmed' || !budget || budget.usage_unknown || budget.used>=budget.cap || !this.adapter) return 'delivery_blocked';
+    if (budget?.revision!==undefined && budget.revision!==grant.revision) return 'delivery_blocked';
+    if (!task || task.remote_id!==taskId || task.state!=='confirmed' || continuation?.state!=='confirmed' || !available(budget) || !this.adapter) return 'delivery_blocked';
     let shown; try { shown=await this.adapter.show(taskId,undefined,{branch:grant.branch}); } catch { return 'delivery_blocked'; }
     if (shown.turnStatus!=='completed' || shown.cancellationPending!==false || shown.result?.commitSha!==head || shown.deliveryStatus!=='succeeded' || !await this.verifyFiles(grant,head)) return 'delivery_blocked';
     const prior=await this.state.call('getReview',{episode});
@@ -309,10 +322,10 @@ export class Delivery {
     if (reviewClaim.acquired) {
       const ref={episode,kind:'review',fence:review.fence};
       await this.state.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});
-      const start=this.now(), deadline=Math.min(grant.endsAt,start+Math.floor(grant.minutes*20000));
-      try { await this.state.call('reserve',{episode,stage:'review',amount:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'review_reconcile_required'; }
-      let result; try { result=await this.review(grant.base,head,Math.max(1,deadline-start)); } catch { result={kind:'unknown'}; }
-      await this.state.call('finishRun',{episode,stage:'review',minutes:result.kind==='complete'?Math.max(0,(this.now()-start)/60000):null});
+      const start=this.now(), deadline=deadlineFor(grant,start);
+      try { await this.state.call('reserve',{episode,stage:'review',amount:grant.uncapped===true?null:grant.minutes/3,deadline}); } catch { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'review_reconcile_required'; }
+      let result; try { result=await this.review(grant.base,head,viewTimeout(deadline,start,900000)); } catch { result={kind:'unknown'}; }
+      await this.state.call('finishRun',{episode,stage:'review',minutes:result.kind==='complete'?Math.max(0,(this.now()-start)/60000):null,completed:result.kind==='complete'});
       if(result.kind==='complete') await this.state.call('saveReview',{episode,receipt:JSON.stringify({...result,taskId,revision:grant.revision})});
       if (result.kind!=='complete' || result.head!==head || result.base!==grant.base || result.gate?.status!=='passed' || result.findings!==0) { await this.state.call('transition',{...ref,from:'dispatch_intent',to:'unknown'}); return 'review_reconcile_required'; }
       await this.state.call('transition',{...ref,from:'dispatch_intent',to:'known',id:head});

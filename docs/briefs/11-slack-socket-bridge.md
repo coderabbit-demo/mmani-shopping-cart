@@ -5,7 +5,19 @@ Status: APPROVED by Mahesh on November 5, 2026, including all 27 files, the pinn
 **GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/18, related to https://github.com/coderabbit-demo/mmani-shopping-cart/issues/10
 **Jira:** https://coderabbit-demo.atlassian.net/browse/SC-39 (new implementation Task assigned to Mahesh; SC-37/SC-38 remain separate).
 
-## Approved implementation grant
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:651ad95b9cebb5f502f021c7e511c2180b511021c2ca1804d693c4efef6d2fea -->
+
+## Current policy amendment — historical caps SUPERSEDED
+
+Mahesh's latest instruction on November 5, 2026 explicitly revokes all historical Coding Agent 40/50-minute and 2026-11-05T19:00:00Z limits. There is no time or cost cap for this Coding Agent task; no budget checkpoints or new coding budget prompts are required. The historical grants below are retained as history and are superseded for coding execution.
+
+The bridge supports protected `uncapped:true` coding approvals without minutes or execution-window fields. Explicit limited approvals remain supported with their original accounting, deadlines and cancellation behavior. Mode is bound into the approval revision. Uncapped execution retains exact identity, actor, source, objective/brief hash, ALLOW, confirmed Jira episode, global one-task binding, human plan approval, one review, one PR and exact-head native Verify requirements. Unknown usage is reported, never invented as zero; it does not gate verified completed uncapped work. Unknown submission or write outcomes remain fenced without replay. Installation, live Slack/Jira actions and Datadog activation still require separate authorization. These changes supersede the mandatory positive coding budget/window wording elsewhere in the historical brief, without expanding file/dependency or side-effect scope.
+
+## Approved implementation grant (historical caps superseded)
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 - One normal CodeRabbit Code feature task, including its planning/implementation and any PR-fix turns; no Autofix. The harness may approve the CodeRabbit plan only when it matches this exact brief.
 - Up to 40 additional reported CodeRabbit Agent minutes, including metered native QA. Record reported units honestly; Code CLI terminal turn minutes are gross rounded usage, not a live billed-spend API. No automatic extension.

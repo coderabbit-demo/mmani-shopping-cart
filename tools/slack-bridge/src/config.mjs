@@ -39,12 +39,20 @@ export function validateConfig(c) {
   for (const id of ['mmani_create_jira','mmani_debug_pr']) if (!Array.isArray(c.actors?.[id]) || !c.actors[id].length || c.actors[id].some(x=>!/^U[A-Z0-9]+$/.test(x))) throw new Error('invalid action permissions');
   if (!isAbsolute(c.twgPath || '') || !isAbsolute(c.coderabbitPath || '') || !isAbsolute(c.gitPath || '') || !isAbsolute(c.ghPath || '') || !isAbsolute(c.bashPath || '') || !isAbsolute(c.datadogCredentialsFile || '') || !isAbsolute(c.workdir || '') || resolve(c.workdir)!==c.workdir) throw new Error('invalid fixed process paths');
   for (const id of ['29524154','29524290','29524292']) if (!c.monitors?.[id] || typeof c.monitors[id].query !== 'string' || !c.monitors[id].query || typeof c.monitors[id].owner !== 'string' || !c.monitors[id].owner || !Array.isArray(c.monitors[id].tags)) throw new Error('monitor proof configuration missing');
+  if (c.uncapped!==undefined && typeof c.uncapped!=='boolean') throw new Error('invalid coding policy');
   return c;
 }
 export function approvalRevision(a) {
-  return createHash('sha256').update(JSON.stringify([a.objective,a.brief,a.briefHash,a.repository,a.repositoryId,a.branch,a.commit,a.base,a.baseBranch,a.deliveryBranch,a.issueUrl,a.delivery,a.reviewMode,a.owner,a.allowedFiles,a.minutes,a.maxTasks,a.startsAt,a.endsAt])).digest('hex');
+  const fields=[a.objective,a.brief,a.briefHash,a.repository,a.repositoryId,a.branch,a.commit,a.base,a.baseBranch,a.deliveryBranch,a.issueUrl,a.delivery,a.reviewMode,a.owner,a.allowedFiles,a.minutes,a.maxTasks,a.startsAt,a.endsAt];
+  if(a.uncapped===true) fields.push({uncapped:true});
+  return createHash('sha256').update(JSON.stringify(fields)).digest('hex');
 }
 export function validateApproval(a, now=Date.now()) {
-  if (!a || typeof a.objective!=='string' || !a.objective.trim() || a.objective.length>2000 || typeof a.brief!=='string' || !a.brief.trim() || a.brief.length>16000 || a.briefHash!==createHash('sha256').update(a.brief).digest('hex') || a.repository !== 'coderabbit-demo/mmani-shopping-cart' || a.repositoryId !== '1437431331' || !/^[a-f0-9]{40}$/.test(a.commit || '') || !/^[a-f0-9]{40}$/.test(a.base || '') || !/^codex\/[a-zA-Z0-9._/-]+$/.test(a.branch || '') || !/^U[A-Z0-9]+$/.test(a.owner || '') || !/^[a-f0-9]{64}$/.test(a.revision || '') || !Array.isArray(a.allowedFiles) || !a.allowedFiles.length || a.allowedFiles.some(s=>typeof s!=='string' || !/^[a-zA-Z0-9._/-]+$/.test(s) || s.includes('..')) || !Number.isFinite(a.minutes) || a.minutes<=0 || !Number.isInteger(a.maxTasks) || a.maxTasks!==1 || !Number.isFinite(a.startsAt) || !Number.isFinite(a.endsAt) || now<a.startsAt || now>=a.endsAt || a.branch.includes('..') || a.branch.includes('//') || a.branch.endsWith('/') || a.revision!==approvalRevision(a)) throw new Error('invalid or expired approval');
+  if (!a || typeof a.objective!=='string' || !a.objective.trim() || a.objective.length>2000 || typeof a.brief!=='string' || !a.brief.trim() || a.brief.length>16000 || a.briefHash!==createHash('sha256').update(a.brief).digest('hex') || a.repository !== 'coderabbit-demo/mmani-shopping-cart' || a.repositoryId !== '1437431331' || !/^[a-f0-9]{40}$/.test(a.commit || '') || !/^[a-f0-9]{40}$/.test(a.base || '') || !/^codex\/[a-zA-Z0-9._/-]+$/.test(a.branch || '') || !/^U[A-Z0-9]+$/.test(a.owner || '') || !/^[a-f0-9]{64}$/.test(a.revision || '') || !Array.isArray(a.allowedFiles) || !a.allowedFiles.length || a.allowedFiles.some(s=>typeof s!=='string' || !/^[a-zA-Z0-9._/-]+$/.test(s) || s.includes('..')) || !validPolicy(a,now) || !Number.isInteger(a.maxTasks) || a.maxTasks!==1 || a.branch.includes('..') || a.branch.includes('//') || a.branch.endsWith('/') || a.revision!==approvalRevision(a)) throw new Error('invalid or expired approval');
   return a;
+}
+
+function validPolicy(a,now) {
+  if(a.uncapped===true) return ['minutes','startsAt','endsAt'].every(k=>a[k]===undefined);
+  return (a.uncapped===undefined || a.uncapped===false) && Number.isFinite(a.minutes) && a.minutes>0 && Number.isFinite(a.startsAt) && Number.isFinite(a.endsAt) && now>=a.startsAt && now<a.endsAt;
 }

@@ -73,3 +73,59 @@ test('overdue known task is cancelled once even if approval is unreadable or cha
   try {await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});await s.call('initBudget',{episode,revision:'b'.repeat(64),cap:3});await s.call('reserve',{episode,stage:'plan',amount:1,deadline:Date.now()-1});const a=await s.call('claim',{episode,kind:'task'}),ref={episode,kind:'task',fence:a.artifact.fence};await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});const adapter={async show(){return {turnStatus:'in_progress',cancellationPending:false}},async cancel(){cancels++;return 'cancel_pending'}};const tasks=new Tasks({state:s,adapter,approval}),sup=new Supervisor({state:s,tasks,adapter,slack:{async flush(){}}});await sup.tick();await sup.tick();assert.equal(cancels,1);assert.equal((await s.call('getBudget',{episode})).usage_unknown,1);}finally{await s.close();await rm(d,{recursive:true,force:true});}
  }
 });
+
+test('uncapped state preserves null limits, unknown usage and execution fences across restart',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'bridge-uncapped-'));let s=new State(d,{initialize:true});const episode='a'.repeat(64),revision='b'.repeat(64),id='11111111-1111-4111-8111-111111111111';
+ try {
+  await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});
+  await s.call('initBudget',{episode,revision,uncapped:true});await s.call('reserve',{episode,stage:'plan',amount:null,deadline:null});
+  const a=await s.call('claim',{episode,kind:'task'}),ref={episode,kind:'task',fence:a.artifact.fence};await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});
+  await s.call('recordPlan',{episode,taskId:id,minutes:null});await s.call('recordPlan',{episode,taskId:id,minutes:null});
+  assert.equal((await s.call('getBudget',{episode})).usage_unknown,1);assert.equal((await s.call('getBudget',{episode})).used,0);assert.equal((await s.call('completedPlans')).length,1);
+  await s.call('initBudget',{episode,revision,uncapped:true});await assert.rejects(s.call('initBudget',{episode:'c'.repeat(64),revision,uncapped:true}));
+  await s.call('reserve',{episode,stage:'implementation',amount:null,deadline:null});await s.call('finishRun',{episode,stage:'implementation',minutes:null});
+  await s.close();s=new State(d);
+  const ledger=await s.call('ledger');assert.equal(ledger.policies[0].cap,null);assert.equal(ledger.runs[0].deadline,null);assert.equal(ledger.runs[0].reserved,null);assert.equal(ledger.runs[0].minutes,null);assert.equal(ledger.runs[1].status,'unknown');assert.equal((await s.call('claim',{episode,kind:'task'})).acquired,false);
+ } finally {await s.close();await rm(d,{recursive:true,force:true});}
+});
+
+test('transactional v1 migration preserves limited state and fences with participating workers',async()=>{
+ const {DatabaseSync}=await import('node:sqlite');const d=await mkdtemp(join(tmpdir(),'bridge-migration-')),episode='a'.repeat(64);let s=new State(d,{initialize:true});
+ try {
+  await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});await s.call('initBudget',{episode,revision:'b'.repeat(64),cap:9});await s.call('usage',{episode,minutes:1});await s.call('reserve',{episode,stage:'plan',amount:2,deadline:12345});const claim=await s.call('claim',{episode,kind:'jira'});await s.call('transition',{episode,kind:'jira',fence:claim.artifact.fence,from:'claimed',to:'dispatch_intent'});await s.close();
+  const db=new DatabaseSync(join(d,'state.sqlite'));
+  db.exec(`BEGIN; ALTER TABLE grants RENAME TO oldg; CREATE TABLE grants(revision TEXT PRIMARY KEY,episode TEXT UNIQUE NOT NULL,cap REAL NOT NULL); INSERT INTO grants SELECT revision,episode,cap FROM oldg; DROP TABLE oldg;
+  ALTER TABLE budgets RENAME TO oldb; CREATE TABLE budgets(episode TEXT PRIMARY KEY,revision TEXT NOT NULL,cap REAL NOT NULL,used REAL NOT NULL DEFAULT 0,usage_unknown INTEGER NOT NULL DEFAULT 0); INSERT INTO budgets SELECT episode,revision,cap,used,usage_unknown FROM oldb; DROP TABLE oldb;
+  ALTER TABLE runs RENAME TO oldr; CREATE TABLE runs(episode TEXT NOT NULL,stage TEXT NOT NULL,reserved REAL NOT NULL,deadline INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(episode,stage)); INSERT INTO runs SELECT episode,stage,reserved,deadline,status FROM oldr; DROP TABLE oldr; PRAGMA user_version=1; COMMIT;`);db.close();
+  s=new State(d);const other=new State(d);try {
+   const [budget,ledger]=await Promise.all([s.call('getBudget',{episode}),other.call('ledger')]);assert.equal(budget.uncapped,0);assert.equal(budget.cap,9);assert.equal(budget.used,1);assert.equal(ledger.runs[0].deadline,12345);assert.equal(ledger.runs[0].reserved,2);assert.equal((await s.call('getCard',{ts:'1.1'})).episode,episode);
+   assert.equal((await other.call('claim',{episode,kind:'jira'})).acquired,false);await assert.rejects(other.call('initBudget',{episode,revision:'c'.repeat(64),uncapped:true}));
+  }finally{await other.close();}
+  const verify=new DatabaseSync(join(d,'state.sqlite'));assert.equal(verify.prepare('PRAGMA user_version').get().user_version,2);verify.close();
+ }finally{await s.close();await rm(d,{recursive:true,force:true});}
+});
+
+test('uncapped active runs are never deadline cancelled even after grant revocation',async()=>{
+ const {Supervisor,Tasks}=await import('../src/coderabbit.mjs');const d=await mkdtemp(join(tmpdir(),'bridge-no-cancel-')),s=new State(d,{initialize:true}),episode='a'.repeat(64),id='11111111-1111-4111-8111-111111111111';let cancels=0;
+ try {await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});await s.call('initBudget',{episode,revision:'b'.repeat(64),uncapped:true});await s.call('reserve',{episode,stage:'plan',amount:null,deadline:null});const a=await s.call('claim',{episode,kind:'task'}),ref={episode,kind:'task',fence:a.artifact.fence};await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});
+  const adapter={async show(){return {turnStatus:'in_progress',cancellationPending:false}},async cancel(){cancels++;}};const tasks=new Tasks({state:s,adapter,approval:async()=>{throw new Error('revoked')}}),sup=new Supervisor({state:s,tasks,adapter,slack:{async flush(){}},now:()=>Number.MAX_SAFE_INTEGER});await sup.tick();await sup.tick();assert.equal(cancels,0);assert.equal((await s.call('activeRuns')).length,1);
+ }finally{await s.close();await rm(d,{recursive:true,force:true});}
+});
+
+test('migration failure rolls back the version and all legacy tables without deleting history',async()=>{
+ const {DatabaseSync}=await import('node:sqlite');const {writeFile,chmod}=await import('node:fs/promises');const d=await mkdtemp(join(tmpdir(),'bridge-bad-migration-'));await chmod(d,0o700);await writeFile(join(d,'initialized'),'deskdrop-state-v1\n',{mode:0o600});
+ const db=new DatabaseSync(join(d,'state.sqlite'));db.exec(`CREATE TABLE grants(revision TEXT PRIMARY KEY,episode TEXT UNIQUE NOT NULL,cap REAL NOT NULL); INSERT INTO grants VALUES ('revision','episode',-1); CREATE TABLE budgets(episode TEXT PRIMARY KEY,revision TEXT NOT NULL,cap REAL NOT NULL,used REAL NOT NULL DEFAULT 0,usage_unknown INTEGER NOT NULL DEFAULT 0); CREATE TABLE runs(episode TEXT NOT NULL,stage TEXT NOT NULL,reserved REAL NOT NULL,deadline INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(episode,stage)); PRAGMA user_version=1;`);db.close();await chmod(join(d,'state.sqlite'),0o600);
+ try {const state=new State(d);await assert.rejects(state.call('pending'));const check=new DatabaseSync(join(d,'state.sqlite'));try {assert.equal(check.prepare('PRAGMA user_version').get().user_version,1);assert.equal(check.prepare('SELECT * FROM grants').get().cap,-1);assert.equal(check.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE '%_v1'").get().n,0);}finally{check.close();}}finally{await rm(d,{recursive:true,force:true});}
+});
+
+test('finite uncapped live accounting upgrades null once and historical null never overwrites it',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'bridge-ledger-')),s=new State(d,{initialize:true}),episode='a'.repeat(64),id='11111111-1111-4111-8111-111111111111';
+ try {await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});await s.call('initBudget',{episode,revision:'b'.repeat(64),uncapped:true});await s.call('reserve',{episode,stage:'plan',amount:null,deadline:null});const a=await s.call('claim',{episode,kind:'task'}),ref={episode,kind:'task',fence:a.artifact.fence};await s.call('transition',{...ref,from:'claimed',to:'dispatch_intent'});await s.call('transition',{...ref,from:'dispatch_intent',to:'known',id});for(const minutes of [null,0.5,null,0.5])await s.call('recordPlan',{episode,taskId:id,minutes});assert.equal((await s.call('getBudget',{episode})).used,0.5);assert.equal((await s.call('ledger')).runs[0].minutes,0.5);}finally{await s.close();await rm(d,{recursive:true,force:true});}
+});
+
+test('participating workers record verified uncapped implementation once without losing finite usage',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'bridge-finish-race-')),s=new State(d,{initialize:true});let other;const episode='a'.repeat(64),revision='b'.repeat(64),taskId='11111111-1111-4111-8111-111111111111';
+ try {await s.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});await s.call('initBudget',{episode,revision,uncapped:true});for(const kind of ['task',`resume-${revision}`]){const a=await s.call('claim',{episode,kind}),ref={episode,kind,fence:a.artifact.fence};await s.call('transition',{...ref,from:'claimed',to:'known',id:taskId});if(kind==='task')await s.call('transition',{...ref,from:'known',to:'confirmed'});}await s.call('reserve',{episode,stage:'implementation',amount:null,deadline:null});other=new State(d);
+  await Promise.all([s.call('recordImplementation',{episode,revision,taskId,minutes:null}),other.call('recordImplementation',{episode,revision,taskId,minutes:0.5})]);await s.call('recordImplementation',{episode,revision,taskId,minutes:null});assert.equal((await s.call('getBudget',{episode})).used,0.5);assert.equal((await s.call('ledger')).runs[0].minutes,0.5);assert.equal((await s.call('getArtifact',{episode,kind:`resume-${revision}`})).state,'confirmed');await assert.rejects(s.call('recordImplementation',{episode,revision:'wrong',taskId,minutes:0.5}));
+ }finally{if(other)await other.close();await s.close();await rm(d,{recursive:true,force:true});}
+});

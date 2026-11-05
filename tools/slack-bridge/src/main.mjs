@@ -30,7 +30,7 @@ export async function createBridge({root,App=bolt.App,fetcher=fetch,makeProcess=
     const identity=await app.client.auth.test();
     if (identity.ok!==true || identity.team_id!==config.teamId || identity.bot_id!==config.botId) throw new Error('Slack identity mismatch');
     const slack=slackAdapter(app.client,state), jira=new Jira(invokeJira), adapter=new CodeRabbitAdapter(invokeCode);
-    const approval=async()=>JSON.parse(readPrivate(join(root,'approval.json')));
+    const approval=async()=>{const grant=JSON.parse(readPrivate(join(root,'approval.json'))); if(config.uncapped!==undefined && (grant.uncapped===true)!==config.uncapped) throw new Error('coding policy mismatch'); return grant;};
     const monitor=id=>readMonitor(id,config.monitors[id],dd,fetcher);
     const tasks=new Tasks({state,approval,source:grant=>verifySource(git,grant),adapter});
     const gh=makeProcess(config.ghPath,config.workdir);
@@ -67,7 +67,7 @@ export async function startWorker(bridge) {
 async function cli() {
   process.umask(0o077); const root=join(homedir(),'.deskdrop-slack-bridge'), command=process.argv[2];
   if(command==='init') { const state=new State(root,{initialize:true}); await state.call('pending'); await state.close(); console.log('Bridge state initialized'); return; }
-  if(command==='status') { const state=new State(root); try { console.log(JSON.stringify({artifacts:await state.call('artifacts'),pending:(await state.call('pending')).length,handoffs:await state.call('handoffs'),activeRuns:await state.call('activeRuns')})); } finally { await state.close(); } return; }
+  if(command==='status') { const state=new State(root); try { console.log(JSON.stringify({artifacts:await state.call('artifacts'),pending:(await state.call('pending')).length,handoffs:await state.call('handoffs'),activeRuns:await state.call('activeRuns'),ledger:await state.call('ledger')})); } finally { await state.close(); } return; }
   if(!['doctor','run','reconcile-jira','reconcile-artifact'].includes(command)) throw new Error('invalid command');
   const bridge=await createBridge({root});
   if(command==='reconcile-artifact') { try { const receipt=process.argv[4]==='review'?JSON.parse(readPrivate(join(root,'review-receipt.json'))):null; await bridge.delivery.reconcile({episode:process.argv[3],kind:process.argv[4],id:process.argv[5],receipt}); console.log('Authoritative artifact verified; uncertain outcomes remain fenced'); } finally {await bridge.state.close();} return; }

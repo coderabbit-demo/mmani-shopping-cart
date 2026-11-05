@@ -17,6 +17,8 @@ const invoke=target=>(args,options={})=>run(process.execPath,[fixture,'fake',tar
 try {
  const now=Date.now(), taskId='11111111-1111-4111-8111-111111111111', statuses=[];
  const grant={objective:'Repair the approved fixture defect',brief:'Fix lib/fixture.ts only; preserve all assertions.',briefHash:'91c6ef',repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',commit:'a'.repeat(40),base:'b'.repeat(40),branch:'codex/offline-fixture',baseBranch:'codex/fixture-base',deliveryBranch:'codex/fixture-delivery',issueUrl:'https://github.com/coderabbit-demo/mmani-shopping-cart/issues/18',delivery:true,reviewMode:'fallback',owner:'U123',allowedFiles:['lib/fixture.ts'],minutes:5,maxTasks:1,startsAt:now-1000,endsAt:now+60000}; grant.briefHash=(await import('node:crypto')).createHash('sha256').update(grant.brief).digest('hex'); grant.revision=approvalRevision(grant);
+ const uncapped=process.argv.includes('--uncapped');
+ if(uncapped) {delete grant.minutes;delete grant.startsAt;delete grant.endsAt;grant.uncapped=true;grant.revision=approvalRevision(grant);await writeFile(join(root,'unknown-usage'),'1',{mode:0o600});}
  let last;
  const client={chat:{async update(message){last=message;statuses.push(message.blocks[1].elements[0].text)}}};
  const slack=slackAdapter(client,state), adapter=new CodeRabbitAdapter(invoke('coderabbit'));
@@ -46,7 +48,9 @@ try {
  assert.equal(count('jira','create'),2); assert.equal(count('coderabbit','new'),1); assert.equal(count('coderabbit','resume'),1); assert.equal(calls.filter(c=>c.target==='coderabbit' && c.args.includes('new') && c.args.includes('--resume')).length,1); assert.equal(calls.filter(c=>c.target==='coderabbit' && c.args.includes('resume') && c.args.includes('--message')).length,1); assert.equal(count('coderabbit','review'),1); assert.equal(count('coderabbit','push'),1); assert.ok(count('git','worktree')>=1); assert.equal(count('gh','create'),1);
  const otherCard=(await state.call('cards')).find(c=>c.episode!==card.episode); assert.equal(await tasks.start(otherCard,'U123'),'approval_required'); assert.equal(count('coderabbit','new'),1);
  const artifacts=await state.call('artifacts');
- const receipt={scenario:'offline_fixture',result:'pass',external:'fake',jiraCreates:2,normalTasks:1,implementationResumes:1,fixtureReviews:1,fixturePRs:1,handoff:delivered.status,acknowledgements:acks,artifactStates:artifacts.map(a=>({kind:a.kind,state:a.state})),statuses,limitations:'External calls and review/PR evidence are synthetic; native Verify was not executed.'};
+ const ledger=await state.call('ledger');
+ if(uncapped) {assert.equal(ledger.policies[0].cap,null);assert.equal(ledger.policies[0].usage_unknown,1);assert.ok(ledger.runs.every(r=>r.deadline===null && r.reserved===null));assert.equal(ledger.runs.filter(r=>r.status==='unknown').length,0);}
+ const receipt={scenario:'offline_fixture',codingMode:uncapped?'uncapped':'limited',ledger,result:'pass',external:'fake',jiraCreates:2,normalTasks:1,implementationResumes:1,fixtureReviews:1,fixturePRs:1,handoff:delivered.status,acknowledgements:acks,artifactStates:artifacts.map(a=>({kind:a.kind,state:a.state})),statuses,limitations:'External calls and review/PR evidence are synthetic; native Verify was not executed.'};
  await writeFile(join(root,'receipt.json'),JSON.stringify(receipt,null,2)+'\n',{mode:0o600});
  console.log(JSON.stringify({...receipt,evidenceDirectory:root,database:join(root,'state.sqlite'),calls:join(root,'calls.jsonl'),receipt:join(root,'receipt.json')}));
 } finally { await state.close(); }
