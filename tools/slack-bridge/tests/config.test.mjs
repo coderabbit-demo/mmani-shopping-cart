@@ -31,3 +31,14 @@ test('uncapped coding requires explicit protected mode and no contradictory limi
  const legacy={...changed};delete legacy.uncapped;const fields=[legacy.objective,legacy.brief,legacy.briefHash,legacy.repository,legacy.repositoryId,legacy.branch,legacy.commit,legacy.base,legacy.baseBranch,legacy.deliveryBranch,legacy.issueUrl,legacy.delivery,legacy.reviewMode,legacy.owner,legacy.allowedFiles,legacy.minutes,legacy.maxTasks,legacy.startsAt,legacy.endsAt];
  assert.equal(approvalRevision(legacy),createHash('sha256').update(JSON.stringify(fields)).digest('hex'));
 });
+
+test('approval identity remains valid after limited expiry while execution eligibility stays time bound',async()=>{
+ const {validateApprovalIdentity}=await import('../src/config.mjs');
+ const grant={objective:'Fix',brief:'Fix',briefHash:createHash('sha256').update('Fix').digest('hex'),repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',branch:'codex/fix',commit:'a'.repeat(40),base:'b'.repeat(40),owner:'U123',allowedFiles:['lib/a.ts'],minutes:5,maxTasks:1,startsAt:100,endsAt:200};grant.revision=approvalRevision(grant);
+ assert.equal(validateApproval(grant,100),grant);assert.equal(validateApproval(grant,199),grant);assert.throws(()=>validateApproval(grant,99));assert.throws(()=>validateApproval(grant,200));assert.throws(()=>validateApproval(grant,NaN));assert.equal(validateApprovalIdentity(grant),grant);
+ for(const change of [{minutes:0},{minutes:null},{startsAt:200},{startsAt:201},{endsAt:null},{uncapped:'true'},{briefHash:'broken'},{allowedFiles:['../escape']},{repositoryId:'other'}]) {
+  const bad={...grant,...change};bad.revision=approvalRevision(bad);assert.throws(()=>validateApprovalIdentity(bad));
+ }
+ const badRevision={...grant,objective:'Different'};assert.throws(()=>validateApprovalIdentity(badRevision));
+ const uncapped={...grant,uncapped:true};delete uncapped.minutes;delete uncapped.startsAt;delete uncapped.endsAt;uncapped.revision=approvalRevision(uncapped);assert.equal(validateApprovalIdentity(uncapped),uncapped);assert.equal(validateApproval(uncapped,Number.MAX_SAFE_INTEGER),uncapped);
+});

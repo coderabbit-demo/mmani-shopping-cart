@@ -1,4 +1,4 @@
-import { validateApproval } from './config.mjs';
+import { validateApproval, validateApprovalIdentity } from './config.mjs';
 const policy = grant => ({cap:grant.uncapped===true?null:grant.minutes,uncapped:grant.uncapped===true});
 const deadlineFor = (grant,now) => grant.uncapped===true?null:Math.min(grant.endsAt,now+Math.floor(grant.minutes*20000));
 const viewTimeout = (deadline,now,max=540000) => deadline===null?max:Math.max(1,Math.min(max,deadline-now));
@@ -247,7 +247,7 @@ export class Delivery {
   async refreshHandoffs() {
     for(const h of await this.state.call('handoffs')) if(h.status==='awaiting_native_verify') {
       let ok=false; try {
-        const grant=validateApproval(await this.approval(),this.now());
+        const grant=validateApprovalIdentity(await this.approval());
         const budget=await this.state.call('getBudget',{episode:h.episode});
         const task=await this.state.call('getArtifact',{episode:h.episode,kind:'task'});
         const pr=await this.state.call('getArtifact',{episode:h.episode,kind:'pr'});
@@ -256,7 +256,7 @@ export class Delivery {
         if(shown.deliveryStatus==='succeeded' && shown.result?.commitSha===h.head && this.prepare) {
           const context=await this.prepare(grant,h.head,shown.result.branchName,true);
           ok=await new Delivery({...this,...context,prepare:null}).verifyFiles(grant,h.head) && await context.checks(h.pr,h.head,grant);
-          if(ok) ok=validateApproval(await this.approval(),this.now()).revision===grant.revision;
+          if(ok) ok=validateApprovalIdentity(await this.approval()).revision===grant.revision;
         }
       } catch { ok=false; }
       if(!ok) await this.state.call('invalidateHandoff',{episode:h.episode});

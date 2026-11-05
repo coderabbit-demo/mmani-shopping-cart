@@ -172,3 +172,36 @@ test('pending handoffs isolate unavailable, invalid, changed and stale grants wh
   assert.equal(updates.length,6);assert.equal(mutations,0);
  }finally{await state.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('limited verified handoff survives execution expiry while coding stays blocked and read-only gates recheck',async()=>{
+ const {mkdtemp,rm}=await import('node:fs/promises');const {join}=await import('node:path');const {tmpdir}=await import('node:os');const {createHash}=await import('node:crypto');
+ const {State}=await import('../src/state.mjs');const {Delivery,Tasks}=await import('../src/coderabbit.mjs');const {approvalRevision}=await import('../src/config.mjs');
+ const root=await mkdtemp(join(tmpdir(),'bridge-expired-handoff-')),state=new State(root,{initialize:true}),episode='a'.repeat(64),head='d'.repeat(40),base='b'.repeat(40),id='11111111-1111-4111-8111-111111111111',pr='https://github.com/coderabbit-demo/mmani-shopping-cart/pull/123';
+ let now=1000,reads=0,gates=0,mutations=0,shownHead=head,gate=true,grantDuringCheck=null,grantAbsent=false,advanceDuringCheck=false;
+ const grant={objective:'Fix',brief:'Fix',briefHash:createHash('sha256').update('Fix').digest('hex'),repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',branch:'codex/test',baseBranch:'main',deliveryBranch:'codex/fix',commit:'a'.repeat(40),base,owner:'U123',allowedFiles:['lib/a.ts'],minutes:9,maxTasks:1,startsAt:900,endsAt:2000,delivery:true,reviewMode:'fallback',issueUrl:'https://coderabbit-demo.atlassian.net/browse/SC-38'};grant.revision=approvalRevision(grant);
+ let current=grant;
+ const approval=async()=>{reads++;if(grantAbsent)throw new Error('missing');return current;};
+ const git=async args=>({kind:'ok',stdout:args[0]==='remote'?'https://github.com/coderabbit-demo/mmani-shopping-cart.git':args[0]==='ls-remote'?`${head}\trefs/heads/codex/fix\n${base}\trefs/heads/main`:args[0]==='rev-parse'?head:args.includes('--name-only')?'lib/a.ts':''});
+ const adapter={async show(task,timeout,expected){assert.equal(task,id);assert.deepEqual(expected,{branch:grant.branch});return {deliveryStatus:'succeeded',result:{commitSha:shownHead,branchName:'coderabbit/task'}}},async create(){mutations++},async resume(){mutations++},async push(){mutations++}};
+ const delivery=new Delivery({state,approval,adapter,now:()=>now,review:async()=>{mutations++},github:{async create(){mutations++}},prepare:async(g,h,branch,reopen)=>{assert.equal(g.revision,grant.revision);assert.equal(h,head);assert.equal(branch,'coderabbit/task');assert.equal(reopen,true);return {git,checks:async(actualPr,actualHead,g)=>{gates++;assert.equal(actualPr,pr);assert.equal(actualHead,head);assert.equal(g.revision,grant.revision);if(grantDuringCheck)current=grantDuringCheck;if(advanceDuringCheck)now=grant.endsAt+1;return gate;}}}});
+ try {
+  await state.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});await state.call('initBudget',{episode,revision:grant.revision,cap:9});
+  for(const [kind,remoteId,key] of [['task',id,null],['pr',head,pr],['jira','11486','SC-38']]) {const claim=await state.call('claim',{episode,kind}),ref={episode,kind,fence:claim.artifact.fence};await state.call('transition',{...ref,from:'claimed',to:'known',id:remoteId,key});await state.call('transition',{...ref,from:'known',to:'confirmed'});}
+  await state.call('setHandoff',{episode,pr,head});
+  await delivery.refreshHandoffs();assert.equal((await state.call('handoffs'))[0].status,'awaiting_native_verify');assert.equal(gates,1);assert.equal(reads,2);
+  now=grant.endsAt+1;await delivery.refreshHandoffs();assert.equal((await state.call('handoffs'))[0].status,'awaiting_native_verify');assert.equal(gates,2);assert.equal(reads,4);
+  now=grant.endsAt-1;advanceDuringCheck=true;await delivery.refreshHandoffs();assert.equal(now,grant.endsAt+1);assert.equal((await state.call('handoffs'))[0].status,'awaiting_native_verify');assert.equal(gates,3);assert.equal(reads,6);advanceDuringCheck=false;
+  const tasks=new Tasks({state,approval,source:async()=>true,adapter,now:()=>now});const before=JSON.stringify(await state.call('ledger'));
+  assert.equal(await tasks.start(await state.call('getCard',{ts:'1.1'}),'U123'),'approval_required');await assert.rejects(tasks.approveAndResume({episode,taskId:id,revision:grant.revision,actor:'U123'}));
+  assert.equal(await delivery.deliver({episode,taskId:id}),'delivery_blocked');await assert.rejects(delivery.publish({episode,taskId:id,head}));assert.equal(JSON.stringify(await state.call('ledger')),before);assert.equal(mutations,0);
+  for(const failure of ['grant','scope','source','base','revoked','invalid','head','gates','postcheck']) {
+   current=grant;grantAbsent=false;shownHead=head;gate=true;grantDuringCheck=null;
+   const changed={...grant,objective:'Changed objective'};changed.revision=approvalRevision(changed);
+   if(failure==='grant')current=changed;
+   for(const [kind,fields] of [['scope',{allowedFiles:['lib/other.ts']}],['source',{branch:'codex/other'}],['base',{base:'e'.repeat(40)}]]) if(failure===kind) {current={...grant,...fields};current.revision=approvalRevision(current);}
+   if(failure==='revoked')grantAbsent=true;if(failure==='invalid')current={...grant,minutes:0};if(failure==='head')shownHead='e'.repeat(40);if(failure==='gates')gate=false;if(failure==='postcheck')grantDuringCheck=changed;
+   await state.call('setHandoff',{episode,pr,head});await delivery.refreshHandoffs();assert.equal((await state.call('handoffs'))[0].status,'stale_exact_head',failure);
+  }
+  assert.equal(mutations,0);
+ }finally{await state.close();await rm(root,{recursive:true,force:true});}
+});
