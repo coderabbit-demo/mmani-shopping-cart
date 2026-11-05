@@ -116,3 +116,59 @@ test('native observation accepts absent outer task ID but rejects a conflicting 
  const adapter=new CodeRabbitAdapter(async args=>{assert.deepEqual(args,['code','resume','--agent',id]);return {kind:'ok',stdout:JSON.stringify({type:'complete',status:'turn_completed',taskId,turn:{outcome:'completed'},agentMinutes:null})}});
  assert.deepEqual(await adapter.observe(id),{minutes:null});taskId='22222222-2222-4222-8222-222222222222';assert.equal(await adapter.observe(id),null);
 });
+
+
+test('worker starts and flushes Jira status without consulting absent or invalid coding approval',async()=>{
+ const {mkdtemp,writeFile,chmod,rm}=await import('node:fs/promises');const {join}=await import('node:path');const {tmpdir}=await import('node:os');
+ const {State}=await import('../src/state.mjs');const {Delivery,Supervisor}=await import('../src/coderabbit.mjs');const {startWorker}=await import('../src/main.mjs');const {readPrivate}=await import('../src/config.mjs');const {slackAdapter}=await import('../src/slack.mjs');
+ for(const mode of ['missing','unsafe','mismatch']) {
+  const root=await mkdtemp(join(tmpdir(),'bridge-grant-free-')),state=new State(root,{initialize:true}),episode='a'.repeat(64),file=join(root,'approval.json');
+  let reads=0,started=0,stopped=0,updates=[];let shutdown;
+  try {
+   if(mode!=='missing') {await writeFile(file,JSON.stringify({uncapped:false}),{mode:0o600});if(mode==='unsafe')await chmod(file,0o644);}
+   await state.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:'c',event:'e',test:true,actionable:true},ts:'1.1',digest:'d'});
+   const claim=await state.call('claim',{episode,kind:'jira'}),ref={episode,kind:'jira',fence:claim.artifact.fence};await state.call('transition',{...ref,from:'claimed',to:'known',id:'1',key:'SC-38'});await state.call('transition',{...ref,from:'known',to:'confirmed'});await state.call('enqueue',{episode,ts:'1.1',status:'jira_confirmed'});
+   const approval=async()=>{reads++;const grant=JSON.parse(readPrivate(file));if(grant.uncapped!==true)throw new Error('coding policy mismatch');return grant;};
+   const slack=slackAdapter({chat:{async update(message){updates.push(message)}}},state),delivery=new Delivery({state,approval});
+   const supervisor=new Supervisor({state,tasks:{},adapter:{},slack,delivery});
+   shutdown=await startWorker({state,supervisor,doctor:async()=>{},app:{async start(){started++},async stop(){stopped++}}});
+   assert.equal(started,1,mode);assert.equal(stopped,0,mode);assert.equal(reads,0,mode);assert.equal(updates.length,1,mode);assert.match(updates[0].blocks[1].elements[0].text,/jira_confirmed.*SC-38/);assert.equal((await state.call('pending')).length,0);
+   await supervisor.tick();assert.equal(reads,0,mode);assert.equal(stopped,0,mode);
+  } finally {if(shutdown)await shutdown();else if(!state.closed)await state.close();assert.equal(stopped,1,mode);await rm(root,{recursive:true,force:true});}
+ }
+});
+
+test('pending handoffs isolate unavailable, invalid, changed and stale grants while preserving valid exact-head checks',async()=>{
+ const {mkdtemp,rm}=await import('node:fs/promises');const {join}=await import('node:path');const {tmpdir}=await import('node:os');const {createHash}=await import('node:crypto');
+ const {State}=await import('../src/state.mjs');const {Delivery,Supervisor}=await import('../src/coderabbit.mjs');const {approvalRevision}=await import('../src/config.mjs');const {slackAdapter}=await import('../src/slack.mjs');
+ const root=await mkdtemp(join(tmpdir(),'bridge-refresh-')),state=new State(root,{initialize:true});const head='d'.repeat(40),base='b'.repeat(40),id='11111111-1111-4111-8111-111111111111';
+ const grant={objective:'Fix',brief:'Fix',briefHash:createHash('sha256').update('Fix').digest('hex'),repository:'coderabbit-demo/mmani-shopping-cart',repositoryId:'1437431331',branch:'codex/test',baseBranch:'main',deliveryBranch:'codex/fix',commit:'a'.repeat(40),base,owner:'U123',allowedFiles:['lib/a.ts'],uncapped:true,maxTasks:1};grant.revision=approvalRevision(grant);
+ const changed={...grant,objective:'Different'};changed.revision=approvalRevision(changed);let reads=0,shows=0,prepares=0,checks=0,mutations=0,updates=[],gate='pass',changeGrant=false,shownHead=head;
+ const approval=async()=>{reads++;if(reads===1)throw new Error('unreadable');if(reads===2)return {...grant,briefHash:'invalid'};if(reads===3 || changeGrant)return changed;return grant;};
+ const git=async args=>({kind:'ok',stdout:args[0]==='remote'?'https://github.com/coderabbit-demo/mmani-shopping-cart.git':args[0]==='ls-remote'?`${head}\trefs/heads/codex/fix\n${base}\trefs/heads/main`:args[0]==='rev-parse'?head:args.includes('--name-only')?'lib/a.ts':''});
+ const adapter={async show(task,timeout,expected){shows++;assert.equal(task,id);assert.deepEqual(expected,{branch:grant.branch});return {deliveryStatus:'succeeded',result:{commitSha:shownHead,branchName:'coderabbit/task'}}},async push(){mutations++}};
+ const delivery=new Delivery({state,approval,adapter,review:async()=>{mutations++},github:{async create(){mutations++}},prepare:async(g,h,branch,reopen)=>{prepares++;assert.equal(g.revision,grant.revision);assert.equal(h,head);assert.equal(branch,'coderabbit/task');assert.equal(reopen,true);return {git,checks:async(pr,h,checkedGrant)=>{checks++;assert.equal(h,head);assert.equal(checkedGrant.revision,grant.revision);if(gate==='throw')throw new Error('checks unavailable');if(gate==='changed')changeGrant=true;return gate!=='fail' && pr.endsWith('/4');}}}});
+ const slack=slackAdapter({chat:{async update(msg){updates.push(msg)}}},state),supervisor=new Supervisor({state,tasks:{},adapter,slack,delivery});
+ try {
+  for(let i=1;i<=5;i++) {
+   const episode=String(i).repeat(64),pr=`https://github.com/coderabbit-demo/mmani-shopping-cart/pull/${i}`;
+   await state.call('bootstrap',{incident:{episode,monitor:'29524154',cycle:String(i),event:String(i),test:true,actionable:true},ts:String(i),digest:String(i)});
+   if(i>=3) await state.call('initBudget',{episode,revision:i===4?grant.revision:(i===3?'e':'f').repeat(64),uncapped:true});
+   for(const [kind,remoteId,key] of [['task',id,null],['pr',head,pr]]) {const claim=await state.call('claim',{episode,kind}),ref={episode,kind,fence:claim.artifact.fence};await state.call('transition',{...ref,from:'claimed',to:'known',id:remoteId,key});await state.call('transition',{...ref,from:'known',to:'confirmed'});}
+   await state.call('setHandoff',{episode,pr,head});
+  }
+  await state.call('enqueue',{episode:'1'.repeat(64),ts:'1',status:'jira_confirmed'});
+  await supervisor.tick();
+  const rows=await state.call('handoffs');assert.deepEqual(rows.map(h=>h.status),['stale_exact_head','stale_exact_head','stale_exact_head','awaiting_native_verify','stale_exact_head']);
+  assert.equal(reads,6);assert.equal(shows,1);assert.equal(prepares,1);assert.equal(checks,1);assert.equal(mutations,0);assert.equal(updates.length,1);assert.equal((await state.call('pending')).length,0);
+  await supervisor.tick();assert.equal((await state.call('handoffs'))[3].status,'awaiting_native_verify');assert.equal(checks,2);
+  for(const failure of ['throw','fail','changed','head','pr']) {
+   const episode='4'.repeat(64),pr='https://github.com/coderabbit-demo/mmani-shopping-cart/pull/4';
+   gate=['throw','fail','changed'].includes(failure)?failure:'pass';changeGrant=false;shownHead=failure==='head'?'e'.repeat(40):head;
+   await state.call('setHandoff',{episode,pr:failure==='pr'?'https://github.com/coderabbit-demo/mmani-shopping-cart/pull/999':pr,head});
+   await state.call('enqueue',{episode,ts:'4',status:`status_${failure}`});await supervisor.tick();
+   assert.equal((await state.call('handoffs'))[3].status,'stale_exact_head',failure);assert.equal((await state.call('pending')).length,0,failure);
+  }
+  assert.equal(updates.length,6);assert.equal(mutations,0);
+ }finally{await state.close();await rm(root,{recursive:true,force:true});}
+});

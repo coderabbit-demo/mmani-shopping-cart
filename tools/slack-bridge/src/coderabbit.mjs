@@ -245,13 +245,20 @@ export class Delivery {
     return this.state.call('transition',{...ref,from:'known',to:'confirmed'});
   }
   async refreshHandoffs() {
-    const grant=await this.approval();
     for(const h of await this.state.call('handoffs')) if(h.status==='awaiting_native_verify') {
       let ok=false; try {
+        const grant=validateApproval(await this.approval(),this.now());
+        const budget=await this.state.call('getBudget',{episode:h.episode});
         const task=await this.state.call('getArtifact',{episode:h.episode,kind:'task'});
+        const pr=await this.state.call('getArtifact',{episode:h.episode,kind:'pr'});
+        if(budget?.revision!==grant.revision || task?.state!=='confirmed' || pr?.state!=='confirmed' || pr.remote_id!==h.head || pr.remote_key!==h.pr) throw new Error('handoff binding mismatch');
         const shown=await this.adapter.show(task.remote_id,undefined,{branch:grant.branch});
-        if(shown.result?.commitSha===h.head && this.prepare) { const context=await this.prepare(grant,h.head,shown.result.branchName,true); ok=await new Delivery({...this,...context,prepare:null}).verifyFiles(grant,h.head) && await context.checks(h.pr,h.head,grant); }
-      } catch {}
+        if(shown.deliveryStatus==='succeeded' && shown.result?.commitSha===h.head && this.prepare) {
+          const context=await this.prepare(grant,h.head,shown.result.branchName,true);
+          ok=await new Delivery({...this,...context,prepare:null}).verifyFiles(grant,h.head) && await context.checks(h.pr,h.head,grant);
+          if(ok) ok=validateApproval(await this.approval(),this.now()).revision===grant.revision;
+        }
+      } catch { ok=false; }
       if(!ok) await this.state.call('invalidateHandoff',{episode:h.episode});
     }
   }
