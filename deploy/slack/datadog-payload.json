@@ -1,0 +1,45 @@
+{
+  "text": "[MMANI Datadog] Monitor $ALERT_ID — $ALERT_TRANSITION — event $ID",
+  "blocks": [
+    {
+      "type": "section",
+      "text": {
+        "type": "plain_text",
+        "text": "[MMANI Datadog] $ALERT_TITLE"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "plain_text",
+          "text": "Event $ID | Category $EVENT_TYPE | Time $DATE_POSIX"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "block_id": "mmani_incident_controls_v1",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Create Jira Ticket"
+          },
+          "action_id": "mmani_create_jira",
+          "value": "{\"v\":1,\"monitor\":\"$ALERT_ID\",\"event\":\"$ID\",\"cycle\":\"$ALERT_CYCLE_KEY\",\"transition\":\"$ALERT_TRANSITION\",\"at\":\"$DATE_POSIX\",\"scope\":\"$ALERT_SCOPE\",\"host\":\"$HOSTNAME\",\"alertTitle\":\"$ALERT_TITLE\",\"eventTitle\":\"$EVENT_TITLE\",\"type\":\"$EVENT_TYPE\"}"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Debug and Create PR"
+          },
+          "action_id": "mmani_debug_pr",
+          "value": "{\"v\":1,\"monitor\":\"$ALERT_ID\",\"event\":\"$ID\",\"cycle\":\"$ALERT_CYCLE_KEY\",\"transition\":\"$ALERT_TRANSITION\",\"at\":\"$DATE_POSIX\",\"scope\":\"$ALERT_SCOPE\",\"host\":\"$HOSTNAME\",\"alertTitle\":\"$ALERT_TITLE\",\"eventTitle\":\"$EVENT_TITLE\",\"type\":\"$EVENT_TYPE\"}"
+        }
+      ]
+    }
+  ]
+}
