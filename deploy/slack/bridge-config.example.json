@@ -1,0 +1,32 @@
+{
+  "teamId": "T0AU433PG75",
+  "channelId": "C0CEPB2LURY",
+  "appId": "INSTALLATION_APP_ID_REQUIRED",
+  "botId": "INSTALLATION_BOT_ID_REQUIRED",
+  "actors": {
+    "mmani_create_jira": [],
+    "mmani_debug_pr": []
+  },
+  "twgPath": "/absolute/path/to/twg",
+  "coderabbitPath": "/absolute/path/to/coderabbit",
+  "workdir": "/absolute/path/to/approved/checkout",
+  "monitors": {
+    "29524154": {
+      "query": "",
+      "owner": "",
+      "tags": []
+    },
+    "29524290": {
+      "query": "",
+      "owner": "",
+      "tags": []
+    },
+    "29524292": {
+      "query": "",
+      "owner": "",
+      "tags": []
+    }
+  },
+  "actionStart": 0,
+  "actionEnd": 0
+}

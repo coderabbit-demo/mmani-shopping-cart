@@ -1,0 +1,45 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { parseIncident,validateMonitor } from '../src/incidents.mjs';
+import { incident } from './fixtures/cli.mjs';
+test('native identity and honest test classification',()=>{
+ const x=incident(), a=parseIncident(JSON.stringify(x));
+ assert.equal(a.event,'8884561078445671160'); assert.equal(a.test,true); assert.equal(a.actionable,true);
+ assert.equal(parseIncident(JSON.stringify(incident({alertTitle:'Ordinary',eventTitle:'[TEST] fixture'}))).test,true);
+ assert.equal(parseIncident(JSON.stringify(incident({alertTitle:'Alert',eventTitle:'Alert',type:'test'}))).test,false);
+ assert.equal(parseIncident(JSON.stringify(incident({alertTitle:'test server down',eventTitle:'Alert'}))).test,false);
+ assert.equal(parseIncident(JSON.stringify(incident({transition:'Recovered'}))).actionable,false);
+ assert.notEqual(a.episode,parseIncident(JSON.stringify(incident({cycle:'cycle-002'}))).episode);
+ for (const x of [incident({cycle:''}),incident({host:''}),incident({event:'$ID'}),incident({at:'0'}),incident({alertTitle:'x'.repeat(2100)})]) assert.throws(()=>parseIncident(JSON.stringify(x)));
+ assert.throws(()=>parseIncident('{"v":1,"v":1}'));
+ assert.throws(()=>parseIncident(JSON.stringify({...incident(),extra:'x'})));
+});
+test('monitor ownership and scope are independently verified',()=>{
+ const i=parseIncident(JSON.stringify(incident())); const expected={query:'avg:metric{host:deskdrop-mmani-local}',owner:'owner@example.test',tags:[]};
+ const monitor={id:29524154,query:expected.query,creator:{handle:expected.owner},tags:['service:deskdrop','env:local-demo','demo_id:mmani-shopping-cart-local','host:deskdrop-mmani-local']};
+ assert.equal(validateMonitor(monitor,expected,i),true);
+ assert.throws(()=>validateMonitor({...monitor,creator:{handle:'other'}},expected,i));
+ assert.throws(()=>validateMonitor({...monitor,tags:[]},expected,i));
+});
+test('monitor lookup is pinned to US3 and rejects mismatched scope',async()=>{
+ const {readMonitor}=await import('../src/incidents.mjs');
+ const expected={query:'avg:metric{host:deskdrop-mmani-local}',owner:'owner@example.test',tags:[]};
+ const monitor={id:29524154,query:expected.query,creator:{handle:expected.owner},tags:['service:deskdrop','env:local-demo','demo_id:mmani-shopping-cart-local','host:deskdrop-mmani-local']};
+ let target; const fetcher=async(url,opts)=>{target=url; assert.equal(opts.method,'GET'); assert.equal(opts.redirect,'error'); return new Response(JSON.stringify(monitor));};
+ assert.equal(await readMonitor('29524154',expected,{apiKey:'local-synthetic',appKey:'local-synthetic'},fetcher),true);
+ assert.equal(target,'https://api.us3.datadoghq.com/api/v1/monitor/29524154');
+ await assert.rejects(readMonitor('1',expected,{apiKey:'x',appKey:'x'},fetcher));
+});
+test('proposed payload carries both native titles and seconds in canonical controls',async()=>{
+ const {readFile}=await import('node:fs/promises'); const template=JSON.parse(await readFile(new URL('../../../deploy/slack/datadog-payload.json',import.meta.url),'utf8'));
+ const controls=template.blocks.find(b=>b.block_id==='mmani_incident_controls_v1').elements;
+ assert.equal(controls.length,2); assert.equal(controls[0].value,controls[1].value);
+ const raw=JSON.parse(controls[0].value); assert.equal(raw.at,'$DATE_POSIX'); assert.equal(raw.alertTitle,'$ALERT_TITLE'); assert.equal(raw.eventTitle,'$EVENT_TITLE'); assert.equal(raw.type,'$EVENT_TYPE');
+ assert.throws(()=>parseIncident(controls[0].value));
+});
+test('native timestamp must be fresh and cycle never derives from another field',()=>{
+ const now=Date.now();
+ assert.throws(()=>parseIncident(JSON.stringify(incident({cycle:'',event:'123',at:String(Math.floor(now/1000))})),now));
+ assert.throws(()=>parseIncident(JSON.stringify(incident({at:String(Math.floor((now-86401000)/1000))})),now));
+ assert.throws(()=>parseIncident(JSON.stringify(incident({at:String(Math.floor((now+301000)/1000))})),now));
+});

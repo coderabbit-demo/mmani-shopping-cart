@@ -2,7 +2,17 @@
 
 # Datadog to Slack Automation - MMANI
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:576c33d1a1b8012994fdea3f8a94806b52e7805b91e4ef0dd00af312fb97faed -->
+
+## Proposed dedicated bridge
+
+The separately approved Socket Mode bridge described in `docs/demo/slack-bridge.md` is under implementation. Its app-owned incoming webhook is a bearer credential; receiving-app and monitor checks do not prove Datadog authorship. Payload substitution, title and category formats, callback identity and live routing remain activation gates. Keep the existing automation and route until a separately approved cutover. Its existing rehearsal and evidence requirements below remain applicable.
+
 ## Operator preparation
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 These are reviewable instructions for the existing [automation](https://app.coderabbit.ai/automations/ui-c0ddcf9b-c9cb-4ae9-b52f-37e164997203). As last reported it is active, sends to a saved CodeRabbit DM, allows a PR during initial triage and has no runs. It must be deliberately aligned before rehearsal. This document does not authorize changing it or sending an event.
 
