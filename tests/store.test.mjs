@@ -472,6 +472,16 @@ test("rule 3: discounts and final totals round to cents", () => {
   assert.deepEqual(totals(state), { subtotal: 100.25, discount: 15.04, shipping: 0, total: 85.21 });
 });
 
+test("rule 4: the $100 DESK15 basket with express totals $97", () => {
+  const basket = add(add(freshState(), lamp), organizer);
+  const applied = applyCoupon(basket, "DESK15");
+  assert.equal(applied.error, undefined);
+  const express = setDelivery(applied.state, "express");
+  assert.deepEqual(totals(express), {
+    subtotal: 100, discount: 15, shipping: 12, total: 97,
+  });
+});
+
 for (const coupon of [false, true]) {
   test(`rule 4: express adds $12 and standard adds $0 ${coupon ? "with" : "without"} a coupon`, () => {
     const state = coupon ? applyCoupon(twoItemCart(), "DESK15").state : twoItemCart();
