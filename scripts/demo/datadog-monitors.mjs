@@ -2,7 +2,7 @@ import { readFile, open, lstat, mkdir, realpath, rename, unlink } from 'node:fs/
 import { constants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadCredentials } from './local.mjs';
+import { loadCredentials, refuseRehearsal } from './local.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
@@ -82,8 +82,9 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
   if (!apiKey || !appKey) throw new Error('Missing Datadog credentials');
   if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000) throw new Error('Invalid request deadline');
   async function call(method, path, body, requestDeadline = deadlineMs) {
+    const ruleRead = method === 'GET' && path === '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc';
     const groupRead = method === 'GET' && /^\/api\/v1\/monitor\/\d+\?group_states=all$/.test(path);
-    if ((!groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
+    if ((!ruleRead && !groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
     return new Promise((resolve, reject) => {
       let size = 0, chunks = [], finished = false, req, response;
       const fail = () => finish('Datadog request outcome unknown');
@@ -118,6 +119,7 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
     });
   }
   return {
+    getNotificationRule: () => call('GET', '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc'),
     listMonitors: (page, size, remaining = deadlineMs) => call('GET', `/api/v1/monitor?page=${page}&page_size=${size}`, undefined, Math.max(1, Math.min(deadlineMs, remaining))),
     validate: body => call('POST', '/api/v1/monitor/validate', body),
     getMonitor: id => call('GET', `/api/v1/monitor/${id}?group_states=all`),
@@ -311,6 +313,7 @@ async function saveState(state) {
 }
 async function lock(operation) {
   await stateDirectory(true);
+  await refuseRehearsal(stateDir);
   const lockPath = path.join(stateDir, 'monitor.lock');
   const handle = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try { return await operation(); } finally { await handle.close(); await unlink(lockPath); }

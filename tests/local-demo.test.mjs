@@ -394,3 +394,29 @@ test('owned command transfers input and leaves a separate process group alive', 
     assert.doesNotThrow(() => process.kill(foreign.pid, 0));
   } finally { try { process.kill(-foreign.pid, 'SIGKILL'); } catch {} }
 });
+
+test('trigger reservation fences legacy commands and run-bound app control preserves runtime identity', async () => {
+  const { mkdtemp, chmod, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { rehearsalControl, refuseRehearsal } = await import('../scripts/demo/local.mjs');
+  const { writeState, readState, target, bounds } = await import('../scripts/demo/trigger-alert.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'trigger-control-')); await chmod(dir, 0o700);
+  const run = 'a'.repeat(8)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(12);
+  const commit = 'b'.repeat(40), image = `sha256:${'c'.repeat(64)}`, id = 'd'.repeat(64), calls = [];
+  const receipt = { version: 1, run, started: 1, deadline: 1 + bounds.recovery, phase: 'stop', identity: { checkout: target.checkout, commit, appImageId: image, appContainer: id } };
+  try {
+    await writeState(dir, 'trigger.json', receipt);
+    const control = rehearsalControl({ commit, ids: { app: image }, docker: async args => calls.push(args) }, dir, async () => [{ Id: id, Config: { Labels: { 'com.docker.compose.service': 'app' } } }]);
+    await control(`trigger:reserve:${run}`);
+    await assert.rejects(refuseRehearsal(dir));
+    await assert.rejects(control(`trigger:stop:${'e'.repeat(36)}`));
+    await control(`trigger:stop:${run}`);
+    assert.deepEqual(calls, [['stop', '--time', '10', id]]);
+    await assert.rejects(control(`trigger:stop:${run}`));
+    assert.equal((await readState(dir, `trigger-${run}-stop.json`)).status, 'confirmed');
+    await assert.rejects(control(`trigger:release:${run}`));
+    await writeState(dir, 'trigger.json', { ...receipt, phase: 'complete' });
+    await control(`trigger:release:${run}`); await refuseRehearsal(dir);
+  } finally { await rm(dir, { recursive: true }); }
+});

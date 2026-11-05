@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:dde627c443ef3c15c8c043f063e24dc7672e730c38f31cc3ac43bb7b30cb0c2b -->
+
 # DeskDrop incident demo: setup and architecture
 
 This is the local Mac version of the Datadog → CodeRabbit → Slack demo. Jira creation and repository debugging are independent user choices. Start with the [Do / Say / See walkthrough](incident-walkthrough.md) for presentation; use this page for preparation and [the provider evidence](../automations/datadog-to-slack-mmani.md) for exact observed results. The [next phase](gcp-team-handoff.md) moves the runtime and trigger to Google Cloud for team use.
@@ -6,7 +10,7 @@ This is the local Mac version of the Datadog → CodeRabbit → Slack demo. Jira
 
 Verified November 5, 2026: Datadog TEST notifications reach the native MMANI automation, both Slack buttons render, Debug investigates the repository without a ticket, and Create Jira Ticket creates a verified SC Bug. The latest recorded run created [SC-41](https://coderabbit-demo.atlassian.net/browse/SC-41) after Debug completed. Debug reported 68 domain and three checkout browser tests passing on `main@80bf508`, with no reproduced defect and no PR.
 
-The automatic real-alert trigger is a separate implementation described in [brief 12](../briefs/12-demo-guide-trigger.md). Its command examples below are the proposed interface until that implementation is approved, reviewed and validated. The tested Datadog UI fallback is available now. The complete native CodeRabbit Code → fix PR → review → Verify path has not been demonstrated.
+The automatic real-alert trigger is a separate implementation described in [brief 12](../briefs/12-demo-guide-trigger.md). Its command examples below require reviewed implementation and verified live readiness before execution. The tested Datadog UI fallback is available now. The complete native CodeRabbit Code → fix PR → review → Verify path has not been demonstrated.
 
 ## Architecture
 
@@ -94,9 +98,9 @@ The native Datadog connection returned HTTP 401 during the recorded Slack runs, 
 
 Open [checkout monitor edit](https://us3.datadoghq.com/monitors/29524290/edit), select **Test Notifications**, choose **Alert** only, then **Run Test** once. A fixed `*` group is acceptable only with the owned host/tags already in the monitor query. Close the dialog and **Cancel** the editor. Do not save, publish or unmute. The TEST creates a real Datadog event and a fresh Slack incident; it is not evidence of an actual application outage.
 
-### Automatic route to implement
+### Automatic scoped route
 
-Target interface, pending brief/plan approval and implementation:
+Implemented interface; production remains blocked pending the readiness and routing prerequisites:
 
 ```bash
 bash scripts/demo/trigger-alert.sh plan
@@ -122,3 +126,18 @@ The custom Socket Mode bridge remains stopped. No GCP apply, image publication, 
 - [Datadog TEST notifications](https://docs.datadoghq.com/monitors/notify/#test-notifications) documents the UI workflow used in the verified runs. No public monitor TEST endpoint was identified in the API catalog checked for this brief; the automatic design uses a genuine monitor transition instead of an invented API or a direct CodeRabbit webhook call.
 - [Service-check monitor semantics](https://docs.datadoghq.com/monitors/types/service_check/) explains consecutive CRITICAL/OK thresholds. The current checkout query uses two of each.
 - [CodeRabbit automations and native buttons](https://docs.coderabbit.ai/slack-agent/automations) and [scope behavior](https://docs.coderabbit.ai/slack-agent/connections-and-scopes).
+
+### Scoped trigger implementation
+
+The five commands above are implemented. Production arming is deliberately blocked because effective Alert-only delivery cannot be verified from the reviewed tag-only rule. There is no override flag. A separately approved routing setup with machine-verifiable transition evidence is required; the known Agent/journey/checkout readiness failures also remain operator prerequisites. No live rehearsal or controller upgrade was performed by this feature.
+
+The detached supervisor owns writes; terminal disconnect and SIGINT/SIGTERM/SIGHUP request recovery. The controller advertises protocol 1 and reserves app controls by protected run identity. An older controller refuses arming. Monitoring remains scheduled, while conflicting manual operations are fenced. Runtime commit/image/container receipts are separate from tooling HEAD. Recovery can start only the exact existing owned app; it cannot rebuild, recreate or repair monitoring.
+
+Attempt bounds are preparation 60 seconds, requests 10 seconds, controls 15 seconds, polling 5 seconds, Alert observation 180 seconds from cancellation intent, suppression restoration 20 seconds, app recovery 30 seconds, and final observation until 360 seconds. If suppression remains unknown, app recovery is still attempted. Provider failures, SIGKILL, host sleep and power loss can exceed these bounds.
+
+Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. Supervisor leases use a private random socket and matching lock tokens, never PID signaling; unknown or legacy stale locks require operator inspection.
+
+Offline validation uses `node --test tests/demo-trigger.test.mjs tests/local-demo.test.mjs tests/local-datadog-monitors.test.mjs`. Fixture success is not Mac recovery, Datadog delivery, native fix-PR handoff or GCP acceptance.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

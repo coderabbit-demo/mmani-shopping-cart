@@ -203,9 +203,9 @@ async function createIntake(apiKey) {
   try { await fh.writeFile(apiKey); await fh.sync(); } finally { await fh.close(); }
   return dir;
 }
-async function context(run = runCommand) {
+async function context(run = runCommand, runtimeCommit) {
   await safeDirectory(stateDir);
-  const commit = (await run('git', ['rev-parse', 'HEAD'])).toString().trim();
+  const commit = runtimeCommit ?? (await run('git', ['rev-parse', 'HEAD'])).toString().trim();
   if (!/^[a-f0-9]{40}$/.test(commit) || (await run('git', ['status', '--porcelain', '--untracked-files=normal'])).length) throw new Error('Clean committed checkout required');
   const buildRecord = JSON.parse((await runtimeFile(`build-${commit}.json`)).toString());
   if (buildRecord.commit !== commit || buildRecord.architecture !== 'linux/amd64') throw new Error('Stale build');
@@ -383,14 +383,15 @@ export async function ownedAvailability(ctx, findContainers = containers, fetche
   })();
   try { return await Promise.race([work, deadline]); } finally { clearTimeout(timer); }
 }
-export async function controlRequest(command, directory = stateDir) {
+export async function controlRequest(command, directory = stateDir, timeout = 60000) {
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) throw new Error('Invalid control deadline');
   await safeDirectory(directory);
   const file = path.join(directory, 'control.sock'), st = await lstat(file);
   if (!st.isSocket() || st.isSymbolicLink() || st.uid !== process.getuid() || (st.mode & 0o077)) throw new Error('Control socket invalid');
   return new Promise((resolve, reject) => {
     const socket = createConnection(file), chunks = []; let length = 0, done = false;
     const finish = (error, value) => { if (done) return; done = true; socket.destroy(); error ? reject(new Error('Control outcome unknown')) : resolve(value); };
-    socket.setTimeout(60000, () => finish(true));
+    socket.setTimeout(timeout, () => finish(true));
     socket.on('connect', () => socket.write(command + '\n'));
     socket.on('data', bytes => { length += bytes.length; if (length > 8192) finish(true); else chunks.push(bytes); });
     socket.on('error', () => finish(true));
@@ -405,6 +406,7 @@ export async function superviseForeground(ctx, { directory = stateDir, findConta
   const { scheduler, diagnostic } = await import('../../deploy/local-checker.mjs');
   const journeys = createJourneys(ctx), observed = {}, createdAt = Date.now();
   let enabled = true, busy = false, closed = false, finish;
+  const rehearsal = rehearsalControl(ctx, directory, findContainers);
   const completion = new Promise(resolve => { finish = resolve; });
   let scheduled;
   async function report(name, status, observation) {
@@ -433,7 +435,7 @@ export async function superviseForeground(ctx, { directory = stateDir, findConta
     server.close();
     process.removeListener('SIGINT', signalStop); process.removeListener('SIGTERM', signalStop);
   }
-  const signalStop = () => { if (busy || closed) return; busy = true; shutdown().then(() => finish({ status: 'stopped', commit: ctx.commit })).catch(() => console.error('Shutdown incomplete; inspect owned project and journals')).finally(() => { busy = false; }); };
+  const signalStop = () => { if (busy || closed) return; busy = true; refuseRehearsal(directory).then(() => shutdown()).then(() => finish({ status: 'stopped', commit: ctx.commit })).catch(() => console.error('Shutdown incomplete; inspect owned project and journals')).finally(() => { busy = false; }); };
   const server = createServer(socket => {
     let input = '';
     socket.setTimeout(60000, () => socket.destroy());
@@ -444,14 +446,21 @@ export async function superviseForeground(ctx, { directory = stateDir, findConta
       if (!input.includes('\n')) return;
       const command = input.trim();
       const respond = result => { if (!socket.destroyed) socket.end(JSON.stringify(result)); };
-      if (command === 'status') { respond({ ok: true, result: { commit: ctx.commit, since: createdAt, checks: observed, journeyBlocked: journeys.blocked } }); return; }
+      if (command === 'status') { respond({ ok: true, result: { commit: ctx.commit, since: createdAt, checks: observed, journeyBlocked: journeys.blocked, triggerProtocol: 1, appImageId: ctx.ids.app } }); return; }
       if (command === 'check') {
         const healthy = ['availability', 'checkout'].every(name => observed[name]?.status === 0 && Date.now() - observed[name].time <= 90000);
         respond(healthy ? { ok: true, result: { status: 'healthy', commit: ctx.commit } } : { ok: false }); return;
       }
+      if (command.startsWith('trigger:')) {
+        if (busy) { respond({ ok: false }); return; }
+        busy = true;
+        rehearsal(command).then(result => respond({ ok: true, result }), () => respond({ ok: false })).finally(() => { busy = false; });
+        return;
+      }
       if (busy || !['stop', 'checker-stop', 'checker-restart', 'app-stop', 'app-restart', 'runner-stop', 'runner-restart'].includes(command)) { respond({ ok: false }); return; }
       busy = true;
       const operation = async () => {
+        await refuseRehearsal(directory);
         if (command === 'stop') { await shutdown(); respond({ ok: true, result: { status: 'stopped' } }); finish({ status: 'stopped', commit: ctx.commit }); return; }
         if (command === 'checker-stop') { enabled = false; await journeys.stopCurrent(); if (journeys.blocked) throw new Error('Journey reconciliation required'); }
         else if (command === 'checker-restart') { if (journeys.blocked) throw new Error('Journey reconciliation required'); enabled = true; }
@@ -494,6 +503,7 @@ async function saveOperation(value) {
 }
 async function withOperation(name, action) {
   await safeDirectory(stateDir);
+  await refuseRehearsal(stateDir);
   const lockPath = path.join(stateDir, 'local.lock');
   const fh = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try {
@@ -517,3 +527,50 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const messages = new Set(['Local port unavailable', 'Clean committed checkout required', 'Docker Desktop Mac required', 'Invalid Docker Desktop socket', 'Docker Desktop plugin preparation failed before build', 'Docker Desktop buildx unavailable before build', 'Docker Desktop compose unavailable before build', 'Unsafe local runtime directory', 'Unsafe runtime file', 'Local image identity mismatch', 'Container ownership or image mismatch', 'Stale build', 'Seccomp profile mismatch', 'Invalid Agent image', 'Owned project already running', 'Network already in use', 'Monitor notifications are not suppressed', 'Suppression not effective', 'Monitor reconciliation required', 'Datadog API access denied', 'Datadog API rate limited', 'Datadog request outcome unknown', 'Suppression not confirmed; owned project remains running', 'Startup failed; owned project cleanup requires inspection', 'Startup outcome requires inspection', 'Control outcome unknown', 'Journey reconciliation required', 'Stop outcome requires inspection', 'Inspect previous unknown operation before continuing', 'Existing intake file requires operator reconciliation', 'Build record already exists; inspect the existing build', 'Local image tag already exists']);
   console.error(messages.has(error?.message) ? error.message : 'Local operation failed; inspect owned state and journal'); process.exitCode = 1;
 });
+
+export async function refuseRehearsal(directory = stateDir) {
+  try { await lstat(path.join(directory, 'trigger-reservation.json')); throw new Error('Trigger reservation requires recovery'); }
+  catch (e) { if (e.code !== 'ENOENT') throw e; }
+}
+export function rehearsalControl(ctx, directory = stateDir, findContainers = containers) {
+  return async command => {
+    const { readState, writeState, validateReceipt } = await import('./trigger-alert.mjs');
+    const match = /^trigger:(reserve|stop|restart|release):([a-f0-9-]{36})$/.exec(command);
+    if (!match) throw new Error('Invalid rehearsal command');
+    const [, action, run] = match;
+    const receipt = validateReceipt(await readState(directory, 'trigger.json'));
+    if (receipt.run !== run || receipt.identity.commit !== ctx.commit || receipt.identity.appImageId !== ctx.ids.app) throw new Error('Rehearsal identity changed');
+    const file = 'trigger-reservation.json';
+    if (action === 'reserve') {
+      await refuseRehearsal(directory);
+      const fh = await open(path.join(directory, file), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+      try { await fh.writeFile(JSON.stringify({ run, commit: ctx.commit })); await fh.sync(); } finally { await fh.close(); }
+      return { status: 'reserved' };
+    }
+    const reservation = await readState(directory, file);
+    if (reservation.run !== run || reservation.commit !== ctx.commit) throw new Error('Reservation changed');
+    if (action === 'release') {
+      if (receipt.phase !== 'complete') throw new Error('Recovery incomplete');
+      await unlink(path.join(directory, file)); return { status: 'released' };
+    }
+    const controlFile = `trigger-${run}-${action}.json`;
+    try { await readState(directory, controlFile); throw new Error('Control reconciliation required'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    await writeState(directory, controlFile, { run, action, status: 'pending' });
+    const owned = await findContainers(ctx), app = owned.find(x => x.Config.Labels['com.docker.compose.service'] === 'app');
+    if (!app || app.Id !== receipt.identity.appContainer) throw new Error('App identity changed');
+    await ctx.docker([action === 'stop' ? 'stop' : 'start', ...(action === 'stop' ? ['--time', '10'] : []), app.Id], { timeout: 15000 });
+    await writeState(directory, controlFile, { run, action, status: 'confirmed' });
+    return { status: action };
+  };
+}
+export async function inspectTriggerRuntime(commit) {
+  const ctx = await context(runCommand, commit);
+  const owned = await containers(ctx);
+  return { ctx, owned };
+}
+export async function recoverTriggerApp(identity) {
+  const { ctx, owned } = await inspectTriggerRuntime(identity.commit);
+  const app = owned.find(x => x.Config.Labels['com.docker.compose.service'] === 'app');
+  if (ctx.ids.app !== identity.appImageId || app?.Id !== identity.appContainer) throw new Error('App identity changed');
+  if (!app.State.Running) await ctx.docker(['start', app.Id], { timeout: 15000 });
+}

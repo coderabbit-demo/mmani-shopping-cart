@@ -610,3 +610,20 @@ test('new suppression does not retry failed reads or unknown writes', async () =
     } else assert.equal(state.pending, null);
   }
 });
+
+test('checkout notification rule read is fixed and cannot become a routing write', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { makeApi } = await import('../scripts/demo/datadog-monitors.mjs');
+  const calls = [];
+  const api = makeApi({ apiKey: 'fixture-api', appKey: 'fixture-app', request(options, callback) {
+    calls.push(options);
+    const request = new EventEmitter(); request.destroy = () => {}; request.end = () => {
+      const response = new EventEmitter(); response.statusCode = 200; response.destroy = () => {};
+      callback(response); queueMicrotask(() => { response.emit('data', Buffer.from('{"data":{}}')); response.emit('end'); });
+    }; return request;
+  } });
+  await api.getNotificationRule();
+  assert.equal(calls.length, 1); assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].hostname, 'api.us3.datadoghq.com');
+  assert.equal(calls[0].path, '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc');
+});
