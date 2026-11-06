@@ -952,3 +952,58 @@ with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
 `;
   monitorFixture(code,JSON.stringify({raw:b.bundle.toString('base64'),digest:b.digest,parent:Object.fromEntries(Object.entries(parent.files).map(([k,v])=>[k,v.toString('base64')])),host:{'bootstrap.sh':Buffer.from(script).toString('base64'),'compose.yaml':Buffer.from(await readFile(new URL('../deploy/compose.yaml',import.meta.url))).toString('base64')}}));
 });
+
+test('management and supervision share a lease; a timed-out live installer blocks startup before state read',()=>{
+  monitorFixture(`
+import contextlib,subprocess
+c={'owner':'cloud_owner:'+'a'*32,'source':'b'*40,'bundleHash':'c'*64}
+held=set();entered=[]
+@contextlib.contextmanager
+def lock(name):
+ if name in held:raise BlockingIOError('busy')
+ held.add(name);entered.append(name)
+ try:yield
+ finally:held.remove(name)
+g['lock']=lock
+g['owned_container']=lambda *a:(_ for _ in ()).throw(AssertionError('competing operation reached Docker before shared lease'))
+with lock('lifecycle.lock'):
+ for fn,args in [(g['manage'],(c,'install')),(g['supervise'],(c,))]:
+  try:fn(*args);raise AssertionError('competing operation acquired')
+  except BlockingIOError:pass
+active={};reads=[];calls=[]
+g['owned_container']=lambda c,kind:active.get(kind)
+g['read']=lambda p:reads.append(p) or json.dumps({'verified':True,'owner':c['owner'],'monitors':[1,2,3]}).encode()
+g['subprocess'].run=lambda *a,**kw:None
+g['os'].path.lexists=lambda p:False
+def docker(*args,**kw):
+ calls.append(args);active['installer']={'State':{'Running':True}}
+ raise subprocess.TimeoutExpired('docker',300)
+g['docker']=docker
+try:g['manage'](c,'install');raise AssertionError('timeout accepted')
+except subprocess.TimeoutExpired:pass
+assert not held and active['installer']['State']['Running']
+for installer in [active['installer'],{'State':{} }]:
+ active['installer']=installer
+ try:g['supervise'](c);raise AssertionError('live or uncertain installer accepted')
+ except ValueError:pass
+assert not reads and len(calls)==1
+`);
+});
+
+test('real lifecycle flock rejects both entrypoints while another process owns it and recovers after death',()=>{
+  monitorFixture(`
+import subprocess
+with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
+ uid=os.getuid();g['STATE']=d;real_lock=g['lock'];g['lock']=lambda name:real_lock(name,uid)
+ p=d+'/lifecycle.lock';open(p,'w').close();os.chmod(p,0o600)
+ child=subprocess.Popen(['python3','-u','-c','import fcntl,time;f=open('+repr(p)+',"r+");fcntl.flock(f,fcntl.LOCK_EX);print("locked",flush=True);time.sleep(30)'],stdout=subprocess.PIPE)
+ g['owned_container']=lambda *a:(_ for _ in ()).throw(AssertionError('Docker reached during competing lease'))
+ try:
+  assert child.stdout.readline()==b'locked\\n'
+  for fn,args in [(g['manage'],({},'install')),(g['supervise'],({},))]:
+   try:fn(*args);raise AssertionError('concurrent entrypoint accepted')
+   except BlockingIOError:pass
+ finally:child.kill();child.wait(timeout=3)
+ with g['lock']('lifecycle.lock'):pass
+`);
+});

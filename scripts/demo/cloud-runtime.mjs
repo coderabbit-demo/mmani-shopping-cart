@@ -25,6 +25,7 @@ export async function heartbeatWorker({ read, send, failed, setTimer = setInterv
 export function scheduler({ run, report, health, now = () => performance.now(), setTimer = setInterval, clearTimer = clearInterval }) {
   let closed = false, failed = false;
   const jobs = new Map(), next = new Map([['availability', now()], ['checkout', now()]]);
+  const healthy = () => !closed && !failed && ![...jobs.values()].some(j => j.expired || j.cleanupFailed);
   const mark = async value => { try { await health(value); } catch { failed = true; } };
   const emit = async (name, status) => {
     try { await report(name, status); } catch { failed = true; await mark(false); }
@@ -41,13 +42,13 @@ export function scheduler({ run, report, health, now = () => performance.now(), 
         await emit(name, result === true && !job.expired ? 0 : 2);
       }).catch(async () => { failed = true; job.cleanupFailed = true; await emit(name, 2); await mark(false); }).finally(async () => {
         if (!job.cleanupFailed) jobs.delete(name);
-        await mark(!failed && jobs.size === 0);
+        await mark(healthy());
       });
     }
   }
   tick();
   const timer = setTimer(tick, 250);
-  return { tick, status: () => ({ healthy: !failed, active: jobs.size }), async stop() {
+  return { tick, status: () => ({ healthy: healthy(), active: jobs.size }), async stop() {
     closed = true; clearTimer(timer); await Promise.all([...jobs.values()].map(j => j.promise)); await mark(false);
   } };
 }

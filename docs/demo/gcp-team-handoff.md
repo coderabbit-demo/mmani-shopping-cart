@@ -109,7 +109,41 @@ For the team rollout, approve a reproducible isolated source fixture with expect
 | E · Fix PR proof | Approved faulty source to one unmerged fix PR | Actual native work-log, commit and PR links; assertion RED/GREEN; single CLI receipt; exact-head PR/security/CI and conclusive native Verify; no Jira dependency |
 | F · Handoff | A second presenter runs and resets the demo unaided | Do / Say / See rehearsal, owner/escalation map, dated receipts, restore drill, cost review and teardown exercise |
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d8793a66ac36c4a5ab41c019642c580b04291b9ebfd9aede3be16d8a90b7f1f7 -->
+
 The phase is team-ready only after an operator other than Mahesh completes the end-to-end rehearsal and reset without using his Mac, local credential files, browser session or personal tokens. Record remaining limits explicitly. Do not present Terraform validation, mocked checks, sandbox QA or the local SC-41 run as live GCP acceptance.
+
+## Review correction and credential-free native Verify plan
+
+The single Mac CLI review completed on `ae0e7cd7724d4b500ab4906a4bd3d5cd65385912` against foundation `5e40a573e7f6554e33e91f71c09acf3ecbd26f5b`: two Major findings and one Minor. Corrections preserve existing assertions: normal in-flight checkout remains healthy; expired or unsafe work stays degraded; inventory equality compares stable safety configuration; management and service supervision hold one kernel `lifecycle.lock` for their entire operation. The supervisor checks the exact-owned installer before reading runtime-ready state. A live or uncertain installer is never stopped automatically to permit service startup.
+
+This changes an internal lock filename; JS exports and bundle/receipt formats remain compatible with the trigger's ae0e snapshot. The optional `inventory(page, owner)` owner parameter narrows unrelated configuration comparison; existing one-argument callers retain stable safety-field comparison. A trigger integrating the snapshot must not copy the old separate host lock implementation back over this correction.
+
+Stop the old monitoring service and any live installer before replacing host code; do not mix old and new lock protocols. A timed-out Docker client may leave its exact-owned installer alive after the host lease is released. Service starts then fail closed even if a prior verified journal exists. Inspect the exact-owned installer and reconcile its terminal provider outcome with the protected journal before manual service restart. Do not delete intent, steal a live lock, or force-stop a foreign container. Systemd's bounded restart attempts may exhaust during reconciliation; after repair use `systemctl reset-failed deskdrop-monitoring.service` and explicitly start it. These are future approved operator steps, not sandbox actions.
+
+### Native Verify workflow (offline scope)
+
+No new tracked fixture path is required for this plan. The native verifier can create a disposable inline Node runner under its own `/tmp` directory, import the actual exports listed below from the recorded checkout, and retain sanitized observation JSON under its Outputs. This runner must use only Node standard library and existing dependencies. Do not run root CLI entrypoints, supply production credentials, mount Docker, call metadata, or treat a green unit-test summary as proof of the workflow.
+
+1. Record the full checkout SHA and clean status; read the exported signatures directly. Start the managed QA script and wait for ready before browser access. In shared cloud Chromium at `http://localhost:3100/`, use fresh storage and synthetic details to place the Terracotta lamp/Natural oak organizer DESK15 express order. Inspect actual checkout/receipt/history values and both items, capture screenshots only, then clear storage and stop the owned script. This verifies shopper integration in the sandbox.
+2. Import `scheduler`, `heartbeatWorker`, `heartbeat`, `datagram`, `jobs`, `dockerTransport` and `boundedRun` from `scripts/demo/cloud-runtime.mjs`. Use a runner-owned Unix HTTP socket that implements the exact allowed Docker operations; its fixture container records carry the real `checkerSpec` configuration, source/owner/bundle labels and isolated app/network records. Record each create/start/inspect/stop/kill/delete operation, with the synthetic identity and final absence. Verify two sequential checkouts get separate creates, an unknown create reconciles without another POST, foreign owner/app/network cannot be mutated, and cleanup uncertainty blocks replacement. API response fixtures prove controller decisions, not genuine container isolation.
+3. Drive the actual scheduler with its exported injected clock/timer callbacks. Hold checkout's promise while availability finishes and call the actual heartbeat worker with a separate timer: observe normal healthy status, then advance across the30-second overlap boundary and observe critical status without a second checkout. Release the owned work, confirm safe recovery; separately reject cleanup or reporting and confirm latched critical health. Save transitions and call counts, not just assertions or test stdout.
+4. Spawn runner-owned disposable Node children: one ignores TERM, one unrelated sentinel remains alive, and another process runs the exported heartbeat worker. Use `boundedRun` with accelerated injected deadline timers to observe TERM, forced KILL/removal and actual child exit while heartbeat continues. Retain PID/exit/signal observations in the private local verification record; never signal an unowned process. Close all children/socket endpoints in `finally`, then confirm no owned process or socket remains. This proves an OS process boundary, not Docker/systemd or reboot behavior.
+5. Import `inventory`, `definitions`, `install`, `reconcile`, `reconcileProtection`, `removeOwned` and `Journal` from `scripts/demo/cloud-monitors.mjs`. <!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:4da55f06367aff2d355a7e7bd5277a32371b0f9ec9e3655c1b6a3c1ef67d857b -->
+
+Use injected API functions with synthetic records and a user-owned0700 directory under the secured home directory (all parents must pass the actual journal permission checks) via the explicit `Journal(directory, process.getuid())` API.
+
+<!-- /coderabbit-ai-generated:v1 --> Store real journal transitions and provider-operation observations before/after simulated lost responses. Alter unrelated timestamps/overall state between scans and confirm reconciliation succeeds; alter owned message, thresholds/no-data/include-tags/new-group-delay, selector, status/scope/schedule/suppression settings and confirm refusal with intent retained and no duplicate write. Preserve actual returned rows for inspection. No management key is needed for these exported injected APIs.
+6. For host lease workflow, the existing `tests/demo-baseline.test.mjs` fixtures execute the actual embedded Python with disposable paths and injected command boundaries. They include real kernel-flock contention across processes and recovery after owner death. They also record supervisor startup refusal before journal read when an installer is alive or uncertain. Reuse these focused tests as supporting evidence only; do not claim they demonstrate an actual VM/systemd workflow. A standalone reusable host adapter would require a separately proposed exact test-only path before editing; none is added here.
+
+Conclusive native Verify must explicitly report which steps it actually executes and attach operation/state/exit observations plus browser screenshots. If its runner cannot perform an operation or preserve evidence, report that step blocked; do not substitute a unit PASS line. Actual Ubuntu24.04 Node image/linkage/Docker/systemd/reboot/non-admin access, GCP private access and US3 telemetry remain separately approved live acceptance requirements. Foundation PR28's final test-only source is still pending; its reusable fixture adapter must be inspected at the final supplied SHA before adoption. It is not assumed present in this task.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Primary references
 

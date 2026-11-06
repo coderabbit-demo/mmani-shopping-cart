@@ -1533,7 +1533,7 @@ def install(digest,transfer='/tmp/monitoring.tar.gz',release_path='/etc/deskdrop
         print(json.dumps(receipt))
 
 def manage(c,mode):
-    with lock('management.lock'):
+    with lock('lifecycle.lock'):
         for kind in ['controller','heartbeat']:
             if owned_container(c,kind):raise ValueError('Stop monitoring service before management operations')
         r=owned_container(c,'installer')
@@ -1555,7 +1555,9 @@ def manage(c,mode):
         stop_owned(c,'installer')
 
 def supervise(c):
-    with lock('supervisor.lock'):
+    with lock('lifecycle.lock'):
+        installer=owned_container(c,'installer')
+        if installer and installer.get('State',{}).get('Running') is not False:raise ValueError('Installer outcome unknown; reconcile before service restart')
         state=json.loads(read(STATE+'/installation.json'))
         if state.get('owner')!=c['owner'] or state.get('verified') is not True or state.get('pending') or len(state.get('monitors',[]))!=3:raise ValueError('Protected installation required')
         stopping=False
