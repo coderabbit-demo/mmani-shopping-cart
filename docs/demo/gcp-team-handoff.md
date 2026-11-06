@@ -10,7 +10,13 @@ Move the runtime and operator trigger off Mahesh's Mac while retaining the nativ
 
 The foundation/release extension is described in the [cloud release runbook](gcp-baseline.md#brief-13-foundation-before-cloud-release). It reuses the merged private baseline, resource addresses and GCS backend, and separates foundation, cloud build, exact-byte publication, release plan/apply and deployment. Its keyless Cloud Build identities and immutable GCS inputs remove the Mac's image-store requirement. The legacy local controller/trigger/checker/monitor contracts remain unchanged; Linux recurring monitoring and a server-side watchdog/lease are subsequent briefs. Operator disconnect is handled by retaining execution IDs and bounded readback, never blind resubmission. Concurrent presenters remain unsupported until the server lease is implemented and verified.
 
-Mahesh selected a **Mahesh-only pilot**, not team readiness, and approved $100 for the first seven days starting November 5. The team group/second presenter are deferred. The orchestrator reports healthy user/ADC, billing and quota, and absent named resources, but several project IAM/storage/IAP rights remain missing. No credential, role or provider operation was used in this coding task. Actual resource ownership/access must be rechecked by the authorized orchestrator before applying each real plan. Terraform/provider locks, pinned host packages and runtime isolation are retained; only the approved Ubuntu successor `20261104a` changes. <!-- coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:3c71086deb783a2278c6a422ac194a5a6527fa12a15b6088dbe207eb3d8e82b1 -->
+
+Mahesh selected a **Mahesh-only pilot**, not team readiness, and approved $100 for the first seven days beginning with actual DeskDrop cloud consumption; none has been started by this work. The team group/second presenter are deferred. The orchestrator reports healthy user/ADC, billing and quota, and absent named resources, but several project IAM/storage/IAP rights remain missing. No credential, role or provider operation was used in this coding task. Actual resource ownership/access must be rechecked by the authorized orchestrator before applying each real plan. Terraform/provider locks, pinned host packages and runtime isolation are retained; only the approved Ubuntu successor `20261104a` changes.
+
+<!-- /coderabbit-ai-generated:v1 --> <!-- coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated-section:v1:41ed393d82a4c90a9daddb6aaefe1c6ac464b76aec88428563960c3cd94232cc -->
 
@@ -20,7 +26,13 @@ Native OCI publication/worker capabilities remain fail-closed live prerequisites
 
 Release receipts bind source archive/generation, build/config/toolchain/OCI digests, principals/executions, explicit publication approval, readback, saved plan/input/backend/lock, prior rollback identity and host hashes. Foundation cannot deploy. Current and prior approved releases remain tagged and protected; no destructive cleanup is provided. Keyless worker accounts do not make pilot human auth or ungranted permissions disappear. Later unattended services need their own approved identities and fixtures.
 
-GH25 is the engineering acceptance record after the real engineering Jira create 403; no fabricated SC issue is used. Exactly one Mac CLI review is pending before PR publication, then exact-head CodeRabbit PR/security/CI and conclusive native QA Verify. The four legacy external judges are not required. Sandbox browser evidence proves only the unchanged shopper flow. Private GCP/app/metadata/egress/sandbox isolation, reboot, US3 telemetry, publication and team/disconnect/competing-presenter acceptance require their separate real fixtures. Preserve all existing scenario requirements; no local substitute proves live acceptance.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:a7721c4b14298b0e305d9d205bcfe1ccdc06b5bb5f946455f15031d8820c2785 -->
+
+GH25 is the engineering acceptance record after the real engineering Jira create 403; no fabricated SC issue is used. The maintainer reports foundation PR28 open at `9e5700d46770ffd6be9add66c8141007f2bf7663` after its single Mac CLI review and corrections; CodeRabbit/security review and native Verify are running. Exact-head PR/security/CI and conclusive native QA Verify remain required before merge. Sandbox browser evidence proves only the unchanged shopper flow. Private GCP/app/metadata/egress/sandbox isolation, reboot, US3 telemetry, publication and team/disconnect/competing-presenter acceptance require their separate real fixtures. Preserve all existing scenario requirements; no local substitute proves live acceptance.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The future cloud US3 installation must be new and separately owned: `service:deskdrop`, `env:gcp-demo`, `demo_id:mmani-shopping-cart-gcp`, `host:deskdrop-demo`, protected random owner tag. Do not replace local monitor IDs/selectors or expose management secrets/Docker sockets to app, checker or presenters. Native Jira/Debug remain independent and authoring has no CLI-login prerequisite. Keep the custom Socket Mode bridge paused.
 
@@ -51,14 +63,20 @@ Replace the current Mahesh-only Slack member assignment with an explicitly appro
 
 ## Terraform requirements before apply
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:a55deb24ca2fd53c8ea4a42a0225b6168f67ec73a897e07e3545e50b98630ef1 -->
+
 1. Review bootstrap and demo plans separately, including the actual state principal, globally unique bucket name, backend/prefix and recovery custody. The GCS backend supports state locking; enable object versioning and test restoration before multiple operators use it.
 2. Resolve the actual team group and runtime/deployer/state-operator identities. Review resource-level IAM, service-account impersonation and organization policies. Do not create downloadable service-account keys for presenters.
 3. Review the actual project, quota, region/zone, network overlaps, NAT egress, private Google access where applicable, firewall rules and OS Login/IAP permissions. Retain no-public-app-ingress and metadata/host isolation acceptance.
 4. Verify current availability of every pinned VM/package/image artifact before the plan. Any pin/provider change needs an explicit brief and ALLOW authorization; do not silently upgrade a baseline that was reviewed with different versions.
 5. Review images by immutable digest, source commit and SBOM/provenance where available; publish only after the separately approved image/deployment step. Preserve rollback tags and inspect registry cleanup behavior before enabling deletion live.
 6. Create secret containers with Terraform and enroll values privately outside Terraform state. Keep the Agent intake key separate from a narrowly scoped Datadog management key used by the trigger. Decide which trusted control process can access that management secret; it does not belong in app/checker containers, image layers or startup metadata.
-7. Produce a dated cost worksheet with owner, duration, budget alerts, review cadence and stop/teardown procedures. The existing [cost worksheet](gcp-costs.md) is incomplete and its historical rates need rechecking. Budget notifications are not a hard spending cap; the standing absence of a coding-agent cost cap is not cloud-spend approval.
+7. Use the dated [seven-day cost worksheet](gcp-costs.md): Mahesh owns the pilot; the $14.193528 priced illustration plus $20 unpriced-service reserve and $10 contingency gives a rounded $44.19 planning allocation against the approved $100 first-seven-days GCP operational allowance. It is not a complete quote, guaranteed cap, actual spend or permission readiness. The seven-day clock starts at actual first DeskDrop cloud consumption, which has not occurred in this work; record actual usage and deadline when observed. Recheck account rates and review budget notifications, usage and stop/teardown before live work. Notifications do not enforce a cap; keep protected state and current/prior rollback artifacts, and account for retained charges after VM stop.
 8. Review saved plans, rollback and destroy plans before any apply. Keep bootstrap/state custody separate from ordinary demo teardown, and preserve shared APIs and unrelated IAM resources.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Port the monitoring and trigger deliberately
 

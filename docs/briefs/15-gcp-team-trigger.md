@@ -8,7 +8,13 @@ CodeRabbit task: https://app.coderabbit.ai/code/tasks/e146081f-598b-4955-af4a-32
 
 Mahesh approved the bounded GCP package, routine brief/plan/scope/review/merge delegation, Mahesh-only pilot and up to $100 Google Cloud use for the first seven days. Use only existing mahesh@coderabbit.ai permissions; document any additional requirement without acquiring broader roles/identities. Coding-agent time/cost is uncapped. Target is November 6, 7 AM Pacific. No videos; actual high-resolution screenshots and written setup/Do–Say–See material.
 
-Codex reviewed this task's plan-only response and approves its Python peer-credential broker/client, root-owned enrollment and journals, distinct trusted pinned Node control/recovery container, durable serial admission and independently supervised recovery, with the amendment below. The six additional paths for installer/test coverage and evidence/three actual screenshot slots are approved: 22 allowed paths total. No new dependency, package or pin.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ac3f722f7f9b24508260f75eb826900e190a2383087402c9029cd89f7c03d2db -->
+
+Codex reviewed this task's plan-only response and approves its Python peer-credential broker/client, root-owned enrollment and journals, distinct trusted pinned Node control/recovery container, durable serial admission and independently supervised recovery, with the amendment below. The six additional paths for installer/test coverage and evidence/three actual screenshot slots and the delegated [cost worksheet amendment](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/27#issuecomment-6678233952) are approved: 23 allowed paths total. No new dependency, package or pin.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Recovery amendment: always attempt the bounded restoration of the exact owned app even if Datadog suppression cannot be confirmed. Retain uncertainty and block new fault admission until effective suppression, app image/source/health and reservation release all reconcile. Do not leave the app down merely because a provider readback fails. This clarifies GH27 and preserves the existing local behavior. App restoration is not a claim that suppression or the whole recovery succeeded.
 
@@ -37,7 +43,17 @@ Parallel authoring is allowed in this isolated task for new protocol/helper/jour
 9. Reuse final stage13/14 receipt, installer, scheduler, owner-selector and suppression interfaces. Source-bound transfer/hash verification covers every installed import/helper/unit. Wrong actor/project/zone/registry/source/image/container/monitor/lease, unowned links or unsafe path modes fail before mutation. No personal Mac/browser dependency for hosted recurrence/recovery.
 10. Preserve every existing local assertion/default/command, all goldens and six shopper rules. Native Jira and Debug/PR remain independent in either order. Debug investigates directly in actual repo/application with no Jira reference/prerequisite. A fix PR needs confirmed source evidence; deliberate app stop does not justify inventing a product bug. PR23 stays unmerged. Historical fixture proof is not live cloud proof.
 
-## Exact approved scope (22 paths)
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ddde8ec680b8edb36c50cc8c1ebd8e73369e9ac9bd013389a4f008f28411fa80 -->
+
+## Exact approved scope (23 paths)
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:7c5255875ee08cdda9b578d792bebf4c18e0570d7570d1e15fa8bf6540e7c8e1 -->
+
 ```text
 ALLOW: docs/briefs/15-gcp-team-trigger.md
 ALLOW: scripts/demo/trigger-alert.mjs
@@ -58,10 +74,13 @@ ALLOW: docs/automations/datadog-to-slack-mmani.md
 ALLOW: scripts/demo/baseline.mjs
 ALLOW: tests/demo-baseline.test.mjs
 ALLOW: docs/demo/gcp-trigger-evidence.md
+ALLOW: docs/demo/gcp-costs.md
 ALLOW: docs/demo/screenshots/gcp-trigger-status.png
 ALLOW: docs/demo/screenshots/gcp-trigger-recovery.png
 ALLOW: docs/demo/screenshots/gcp-native-actions.png
 ```
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 No shopper code/behavior, npm manifests/locks/dependencies, goldens, provider locks/pins, host packages/pins, new runtime images or unrelated workflows. Report exact necessary cloud-only amendments before editing for delegated review. Three screenshot paths are reserved for actual authorized observed evidence only; do not create placeholders, relabel sandbox as cloud, or fabricate images. Missing live screenshots remain explicitly pending and do not justify provider writes in the task.
 

@@ -26,7 +26,21 @@ Seven focused tests pass using Node24.22.2 and Python3.14 on this Linux sandbox.
 
 Full `npm test` passed553 tests (exit0); `npm run typecheck` passed (exit0); `npm run golden:check` matched all29 unchanged goldens (exit0). The final focused run also covers added clock-rollback and repeated recovery assertions. No shopper or Terraform source changed in this checkpoint; final affected browser/Terraform integration checks remain pending the final dependency source.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1dc0d7318bd615827be31f370bccfb91aeef8aebc7d7052dcc89c190f1ebda01 -->
+
+## Provenance and pending live evidence
+
+The [dated cost worksheet](gcp-costs.md) is a source-based illustration, not a billing or deployment receipt. This coding work has started no GCP consumption. First consumption, actual spend, start/stop timestamps and deadline remain unobserved.
+
+The maintainer reports foundation PR28 open at `9e5700d46770ffd6be9add66c8141007f2bf7663`, with Mac unit and CI checks passed and review/Verify underway. It is not merged or a completed deployment. Monitoring's published partial source remains `9faa889a2009d1b2fa1ec22951eba246a5307816`; final executable interfaces and integration are pending. Record the actual reviewed source and image digests, saved plan/input/backend/lock hashes, installation and runtime receipts when independently observed. Do not treat these source checkpoints as live cloud acceptance.
+
+The approved screenshot slots are reserved for actual, separately authorized observations of status, recovery and native actions. Record each capture's date, source and matching event/receipt when available; all three remain pending and have no placeholder images. Live private access and denied presenter, monitoring intake, native actions, reboot, recovery and publication gates remain pending. Native Jira and Debug are independent; Debug investigates the repository without a Jira prerequisite.
+
 ## Remaining dependency integration and gates
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
 
