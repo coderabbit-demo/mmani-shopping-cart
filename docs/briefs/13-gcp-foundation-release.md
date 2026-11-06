@@ -43,6 +43,22 @@ Implement the first stage of the existing CodeRabbit migration plan: https://app
 - ALLOW: dependency gcr.io/cloud-builders/docker@sha256:91eaff0806a70dc0b3c853191a2da9995b2aa88d9b24196182344a4cef633603 only after the required isolated capability validation supports the selected path.
 - ALLOW: dependency at most two additional official Docker Buildx/BuildKit toolchain images if needed, exact upstream version/digest recorded in deploy/cloudbuild/toolchain.json and independently verified before use. Propose those exact pins to Codex for the delegated verification; no npm dependency or mutable execution tags.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f55ca3e93645ce34ef16fe75ff15066fb57cc1e2b8ff021fd7e59113913d112a -->
+
+### Delegated toolchain pin verification — November 6, 2026
+
+The orchestrator supplied and approved these two official linux/amd64 image pins under the existing at-most-two-image allowance. Probes used no network, mounts or socket and a read-only filesystem, after immutable amd64 pull verification. These are supplied binary observations, not probes executed by the coding task.
+
+- ALLOW: dependency `docker.io/library/docker@sha256:b0d99f37f463c88cae2082083f705210296186c06632d22f6952ed43506ae520`. Registry annotation `29.9.3-cli`; upstream `docker-library/docker` revision `3e782bbabff3af541d2699cf62bd25ec12d3feb6:29/cli`. Observed Docker `29.9.3` build `5457199`, Buildx `0.38.2` revision `3c4cbd35852fc1a476923627a780a7836c28b654`, tar/sh.
+- ALLOW: dependency `docker.io/moby/buildkit@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098`. Observed buildkitd/buildctl `0.34.2` revision `8c579433824224dc64a158cf8734495b6e2b186a`, tar/sh.
+
+Use the current Docker CLI with an explicitly pinned docker-container BuildKit driver for OCI export; no fallback to the old Google Docker20.10 client, mutable driver image or silent installer. The existing pinned Node image still validates/stages OCI bytes. No extra publisher dependency is approved; native `artifacts.oci` publication remains the selected design. Actual Cloud Build worker/driver compatibility, OCI export, native publication and final registry digest equality still require fail-closed live probes before the corresponding mutations. Binary receipts cannot satisfy those capability guards. Preserve phase/approval/principal/ownership boundaries.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
 ## Exact approved file scope (21 paths)
 
 ```text

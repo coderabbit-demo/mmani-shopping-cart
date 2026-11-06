@@ -1,12 +1,13 @@
 {
   "schema": 1,
   "architecture": "linux/amd64",
-  "builder": "gcr.io/cloud-builders/docker@sha256:91eaff0806a70dc0b3c853191a2da9995b2aa88d9b24196182344a4cef633603",
+  "builder": "docker.io/library/docker@sha256:b0d99f37f463c88cae2082083f705210296186c06632d22f6952ed43506ae520",
   "node": "node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607",
   "publication": "cloud-build-artifacts.oci",
   "requiredCapabilities": {
     "build": [
       "amd64",
+      "docker-container-pinned-buildkit",
       "oci-export-without-load"
     ],
     "publish": [
@@ -14,5 +15,30 @@
       "native-oci-digest-preservation"
     ]
   },
-  "execution": "blocked-until-capability-receipt"
+  "execution": "blocked-until-capability-receipt",
+  "buildkit": "docker.io/moby/buildkit@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098",
+  "binaryVerification": {
+    "authority": "Mahesh delegated Mac harness, 2026-11-06",
+    "architecture": "linux/amd64",
+    "isolation": [
+      "no network",
+      "no mounts",
+      "no socket",
+      "read-only filesystem"
+    ],
+    "docker": {
+      "version": "29.9.3",
+      "build": "5457199",
+      "upstream": "docker-library/docker@3e782bbabff3af541d2699cf62bd25ec12d3feb6:29/cli"
+    },
+    "buildx": {
+      "version": "0.38.2",
+      "revision": "3c4cbd35852fc1a476923627a780a7836c28b654"
+    },
+    "buildkit": {
+      "version": "0.34.2",
+      "revision": "8c579433824224dc64a158cf8734495b6e2b186a"
+    },
+    "scope": "Installed binaries only; not worker/export/publication proof"
+  }
 }

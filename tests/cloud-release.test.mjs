@@ -107,6 +107,8 @@ test('request preparation requires exact capability/source/foundation receipts b
   for (const patch of [{ passed: false }, { builder: 'latest' }, { observed: [] }, { configHash: 'f'.repeat(64) }, { serviceAccount: identities.publish }]) {
     await put(dir, 'build-capability.json', { ...cap, ...patch }); await assert.rejects(prepareRequest('build', dir, root));
   }
+  await put(dir, 'build-capability.json', toolchain.binaryVerification);
+  await assert.rejects(prepareRequest('build', dir, root), 'binary probe is not live export capability');
   await put(dir, 'build-capability.json', cap);
   for (const name of ['source.tar', 'foundation.tfplan', 'foundation.tfvars.json']) {
     const bytes = await readFile(path.join(dir, name)); await put(dir, name, Buffer.from('tampered')); await assert.rejects(prepareRequest('build', dir, root)); await put(dir, name, bytes);
@@ -261,5 +263,43 @@ test('source verification compares committed archive and exact remote generation
     calls = [];
     await assert.rejects(cloudAction('verify-source', dir, async (f, args, opts) => f === 'git' && args[0] === (wrong === 'dirty' ? 'status' : 'rev-parse') ? (wrong === 'dirty' ? ' M Dockerfile' : previous) : run(f, args, opts), root));
     assert.equal(calls.filter(c => c.file === 'gcloud').length, 0);
+  }
+}));
+
+import { spawnSync } from 'node:child_process';
+test('pinned Cloud Build shell exports with an owned docker-container builder and cleans only that builder', async () => fixture(async ({ dir, root }) => {
+  const config = JSON.parse(await readFile(path.join(root, 'deploy/cloudbuild/build.yaml')));
+  const step = config.steps[0];
+  assert.equal(step.name, 'docker.io/library/docker@sha256:b0d99f37f463c88cae2082083f705210296186c06632d22f6952ed43506ae520');
+  assert.equal(toolchain.buildkit, 'docker.io/moby/buildkit@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098');
+  assert.equal(step.entrypoint, 'sh');
+  const shell = step.args[1].replaceAll('$$', '$').replaceAll('$BUILD_ID', id).replaceAll('${_SOURCE_COMMIT}', commit);
+  const bin = path.join(dir, 'bin'); await mkdir(bin, { mode: 0o700 });
+  const log = path.join(dir, 'docker-calls.jsonl');
+  await writeFile(path.join(bin, 'docker'), `#!${process.execPath}
+import {appendFileSync} from 'node:fs';
+const args=process.argv.slice(2);appendFileSync(process.env.FIXTURE_LOG,JSON.stringify(args)+'\\n');
+if(args[0]==='--version'){console.log(process.env.FIXTURE_FAIL==='version'?'Docker version wrong':'Docker version 29.9.3, build 5457199');}
+else if(args[1]==='version'){console.log('github.com/docker/buildx v0.38.2 3c4cbd35852fc1a476923627a780a7836c28b654');}
+else if(args[1]===process.env.FIXTURE_FAIL){process.exitCode=23;}
+`, { mode: 0o700 });
+  await writeFile(path.join(bin, 'package.json'), '{"type":"module"}', { mode: 0o600 });
+  for (const failure of ['', 'version', 'create', 'inspect', 'build', 'rm']) {
+    await put(dir, 'docker-calls.jsonl', Buffer.alloc(0));
+    const result = spawnSync('sh', ['-ceu', shell], { encoding: 'utf8', timeout: 10000, env: { PATH: `${bin}:${process.env.PATH}`, FIXTURE_LOG: log, FIXTURE_FAIL: failure } });
+    assert.equal(result.status === 0, failure === '', `unexpected shell status for ${failure}: ${result.stderr}`);
+    const calls = (await readFile(log, 'utf8')).trim().split('\n').filter(Boolean).map(x => JSON.parse(x));
+    const create = calls.find(c => c[1] === 'create'), cleanup = calls.filter(c => c[1] === 'rm');
+    if (failure === 'version') { assert.equal(create, undefined); assert.equal(cleanup.length, 0); continue; }
+    assert.deepEqual(create, ['buildx', 'create', '--name', `deskdrop-${id}`, '--driver', 'docker-container', `--driver-opt=image=${toolchain.buildkit}`]);
+    if (failure === 'create') { assert.equal(cleanup.length, 0, 'name conflict must not remove existing builder'); assert.ok(!calls.some(c => ['inspect', 'build'].includes(c[1]))); continue; }
+    assert.deepEqual(cleanup, [['buildx', 'rm', '--force', `deskdrop-${id}`]]);
+    const builds = calls.filter(c => c[1] === 'build');
+    assert.equal(builds.length, failure === 'inspect' ? 0 : failure === 'build' ? 1 : 2);
+    for (const args of builds) {
+      assert.equal(args[args.indexOf('--builder') + 1], `deskdrop-${id}`);
+      assert.ok(args.includes('--platform=linux/amd64') && !args.includes('--load'));
+      assert.match(args[args.indexOf('--output') + 1], /^type=oci,dest=\/workspace\/(app|checker)\.oci\.tar$/);
+    }
   }
 }));

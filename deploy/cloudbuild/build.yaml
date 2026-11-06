@@ -1,11 +1,11 @@
 {
   "steps": [
     {
-      "name": "gcr.io/cloud-builders/docker@sha256:91eaff0806a70dc0b3c853191a2da9995b2aa88d9b24196182344a4cef633603",
-      "entrypoint": "bash",
+      "name": "docker.io/library/docker@sha256:b0d99f37f463c88cae2082083f705210296186c06632d22f6952ed43506ae520",
+      "entrypoint": "sh",
       "args": [
         "-ceu",
-        "docker buildx version\ndocker buildx inspect --bootstrap\nfor kind in app checker; do file=Dockerfile; [ \"$$kind\" != checker ] || file=deploy/checker.Dockerfile; docker buildx build --platform=linux/amd64 --provenance=false --build-arg SOURCE_COMMIT=${_SOURCE_COMMIT} --output type=oci,dest=/workspace/$$kind.oci.tar -f \"$$file\" .; done"
+        "test \"$$(docker --version)\" = 'Docker version 29.9.3, build 5457199'\ncase \"$$(docker buildx version)\" in *' v0.38.2 3c4cbd35852fc1a476923627a780a7836c28b654') ;; *) exit 1 ;; esac\nbuilder=\"deskdrop-$BUILD_ID\"\nowned=false\ncleanup() {\n  status=$$?\n  trap - EXIT INT TERM\n  if [ \"$$owned\" = true ]; then\n    docker buildx rm --force \"$$builder\" || { [ \"$$status\" -ne 0 ] || status=1; }\n  fi\n  exit \"$$status\"\n}\ntrap cleanup EXIT\ntrap 'exit 130' INT\ntrap 'exit 143' TERM\ndocker buildx create --name \"$$builder\" --driver docker-container --driver-opt=image=docker.io/moby/buildkit@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098\nowned=true\ndocker buildx inspect --builder \"$$builder\" --bootstrap\nfor kind in app checker; do\n  file=Dockerfile\n  [ \"$$kind\" != checker ] || file=deploy/checker.Dockerfile\n  docker buildx build --builder \"$$builder\" --platform=linux/amd64 --provenance=false --build-arg SOURCE_COMMIT=${_SOURCE_COMMIT} --output type=oci,dest=/workspace/$$kind.oci.tar -f \"$$file\" .\ndone"
       ]
     },
     {
