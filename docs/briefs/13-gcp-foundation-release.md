@@ -159,7 +159,9 @@ An offline Verify pass establishes exported orchestration/API behavior only. Act
 
 
 
-<!-- /coderabbit-ai-generated:v1 -->## Required observable tests and validation
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Required observable tests and validation
 
 - Foundation can be planned without a release, but cannot publish, install or deploy. Existing valid baseline releases continue to work; fake/zero/null release identity and wrong-phase receipts are rejected before mutation.
 - Reject tampered source archives/generations, config/toolchain/OCI blobs, plan/input/backend/lock/applied receipts, source labels, identities, registry or architecture. Preserve all existing assertions and meaningful regression RED/GREEN for changes to existing behavior; do not manufacture RED by importing absent new modules.
