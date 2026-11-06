@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, chmod, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, chmod, symlink, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hash, verifyOci, sourceIdentity, objectIdentity, validateBuild, validatePublication, validateFoundation, capability, identities, prepareRequest, worker, cloudAction, registry, validateExecution } from '../scripts/demo/cloud-release.mjs';
+import { compress, decompress, hash, verifyOci, sourceIdentity, objectIdentity, validateBuild, validatePublication, validateFoundation, capability, identities, prepareRequest, worker, cloudAction, registry, validateExecution } from '../scripts/demo/cloud-release.mjs';
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const commit = 'a'.repeat(40), previous = 'b'.repeat(40), id = '11111111-2222-3333-4444-555555555555';
 const toolchain = JSON.parse(await readFile(path.join(repository, 'deploy/cloudbuild/toolchain.json')));
@@ -32,14 +32,14 @@ function oci(arch = 'amd64', source = commit) {
 }
 function execution(request, phase = 'build') { return { ...clone(request), id, status: 'SUCCESS', projectId: 'se-demos-project', serviceAccount: identities[phase], sourceProvenance: { resolvedStorageSource: request.source.storageSource } }; }
 async function fixture(fn) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'deskdrop-cloud-')); await chmod(dir, 0o700);
+  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'deskdrop-cloud-'))); await chmod(dir, 0o700);
   const root = path.join(dir, 'checkout'), receipts = path.join(dir, 'receipts');
   await mkdir(receipts, { mode: 0o700 });
   for (const folder of ['deploy/cloudbuild', 'scripts/demo', 'infra/terraform/.terraform']) await mkdir(path.join(root, folder), { recursive: true });
   for (const file of ['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/publish.yaml', 'deploy/cloudbuild/toolchain.json', 'scripts/demo/cloud-release.mjs']) await writeFile(path.join(root, file), await readFile(path.join(repository, file)));
-  const sourceBytes = Buffer.from('synthetic committed archive');
-  const source = { repository: 'https://github.com/coderabbit-demo/mmani-shopping-cart.git', commit, archive: { bucket: 'se-demos-project-deskdrop-source', name: `${commit}/source.tar`, generation: '3', sha256: hash(sourceBytes) } };
-  await put(receipts, 'source.json', source); await put(receipts, 'source.tar', sourceBytes); await put(receipts, 'source-verified.json', { source, files: Object.fromEntries(await Promise.all(['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/publish.yaml', 'deploy/cloudbuild/toolchain.json', 'scripts/demo/cloud-release.mjs'].map(async name => [name, hash(await readFile(path.join(root, name)))]))) });
+  const sourceBytes = compress(Buffer.from('synthetic committed archive'));
+  const source = { repository: 'https://github.com/coderabbit-demo/mmani-shopping-cart.git', commit, archive: { bucket: 'se-demos-project-deskdrop-source', name: `${commit}/source.tar.gz`, generation: '3', sha256: hash(sourceBytes) } };
+  await put(receipts, 'source.json', source); await put(receipts, 'source.tar.gz', sourceBytes); await put(receipts, 'source-verified.json', { source, files: Object.fromEntries(await Promise.all(['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/publish.yaml', 'deploy/cloudbuild/toolchain.json', 'scripts/demo/cloud-release.mjs'].map(async name => [name, hash(await readFile(path.join(root, name)))]))) });
   const backend = Buffer.from(JSON.stringify({ backend: { type: 'gcs', config: { bucket: 'se-demos-project-deskdrop-tfstate', prefix: 'deskdrop/demo' } } }));
   await writeFile(path.join(root, 'infra/terraform/.terraform/terraform.tfstate'), backend);
   const lock = Buffer.from('pinned lock'); await writeFile(path.join(root, 'infra/terraform/.terraform.lock.hcl'), lock);
@@ -56,7 +56,7 @@ async function fixture(fn) {
   const run = async (file, args, options) => {
     calls.push({ file, args, options });
     assert.equal(file, 'gcloud'); assert.equal(options.timeout, args[0] === 'storage' ? 120000 : 15000);
-    if (args[0] === 'storage') return args[2].includes('/source.tar#') ? sourceBytes : image.bytes;
+    if (args[0] === 'storage') return args[2].includes('/source.tar.gz#') ? sourceBytes : image.bytes;
     assert.deepEqual(args.slice(0, 4), ['artifacts', 'docker', 'images', 'describe']);
     assert.equal(args[5], '--project=se-demos-project'); assert.equal(args[6], '--format=json');
     assert.match(args[4], /^us-central1-docker\.pkg\.dev\/se-demos-project\/deskdrop\/(deskdrop|checker)@sha256:[a-f0-9]{64}$/);
@@ -71,9 +71,9 @@ async function fixture(fn) {
     const b = await build();
     const approval = { phase: 'publication', approved: true, owner: 'pilot', buildHash: hash(Buffer.from(JSON.stringify(b))), images: Object.fromEntries(['app', 'checker'].map(n => [n, `${registry}/${n === 'app' ? 'deskdrop' : n}@${observed.manifest}`])), initialRelease: true, noPriorReleaseConfirmed: true };
     await put(receipts, 'cloud-publication-approval.json', approval);
-    const bundle = tar({ 'scripts/demo/cloud-release.mjs': await readFile(path.join(root, 'scripts/demo/cloud-release.mjs')), 'app.oci.tar': image.bytes, 'checker.oci.tar': image.bytes, 'publication-input.json': { commit, images: { app: observed, checker: observed } } });
-    const object = { bucket: 'se-demos-project-deskdrop-artifacts', name: `${commit}/publication/bundle.tar`, generation: '9', sha256: hash(bundle) };
-    await put(receipts, 'publication-source.tar', bundle); await put(receipts, 'publication-source.json', object); await put(receipts, 'publication-source-verified.json', object);
+    const bundle = compress(tar({ 'scripts/demo/cloud-release.mjs': await readFile(path.join(root, 'scripts/demo/cloud-release.mjs')), 'app.oci.tar': image.bytes, 'checker.oci.tar': image.bytes, 'publication-input.json': { commit, images: { app: observed, checker: observed } } }));
+    const object = { bucket: 'se-demos-project-deskdrop-artifacts', name: `${commit}/publication/bundle.tar.gz`, generation: '9', sha256: hash(bundle) };
+    await put(receipts, 'publication-source.tar.gz', bundle); await put(receipts, 'publication-source.json', object); await put(receipts, 'publication-source-verified.json', object);
     const request = await prepareRequest('publish', receipts, root);
     await put(receipts, 'publish-request.json', request); await put(receipts, 'publish-execution.json', execution(request, 'publish'));
     return { b, approval, request };
@@ -110,7 +110,7 @@ test('request preparation requires exact capability/source/foundation receipts b
   await put(dir, 'build-capability.json', toolchain.binaryVerification);
   await assert.rejects(prepareRequest('build', dir, root), 'binary probe is not live export capability');
   await put(dir, 'build-capability.json', cap);
-  for (const name of ['source.tar', 'foundation.tfplan', 'foundation.tfvars.json']) {
+  for (const name of ['source.tar.gz', 'foundation.tfplan', 'foundation.tfvars.json']) {
     const bytes = await readFile(path.join(dir, name)); await put(dir, name, Buffer.from('tampered')); await assert.rejects(prepareRequest('build', dir, root)); await put(dir, name, bytes);
   }
   for (const name of ['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/toolchain.json', 'scripts/demo/cloud-release.mjs']) {
@@ -170,18 +170,18 @@ test('publisher stage verifies approval bytes and writes only OCI layouts, witho
 }));
 test('receipts reject unsafe permissions, symlinks and corrupt source before subprocesses', async () => fixture(async ({ dir, root, run, calls }) => {
   await chmod(path.join(dir, 'source.json'), 0o644); await assert.rejects(cloudAction('verify-source', dir, run, root)); assert.equal(calls.length, 0);
-  await chmod(path.join(dir, 'source.json'), 0o600); await rm(path.join(dir, 'source.tar')); await symlink(path.join(dir, 'source.json'), path.join(dir, 'source.tar'));
+  await chmod(path.join(dir, 'source.json'), 0o600); await rm(path.join(dir, 'source.tar.gz')); await symlink(path.join(dir, 'source.json'), path.join(dir, 'source.tar.gz'));
   await assert.rejects(prepareRequest('build', dir, root)); assert.equal(calls.length, 0);
 }));
 
 test('bundle creates deterministic approved OCI transfer without rebuilding and refuses overwrite', async () => fixture(async ({ dir, root, publish, run }) => {
-  await publish(); await rm(path.join(dir, 'publication-source.tar'));
+  await publish(); await rm(path.join(dir, 'publication-source.tar.gz'));
   const result = await cloudAction('bundle', dir, run, root);
-  const bytes = await readFile(path.join(dir, 'publication-source.tar'));
+  const bytes = await readFile(path.join(dir, 'publication-source.tar.gz'));
   assert.equal(hash(bytes), result.sha256);
-  await rm(path.join(dir, 'publication-source.tar'));
+  await rm(path.join(dir, 'publication-source.tar.gz'));
   assert.deepEqual(await cloudAction('bundle', dir, run, root), result);
-  assert.ok(bytes.equals(await readFile(path.join(dir, 'publication-source.tar'))));
+  assert.ok(bytes.equals(await readFile(path.join(dir, 'publication-source.tar.gz'))));
   await assert.rejects(cloudAction('bundle', dir, run, root));
 }));
 
@@ -245,13 +245,13 @@ test('later publication requires actual prior full-commit tags to resolve to the
 
 test('source verification compares committed archive and exact remote generation; bad bytes produce no receipt', async () => fixture(async ({ dir, root, source }) => {
   await rm(path.join(dir, 'source-verified.json'));
-  const bytes = await readFile(path.join(dir, 'source.tar')); let calls = [];
+  const bytes = await readFile(path.join(dir, 'source.tar.gz')); let calls = [];
   const run = async (file, args, opts) => {
     calls.push({ file, args, opts });
     if (file === 'git') {
       if (args[0] === 'rev-parse') { assert.deepEqual(args, ['rev-parse', 'HEAD']); return commit; }
       if (args[0] === 'status') { assert.deepEqual(args, ['status', '--porcelain', '--untracked-files=normal']); return ''; }
-      assert.deepEqual(args, ['archive', '--format=tar', commit]); return bytes;
+      assert.deepEqual(args, ['archive', '--format=tar', commit]); return decompress(bytes);
     }
     assert.equal(file, 'gcloud'); assert.deepEqual(args, ['storage', 'cat', `gs://${source.archive.bucket}/${source.archive.name}#3`]); assert.equal(opts.timeout, 120000); return bytes;
   };
@@ -276,18 +276,21 @@ test('pinned Cloud Build shell exports with an owned docker-container builder an
   const shell = step.args[1].replaceAll('$$', '$').replaceAll('$BUILD_ID', id).replaceAll('${_SOURCE_COMMIT}', commit);
   const bin = path.join(dir, 'bin'); await mkdir(bin, { mode: 0o700 });
   const log = path.join(dir, 'docker-calls.jsonl');
-  await writeFile(path.join(bin, 'docker'), `#!${process.execPath}
-import {appendFileSync} from 'node:fs';
-const args=process.argv.slice(2);appendFileSync(process.env.FIXTURE_LOG,JSON.stringify(args)+'\\n');
-if(args[0]==='--version'){console.log(process.env.FIXTURE_FAIL==='version'?'Docker version wrong':'Docker version 29.9.3, build 5457199');}
-else if(args[1]==='version'){console.log('github.com/docker/buildx v0.38.2 3c4cbd35852fc1a476923627a780a7836c28b654');}
-else if(args[1]===process.env.FIXTURE_FAIL){process.exitCode=23;}
+  await writeFile(path.join(bin, 'docker'), `#!/bin/sh
+{ printf '['; sep=''; for arg do printf '%s"%s"' "$sep" "$arg"; sep=,; done; printf ']\\n'; } >> "$FIXTURE_LOG"
+if [ "$1" = --version ]; then
+  if [ "$FIXTURE_FAIL" = version ]; then printf 'Docker version wrong\\n'; else printf 'Docker version 29.9.3, build 5457199\\n'; fi
+elif [ "$2" = version ]; then printf 'github.com/docker/buildx v0.38.2 3c4cbd35852fc1a476923627a780a7836c28b654\\n'
+elif [ "$2" = "$FIXTURE_FAIL" ]; then exit 23
+fi
 `, { mode: 0o700 });
-  await writeFile(path.join(bin, 'package.json'), '{"type":"module"}', { mode: 0o600 });
   for (const failure of ['', 'version', 'create', 'inspect', 'build', 'rm']) {
     await put(dir, 'docker-calls.jsonl', Buffer.alloc(0));
     const result = spawnSync('sh', ['-ceu', shell], { encoding: 'utf8', timeout: 10000, env: { PATH: `${bin}:${process.env.PATH}`, FIXTURE_LOG: log, FIXTURE_FAIL: failure } });
-    assert.equal(result.status === 0, failure === '', `unexpected shell status for ${failure}: ${result.stderr}`);
+    const diagnostic = JSON.stringify({ failure, status: result.status, signal: result.signal, error: result.error?.message, stdout: result.stdout, stderr: result.stderr });
+    assert.equal(result.error, undefined, diagnostic);
+    assert.equal(result.signal, null, diagnostic);
+    assert.equal(result.status === 0, failure === '', diagnostic);
     const calls = (await readFile(log, 'utf8')).trim().split('\n').filter(Boolean).map(x => JSON.parse(x));
     const create = calls.find(c => c[1] === 'create'), cleanup = calls.filter(c => c[1] === 'rm');
     if (failure === 'version') { assert.equal(create, undefined); assert.equal(cleanup.length, 0); continue; }
@@ -302,4 +305,56 @@ else if(args[1]===process.env.FIXTURE_FAIL){process.exitCode=23;}
       assert.match(args[args.indexOf('--output') + 1], /^type=oci,dest=\/workspace\/(app|checker)\.oci\.tar$/);
     }
   }
+}));
+
+test('compressed bundles are deterministic and enforce input/output bounds and corrupt gzip rejection', () => {
+  const raw = tar({ 'fixture.json': Buffer.from('synthetic archive') });
+  const zipped = compress(raw);
+  assert.ok(compress(raw).equals(zipped)); assert.ok(decompress(zipped).equals(raw));
+  assert.throws(() => decompress(zipped, 10));
+  assert.throws(() => decompress(Buffer.alloc(70000), 10));
+  const corrupt = Buffer.from(zipped); corrupt[corrupt.length - 8] ^= 1;
+  for (const bad of [raw, corrupt, zipped.subarray(0, zipped.length - 4)]) assert.throws(() => decompress(bad));
+});
+test('REST output-only metadata is accepted while changed inputs and unknown additions are rejected', async () => fixture(async ({ dir, root }) => {
+  for (const phase of ['build']) {
+    const request = await prepareRequest(phase, dir, root), result = execution(request, phase);
+    result.artifacts.objects.timing = { startTime: '2026-11-06T00:00:00Z', endTime: '2026-11-06T00:00:01Z' };
+    result.options.resolvedWorkerRelease = 'resolved-worker'; result.steps[0].status = 'SUCCESS'; result.steps[0].exitCode = 0;
+    result.steps[0].timing = result.artifacts.objects.timing; result.steps[0].pullTiming = result.artifacts.objects.timing;
+    assert.equal(validateExecution(result, request, phase), result);
+    const changes = [r => r.options.logging = 'NONE', r => r.options.workerRelease = 'other', r => r.options.unknown = true, r => r.artifacts.objects.location = 'gs://wrong/', r => r.artifacts.objects.paths.push('extra'), r => r.artifacts.objects.unknown = true, r => r.steps[0].env = ['UNAPPROVED=1'], r => r.steps[0].args.push('extra'), r => r.steps[0].unknown = true, r => r.source.storageSource.generation = '7'];
+    for (const change of changes) { const bad = clone(result); change(bad); assert.throws(() => validateExecution(bad, request, phase)); }
+  }
+}));
+test('canonical fixture paths retain production rejection of directory aliases', async () => fixture(async ({ dir, root }) => {
+  assert.equal(await realpath(dir), dir);
+  const alias = path.join(path.dirname(dir), 'receipt-alias'); await symlink(dir, alias);
+  await assert.rejects(prepareRequest('build', alias, root));
+  assert.equal((await prepareRequest('build', await realpath(alias), root)).serviceAccount, identities.build);
+}));
+test('source archive helper writes compressed actual Git bytes once with matching hash', async () => fixture(async ({ dir, root }) => {
+  await rm(path.join(dir, 'source.tar.gz'));
+  const raw = tar({ 'source.txt': Buffer.from('committed content') });
+  const run = async (file, args) => { assert.equal(file, 'git'); return args[0] === 'rev-parse' ? commit : args[0] === 'status' ? '' : raw; };
+  const result = await cloudAction('source-archive', dir, run, root);
+  const bytes = await readFile(path.join(dir, 'source.tar.gz'));
+  assert.equal(result.sha256, hash(bytes)); assert.ok(decompress(bytes).equals(raw));
+  await assert.rejects(cloudAction('source-archive', dir, run, root));
+}));
+
+test('publication readback binds actual gzip bytes and generation before parsing the approved tar', async () => fixture(async ({ dir, root, publish }) => {
+  await publish(); await rm(path.join(dir, 'publication-source-verified.json'));
+  const bytes = await readFile(path.join(dir, 'publication-source.tar.gz'));
+  const object = JSON.parse(await readFile(path.join(dir, 'publication-source.json')));
+  const run = async (file, args, options) => {
+    assert.equal(file, 'gcloud'); assert.equal(options.binary, true); assert.equal(options.timeout, 120000);
+    assert.deepEqual(args, ['storage', 'cat', `gs://${object.bucket}/${object.name}#${object.generation}`]); return bytes;
+  };
+  assert.equal((await cloudAction('verify-publication-source', dir, run, root)).status, 'publication-source-verified');
+  assert.equal((await prepareRequest('publish', dir, root)).source.storageSource.object, object.name);
+  const raw = decompress(bytes); await put(dir, 'publication-source.tar.gz', raw);
+  await put(dir, 'publication-source.json', { ...object, sha256: hash(raw) });
+  await put(dir, 'publication-source-verified.json', { ...object, sha256: hash(raw) });
+  await assert.rejects(prepareRequest('publish', dir, root), 'renamed uncompressed tar must fail even with matching hashes');
 }));
