@@ -175,7 +175,15 @@ Attempt bounds are preparation 60 seconds, requests 10 seconds, controls 15 seco
 
 <!-- coderabbit-ai-generated-section:v1:43ec8a801aeeeb110f95ac006fdc6a9b2f8f91b7fc5a134764b9edf2ee1dbdfe -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:0967ad3f13a677512cc43a8dc6636c20399dc85bd962d511b71731b3093a8f8c -->
+
 Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. An active old downtime is not proof that an unknown cancellation cannot still arrive; the reservation stays fenced until cancellation is definitively reconciled and replacement suppression is confirmed. App recovery observations continue while protection is uncertain. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. <!-- coderabbit-ai-generated:v1 -->
+
+Protective restoration is separate from arming readiness. After definitive cancellation, a recovery-only guard verifies the runtime operation identity, protected monitor journal, all three monitor identities, the pinned checkout group and the other two suppressions. It can create and read back only the equivalent nonexpiring exact-checkout suppression, attributed to this run, and atomically replace only that journal entry. Routing failure (including an unsafe new matching rule or a rule-list access error/timeout) does not skip that protective attempt. Unknown creates are reconciled by one attributed replacement; they are never blindly repeated. Wrong or unverifiable ownership still prevents the write. App recovery is attempted even if suppression remains uncertain. Arming, cancellation, fault observation and final success retain full effective-route verification; unresolved routing keeps the receipt uncertain and the reservation fenced even when protection and local app recovery were observed.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated-section:v1:04ffabe7bfea47f91593afc794fe1ca0816794ac35a546504862024dca362233 -->
 

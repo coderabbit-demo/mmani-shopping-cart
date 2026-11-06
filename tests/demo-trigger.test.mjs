@@ -17,7 +17,7 @@ function fixture(overrides = {}) {
   const op = (name, value) => async (...args) => { calls.push([name, ...args]); return typeof value === 'function' ? value(...args) : value; };
   const a = {
     identity: { checkout: target.checkout, commit: 'a'.repeat(40), toolingCommit: 'b'.repeat(40), appImageId: `sha256:${'c'.repeat(64)}`, appContainer: 'd'.repeat(64), owner: `local_owner:${'e'.repeat(32)}` }, oldDowntime: 'old',
-    baseline: op('baseline'), verify: op('verify'), reserve: op('reserve'), cancel: op('cancel'), canceled: op('canceled', true), stop: op('stop'),
+    baseline: op('baseline'), verify: op('verify'), verifyProtection: op('verifyProtection'), restoreProtection: async (run,id) => a.replace(id), reserve: op('reserve'), cancel: op('cancel'), canceled: op('canceled', true), stop: op('stop'),
     monitor: op('monitor', () => recovered ? { status: 'OK' } : { status: 'Alert', last_triggered_ts: 101 }),
     create: op('create', 'replacement'), protection: op('protection', id => id === 'replacement'), replace: op('replace'),
     restart: op('restart', () => { recovered = true; }), fallback: op('fallback', () => { recovered = true; }), localHealthy: op('localHealthy', true), release: op('release'), ...overrides
@@ -205,7 +205,7 @@ test('lease paths respect Darwin socket length and aliased fixture roots stay st
   try { await symlink(dir, path.join(dir, 'alias')); await assert.rejects(writeState(path.join(dir, 'alias'), 'x.json', {})); } finally { await rm(dir, {recursive:true}); }
 });
 
-async function adapterFixture() {
+async function adapterFixture(deadlineMs = 10000) {
   const { productionAdapter } = await import('../scripts/demo/trigger-watchdog.mjs');
   const { monitorDefinitions, idDowntime } = await import('../scripts/demo/datadog-monitors.mjs');
   const definitions = JSON.parse(await readFile(new URL('../deploy/datadog/local-monitors.json', import.meta.url), 'utf8'));
@@ -220,7 +220,7 @@ async function adapterFixture() {
   const readers={site:target.site,definitions,api:{async getMonitor(id){calls.push(['monitor',id]);return monitors.find(m=>m.id===id);},async getDowntime(id){calls.push(['downtime',id]);return downtime.get(id);},async matches(id){return [journal.monitors.find(m=>m.id===id).downtime];},async getNotificationRule(){calls.push(['rule']);return rule;}},read:async()=>structuredClone(journal),write:async(n,v)=>{journal=structuredClone(v);},control:async()=>status,runtime:async()=>({ctx:{commit:status.commit,ids:{app:status.appImageId}},owned:['app','agent','runner','forwarder'].map(service=>({Id:'c'.repeat(64),Config:{Labels:{'com.docker.compose.service':service}},State:{Running:true,Health:{Status:'healthy'}}}))}),operation:async()=>status.operationIdentity,availability:async()=>true,tooling:async()=>'d'.repeat(40)};
   const rules = [rule.data];
   const routing = {status:200, delay:0, page:page => ({data:rules.slice(page*100,(page+1)*100),meta:{page:{total_count:rules.length}}})};
-  const routeApi = makeApi({apiKey:'fixture',appKey:'fixture',request(options, callback) {
+  const routeApi = makeApi({apiKey:'fixture',appKey:'fixture',deadlineMs,request(options, callback) {
     calls.push(['rule-page', options]);
     const req = new EventEmitter(); let timer; req.destroy = () => clearTimeout(timer); req.end = () => {
       const page = Number(new URL(options.path, 'https://fixture.invalid').searchParams.get('page'));
@@ -648,7 +648,11 @@ test('a route introduced during the fake outage fences completion while owned ap
   const f=await adapterFixture();conditionalRule(f);const calls=[];
   f.readers.api.matches=async id=>[...f.downtime.values()].filter(d=>d.data.attributes.monitor_identifier.monitor_id===id&&d.data.attributes.status==='active').map(d=>d.data.id);
   f.readers.api.cancelDowntime=async id=>{calls.push('cancel');f.downtime.get(id).data.attributes.status='canceled';};
-  f.readers.api.createDowntime=async()=>assert.fail('unsafe route allowed a new suppression write');
+  f.readers.api.createDowntime=async spec=>{
+    calls.push('create');assert.equal(spec.data.attributes.monitor_identifier.monitor_id,target.checkout);
+    f.downtime.set('replacement',{data:{...structuredClone(spec.data),id:'replacement',attributes:{...structuredClone(spec.data.attributes),status:'active'}}});
+    return {data:{id:'replacement'}};
+  };
   f.readers.control=async command=>{
     if(command==='status')return f.status;
     const action=command.split(':')[1];calls.push(action);
@@ -661,10 +665,121 @@ test('a route introduced during the fake outage fences completion while owned ap
     return {status:action};
   };
   const r=await rehearse(await f.make(),fixture().store);
-  assert.equal(r.phase,'uncertain');assert.equal(r.protected,false);assert.equal(r.recovered,false);
-  assert.deepEqual(calls,['reserve','cancel','stop','restart']);
+  assert.equal(r.phase,'uncertain');assert.equal(r.protected,true);assert.equal(r.recovered,false);
+  assert.deepEqual(calls,['reserve','cancel','stop','create','restart']);
   assert.equal(f.monitors[1].state.groups['host:deskdrop-mmani-local'].status,'OK');
-  assert.equal(r.releaseConfirmed,undefined);assert.equal(r.createIntent,undefined);
+  assert.equal(r.releaseConfirmed,undefined);assert.equal(r.createIntent,true);
   assert.ok(!JSON.stringify(r).includes('private-route-canary'));
-  assert.equal(f.journal().monitors[1].downtime,'dt-1');
+  assert.equal(f.journal().monitors[1].downtime,'replacement');
+  assert.deepEqual(f.journal().monitors[0],f.state.monitors[0]);assert.deepEqual(f.journal().monitors[2],f.state.monitors[2]);
+});
+
+async function protectionFixture(onStop, {unknownCreate=false}={}) {
+  const f=await adapterFixture(150);conditionalRule(f);
+  const calls=[],store=fixture().store,read=f.readers.read,write=f.readers.write;
+  f.readers.read=async name=>{
+    if(name==='monitors.json')return read(name);
+    const r=await store.load();
+    if(name==='trigger.json')return r;
+    for(const action of ['stop','restart'])if(name===`trigger-${r.run}-${action}.json`)return {run:r.run,action,status:'confirmed'};
+    throw missing();
+  };
+  f.readers.write=async(name,value)=>{calls.push(['journal',name]);await write(name,value);};
+  f.readers.api.matches=async id=>[...f.downtime.values()].filter(d=>d.data.attributes.monitor_identifier.monitor_id===id&&d.data.attributes.status==='active').map(d=>d.data.id);
+  f.readers.api.cancelDowntime=async id=>{calls.push(['cancel',id]);f.downtime.get(id).data.attributes.status='canceled';};
+  f.readers.api.createDowntime=async spec=>{
+    calls.push(['create',structuredClone(spec)]);
+    assert.equal(spec.data.attributes.monitor_identifier.monitor_id,target.checkout);
+    const r=await store.load();assert.equal(r.createIntent,true);assert.equal(r.canceled,true);
+    f.downtime.set('replacement',{data:{...structuredClone(spec.data),id:'replacement',attributes:{...structuredClone(spec.data.attributes),status:'active'}}});
+    if(unknownCreate)throw new Error('lost create response');
+    return {data:{id:'replacement'}};
+  };
+  const group=f.monitors[1].state.groups['host:deskdrop-mmani-local'];
+  f.readers.control=async command=>{
+    if(command==='status')return f.status;
+    const action=command.split(':')[1];calls.push([action]);
+    if(action==='stop'){group.status='Alert';group.last_triggered_ts=Math.ceil(Date.now()/1000);await onStop(f);}
+    if(action==='restart')group.status='OK';
+    return {status:action};
+  };
+  f.readers.fallback=async identity=>{assert.equal(identity.appImageId,f.status.appImageId);calls.push(['fallback']);group.status='OK';};
+  const a=await f.make();return {...f,a,store,actions:calls};
+}
+test('protective restoration survives unsafe routing and collection access failures but never releases on incomplete proof', async()=>{
+  const changes=[
+    f=>f.rules.push({id:'unsafe',attributes:{filter:{scope:'host:*'},recipients:['private-routing-canary']}}),
+    f=>f.routing.status=401,f=>f.routing.status=429,f=>f.routing.delay=1000,
+    f=>f.rule.data.attributes.name='changed-direct-rule'
+  ];
+  for(const change of changes){
+    const f=await protectionFixture(change),r=await rehearse(f.a,f.store);
+    assert.equal(r.phase,'uncertain');assert.equal(r.protected,true);assert.equal(r.recovered,false);assert.notEqual(r.releaseConfirmed,true);
+    assert.deepEqual(f.actions.map(c=>c[0]),['reserve','cancel','stop','create','journal','restart']);
+    assert.equal(f.actions.find(c=>c[0]==='cancel')[1],'dt-1');
+    const spec=f.actions.find(c=>c[0]==='create')[1].data.attributes;
+    assert.deepEqual(spec.monitor_identifier,{monitor_id:target.checkout});assert.equal(spec.scope,'*');assert.deepEqual(spec.schedule,{start:null});
+    assert.equal(spec.mute_first_recovery_notification,true);assert.deepEqual(spec.notify_end_states,[]);assert.deepEqual(spec.notify_end_types,[]);
+    assert.equal(f.journal().monitors[1].downtime,'replacement');assert.deepEqual(f.journal().monitors[0],f.state.monitors[0]);assert.deepEqual(f.journal().monitors[2],f.state.monitors[2]);
+    assert.equal(f.monitors[1].state.groups['host:deskdrop-mmani-local'].status,'OK');
+    assert.ok(f.calls.some(c=>c[0]==='downtime'&&c[1]==='replacement'));
+    assert.ok(!JSON.stringify(r).includes('private-routing-canary'));
+  }
+});
+test('unknown protection create is adopted once without retry while routing remains blocked, then full proof releases', async()=>{
+  const f=await protectionFixture(f=>f.routing.status=401,{unknownCreate:true});
+  let r=await rehearse(f.a,f.store);
+  assert.equal(r.phase,'uncertain');assert.equal(r.createIntent,true);assert.equal(r.newDowntime,undefined);assert.equal(r.protected,false);
+  r=await rehearse(f.a,f.store,{recover:true});
+  assert.equal(r.phase,'uncertain');assert.equal(r.protected,true);assert.equal(r.newDowntime,'replacement');assert.equal(r.releaseConfirmed,undefined);
+  assert.equal(f.journal().monitors[1].downtime,'replacement');
+  r=await rehearse(f.a,f.store,{recover:true});
+  assert.equal(r.phase,'uncertain');assert.equal(r.protected,true);
+  f.routing.status=200;
+  r=await rehearse(f.a,f.store,{recover:true});
+  assert.equal(r.phase,'complete');assert.equal(r.protected,true);assert.equal(r.recovered,true);assert.equal(r.releaseConfirmed,true);
+  for(const action of ['cancel','create','stop','restart','release'])assert.equal(f.actions.filter(c=>c[0]===action).length,1,action);
+  assert.ok(f.actions.some(c=>c[0]==='fallback'));
+  assert.deepEqual(f.journal().monitors[0],f.state.monitors[0]);assert.deepEqual(f.journal().monitors[2],f.state.monitors[2]);
+});
+test('recovery-only protection still refuses changed ownership, journals, downtimes and ambiguous creates', async()=>{
+  const changes=[
+    f=>f.monitors[1].query='wrong',f=>f.monitors[1].id=1,f=>f.monitors[1].tags.pop(),
+    f=>f.readers.api.getMonitor=async()=>{throw new Error('unverifiable monitor');},
+    f=>f.readers.operation=async()=>{throw new Error('changed runtime operation');},
+    f=>{const read=f.readers.read;f.readers.read=async name=>name==='monitors.json'?{...await read(name),pending:'unknown'}:read(name);},
+    f=>f.downtime.get('dt-0').data.attributes.status='canceled',
+    f=>f.downtime.get('dt-1').data.attributes.monitor_identifier={monitor_id:target.availability},
+    f=>f.downtime.get('dt-1').data.attributes.status='active',
+    f=>f.readers.api.matches=async()=>['foreign']
+  ];
+  for(const change of changes){
+    const f=await protectionFixture(async f=>{f.routing.status=401;await change(f);});
+    const r=await rehearse(f.a,f.store);
+    assert.equal(r.phase,'uncertain');assert.equal(r.protected,false);assert.notEqual(r.releaseConfirmed,true);
+    assert.deepEqual(f.actions.map(c=>c[0]),['reserve','cancel','stop','restart']);assert.equal(f.journal().monitors[1].downtime,'dt-1');
+  }
+  for(const mutate of [f=>f.downtime.delete('replacement'),f=>f.downtime.get('replacement').data.attributes.message='foreign-run',f=>f.downtime.get('replacement').data.attributes.schedule.end='tomorrow',f=>{const d=structuredClone(f.downtime.get('replacement'));d.data.id='second';f.downtime.set('second',d);}]){
+    const f=await protectionFixture(f=>f.routing.status=429,{unknownCreate:true});await rehearse(f.a,f.store);mutate(f);
+    const r=await rehearse(f.a,f.store,{recover:true});
+    assert.equal(r.phase,'uncertain');assert.equal(r.protected,false);assert.equal(f.actions.filter(c=>c[0]==='create').length,1);
+    assert.equal(f.actions.filter(c=>c[0]==='cancel').length,1);assert.equal(f.journal().monitors[1].downtime,'dt-1');
+    assert.ok(f.actions.some(c=>c[0]==='fallback'));assert.ok(!f.actions.some(c=>c[0]==='release'));
+  }
+});
+
+test('routing failure cannot settle an unknown cancel or trigger a second cancel before definitive readback', async()=>{
+  const f=await protectionFixture(()=>{});let cancellations=0;
+  f.readers.api.cancelDowntime=async id=>{assert.equal(id,'dt-1');cancellations++;f.routing.status=401;throw new Error('lost cancel response');};
+  let r=await rehearse(f.a,f.store);
+  assert.equal(r.cancelIntent,true);assert.notEqual(r.canceled,true);assert.equal(r.phase,'uncertain');assert.equal(r.protected,false);
+  r=await rehearse(f.a,f.store,{recover:true});
+  assert.equal(r.phase,'uncertain');assert.equal(cancellations,1);assert.equal(f.actions.filter(c=>c[0]==='create').length,0);
+  f.downtime.get('dt-1').data.attributes.status='canceled';
+  r=await rehearse(f.a,f.store,{recover:true});
+  assert.equal(r.phase,'uncertain');assert.equal(r.canceled,true);assert.equal(r.protected,true);assert.equal(r.releaseConfirmed,undefined);
+  assert.equal(f.journal().monitors[1].downtime,'replacement');assert.equal(f.actions.filter(c=>c[0]==='create').length,1);
+  f.routing.status=200;r=await rehearse(f.a,f.store,{recover:true});
+  assert.equal(r.phase,'complete');assert.equal(r.releaseConfirmed,true);assert.equal(cancellations,1);
+  assert.equal(f.actions.filter(c=>c[0]==='create').length,1);assert.ok(!f.actions.some(c=>c[0]==='stop'));assert.equal(r.alertObserved,undefined);
 });

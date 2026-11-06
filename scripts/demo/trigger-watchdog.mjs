@@ -145,7 +145,7 @@ export async function productionAdapter(readers, recover = false) {
   if (!ownerPattern.test(state.owner ?? '') || state.pending || state.transition || state.tagDowntime || state.monitors?.length !== 3) throw new Error('Monitor reconciliation required');
   const wanted = monitorDefinitions(definitions, state.owner);
   let snapshot = JSON.stringify(state);
-  async function inspect(recovery = false, replacement) {
+  async function inspectOwnership(recovery = false, replacement) {
     await readers.operation(operationIdentity);
     const current = await readers.read('monitors.json');
     if (JSON.stringify(current) !== snapshot) throw new Error('Monitor journal changed');
@@ -166,6 +166,13 @@ export async function productionAdapter(readers, recover = false) {
         if (matches.length !== 1 || matches[0] !== entry.downtime) throw new Error('Unexpected suppression');
       }
     }
+    return checkout;
+  }
+  async function verifyProtection(replacement) {
+    groupState(await inspectOwnership(true, replacement));
+  }
+  async function inspect(recovery = false, replacement) {
+    const checkout = await inspectOwnership(recovery, replacement);
     const rule = await api.getNotificationRule();
     if (!routeIdentity(rule, state.owner)) throw new Error('Routing identity changed');
     return {rule, checkout};
@@ -193,7 +200,7 @@ export async function productionAdapter(readers, recover = false) {
       if (ownedMonitor(m, wanted[1]) !== target.checkout) throw new Error('Monitor response ID changed');
       effectiveRoutes(rule, await api.notificationRules(), m, state.owner);
     },
-    verify,
+    verify, verifyProtection,
     reserve: run => readers.control(`trigger:reserve:${run}`),
     cancel: id => api.cancelDowntime(id),
     canceled: async id => { const d = await api.getDowntime(id); return d?.data?.id === id && d.data.attributes.status === 'canceled'; },
@@ -211,20 +218,42 @@ export async function productionAdapter(readers, recover = false) {
     },
     release: run => readers.control(`trigger:release:${run}`),
     async monitor() { const m = await api.getMonitor(target.checkout); if (ownedMonitor(m, wanted[1]) !== target.checkout) throw new Error('Monitor response ID changed'); return groupState(m); },
-    async create(run) { const spec = idDowntime(target.checkout); spec.data.attributes.message = `DeskDrop checkout recovery ${run}`; return (await api.createDowntime(spec))?.data?.id; },
+    async create(run) {
+      if (!/^[a-f0-9-]{36}$/.test(run ?? '')) throw new Error('Invalid recovery run');
+      await verifyProtection();
+      const old = await api.getDowntime(entry.downtime);
+      if (old?.data?.id !== entry.downtime || old.data.attributes?.status !== 'canceled' || verifyDowntime({data:{...old.data,attributes:{...old.data.attributes,status:'active'}}}, idDowntime(target.checkout)) !== entry.downtime) throw new Error('Cancellation still unknown');
+      if ((await api.matches(target.checkout)).length !== 0) throw new Error('Unexpected suppression');
+      const spec = idDowntime(target.checkout); spec.data.attributes.message = `DeskDrop checkout recovery ${run}`;
+      return (await api.createDowntime(spec))?.data?.id;
+    },
     async protection(id) {
+      await verifyProtection(id);
       const record = await api.getDowntime(id);
       if (record?.data?.id === id && record.data.attributes?.monitor_identifier?.monitor_id === target.checkout && record.data.attributes?.status === 'canceled') return false;
       return verifyDowntime(record, idDowntime(target.checkout)) === id && (await api.matches(target.checkout)).includes(id);
     },
     async reconcileCreate(run) {
+      if (!/^[a-f0-9-]{36}$/.test(run ?? '')) throw new Error('Invalid recovery run');
       const found = [];
       for (const id of await api.matches(target.checkout)) {
         const d = await api.getDowntime(id);
         if (d?.data?.attributes?.message === `DeskDrop checkout recovery ${run}`) { verifyDowntime(d, idDowntime(target.checkout)); found.push(id); }
       }
       if (found.length !== 1) throw new Error('Create reconciliation ambiguous');
+      await verifyProtection(found[0]);
       return found[0];
+    },
+    async restoreProtection(run, id) {
+      if (!/^[a-f0-9-]{36}$/.test(run ?? '')) throw new Error('Invalid recovery run');
+      await verifyProtection(id);
+      const record = await api.getDowntime(id);
+      if (record?.data?.id !== id || record.data.attributes?.message !== `DeskDrop checkout recovery ${run}` || verifyDowntime(record, idDowntime(target.checkout)) !== id) throw new Error('Suppression changed');
+      const matches = await api.matches(target.checkout);
+      if (matches.length !== 1 || matches[0] !== id) throw new Error('Unexpected suppression');
+      if (JSON.stringify(await readers.read('monitors.json')) !== snapshot) throw new Error('Monitor journal changed');
+      const next = structuredClone(state); next.monitors.find(e => e.id === target.checkout).downtime = id;
+      await readers.write('monitors.json', next); Object.assign(state, next); snapshot = JSON.stringify(state);
     },
     async replace(id) { await verify(true, id); const next = structuredClone(state); next.monitors.find(e => e.id === target.checkout).downtime = id; await readers.write('monitors.json', next); Object.assign(state, next); snapshot = JSON.stringify(state); },
     async localHealthy() { return healthyController(await readers.control('status')) && await readers.availability(ctx); }
@@ -300,17 +329,17 @@ export async function rehearse(a, store, { now = Date.now, sleep = ms => new Pro
         if (!await call(() => a.canceled(r.oldDowntime))) throw new Error('Cancellation still unknown');
         r.canceled = true; await store.save(r);
       }
-      await call(() => a.verify(true));
+      if (r.createIntent && !r.newDowntime && a.reconcileCreate) { r.newDowntime = await call(() => a.reconcileCreate(r.run)); await store.save(r); }
+      await call(() => a.verifyProtection(r.newDowntime));
       if (!r.createIntent) {
         r.createIntent = true; await store.save(r);
         r.newDowntime = await call(() => a.create(r.run));
         if (typeof r.newDowntime !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(r.newDowntime) || r.newDowntime === r.oldDowntime) throw new Error('Create unknown');
         await store.save(r);
       }
-      if (!r.newDowntime && a.reconcileCreate) { r.newDowntime = await call(() => a.reconcileCreate(r.run)); await store.save(r); }
       if (!r.newDowntime) throw new Error('Create outcome unknown; do not retry');
       while (now() < protectionEnd) {
-        if (await call(() => a.protection(r.newDowntime))) { await call(() => a.replace(r.newDowntime)); protectedOk = true; break; }
+        if (await call(() => a.protection(r.newDowntime))) { await call(() => a.restoreProtection(r.run, r.newDowntime)); protectedOk = true; break; }
         await sleep(Math.min(1000, Math.max(0, protectionEnd - now())));
       }
     }
