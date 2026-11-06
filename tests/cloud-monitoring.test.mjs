@@ -150,3 +150,18 @@ test('production heartbeat loop ticks in a distinct process while a real checker
     assert.equal(unrelated.exitCode,null);assert.equal(unrelated.signalCode,null);
   }finally{checker.kill('SIGKILL');hb.kill('SIGTERM');unrelated.kill('SIGTERM');}
 });
+
+test('normal interleaved completion keeps heartbeat healthy; expired work and failures stay degraded',async()=>{
+  let time=0,finishCheckout;const health=[];
+  const checkout=new Promise(r=>{finishCheckout=r;});
+  const s=scheduler({now:()=>time,setTimer:()=>1,clearTimer(){},run:async n=>n==='checkout'?checkout:true,report:async()=>{},health:async healthy=>health.push({healthy,updated:time})});
+  await flush();assert.equal(s.status().active,1);assert.equal(heartbeat(health.at(-1),time),0,'legitimate checkout must not cause critical heartbeat');
+  const {heartbeatWorker}=await import('../scripts/demo/cloud-runtime.mjs');let heartbeatTick;const statuses=[];
+  const stopHeartbeat=await heartbeatWorker({read:async()=>({...health.at(-1),updated:Date.now()}),send:async status=>statuses.push(status),failed:()=>assert.fail('heartbeat failed'),setTimer:fn=>{heartbeatTick=fn;return 1;},clearTimer(){}});
+  assert.equal(statuses.at(-1),0);heartbeatTick();await flush();assert.equal(statuses.at(-1),0);
+  time=30000;s.tick();await flush();assert.equal(s.status().healthy,false);assert.equal(heartbeat(health.at(-1),time),2,'overlap is degraded even after availability completes');
+  heartbeatTick();await flush();assert.equal(statuses.at(-1),2);
+  finishCheckout(true);await flush();assert.equal(heartbeat(health.at(-1),time),0,'confirmed cleanup permits recovery');stopHeartbeat();await s.stop();
+  const failed=scheduler({setTimer:()=>1,clearTimer(){},run:async()=>{throw Error('cleanup unknown');},report:async()=>{},health:async healthy=>health.push({healthy,updated:time})});
+  await flush();assert.equal(heartbeat(health.at(-1),time),2);assert.equal(failed.status().healthy,false);await failed.stop();
+});

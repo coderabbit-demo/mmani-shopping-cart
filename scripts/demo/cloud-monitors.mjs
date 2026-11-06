@@ -22,7 +22,27 @@ export function owned(record, expected) {
   if (!Number.isSafeInteger(record?.id) || record.id < 1 || localIds.has(record.id) || ['name', 'type', 'query', 'message'].some(k => record[k] !== expected[k]) || !Array.isArray(record.tags) || record.tags.length !== expected.tags.length || !expected.tags.every(t => record.tags.includes(t)) || record.options?.thresholds?.critical !== 2 || record.options?.thresholds?.ok !== 2 || record.options?.notify_no_data !== expected.options.notify_no_data || record.options?.include_tags !== true || record.options?.new_group_delay !== 0 || (expected.options.notify_no_data && record.options.no_data_timeframe !== 2)) throw new Error('Cloud monitor ownership mismatch');
   return record.id;
 }
-export async function inventory(page) {
+// Compare only lifecycle safety configuration, in canonical key/tag order.
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])])) : value;
+function monitorIdentity(row, owner) {
+  const identity = { id: row.id, name: row.name, tags: row.tags.slice().sort() };
+  if (!owner || row.tags.includes(owner) || definitions(owner).some(m => m.name === row.name)) {
+    Object.assign(identity, { type: row.type, query: row.query, message: row.message,
+      options: { thresholds: { critical: row.options?.thresholds?.critical, ok: row.options?.thresholds?.ok }, notify_no_data: row.options?.notify_no_data,
+        no_data_timeframe: row.options?.no_data_timeframe, include_tags: row.options?.include_tags, new_group_delay: row.options?.new_group_delay } });
+  }
+  return canonical(identity);
+}
+function suppressionIdentity(row, owner) {
+  const a = row.attributes;
+  if (!a?.monitor_identifier?.monitor_tags?.includes(owner)) return { id: row.id };
+  const identifier = { ...a.monitor_identifier, monitor_tags: a.monitor_identifier.monitor_tags.slice().sort() };
+  return canonical({ id: row.id, type: row.type, status: a.status, scope: a.scope, schedule: a.schedule,
+    monitor_identifier: identifier, mute_first_recovery_notification: a.mute_first_recovery_notification,
+    notify_end_states: a.notify_end_states, notify_end_types: a.notify_end_types });
+}
+export async function inventory(page, owner) {
+  if (owner !== undefined) selector(owner);
   async function scan() {
     const result = [], seen = new Set();
     for (let i = 0; i < 100; i++) {
@@ -37,7 +57,7 @@ export async function inventory(page) {
     throw new Error('Incomplete cloud inventory');
   }
   const first = await scan();
-  if (hash(first) !== hash(await scan())) throw new Error('Changing cloud inventory');
+  if (hash(first.map(r => monitorIdentity(r, owner))) !== hash((await scan()).map(r => monitorIdentity(r, owner)))) throw new Error('Changing cloud inventory');
   return first;
 }
 export function validateState(state) {
@@ -97,7 +117,7 @@ export class Journal {
 
 export async function reconcile(state, api, save) {
   validateState(state);
-  const rows = await inventory(api.list);
+  const rows = await inventory(api.list, state.owner);
   const wanted = definitions(state.owner);
   const ownedRows = rows.filter(r => r.tags.includes(state.owner));
   for (const row of ownedRows) {
@@ -149,7 +169,7 @@ export async function install(state, api, save) {
   await guard(); await reconcile(state, api, save);
   for (const definition of definitions(state.owner)) {
     if (!state.monitors.some(m => m.name === definition.name)) {
-      const all = await inventory(api.list);
+      const all = await inventory(api.list, state.owner);
       if (all.some(m => m.name === definition.name)) throw new Error('Reserved cloud monitor name exists');
       await guard(); state.pending = { kind: 'create', name: definition.name }; await save(state);
       const result = await api.call('POST', '/api/v1/monitor', definition);
@@ -247,7 +267,7 @@ export async function reconcileProtection(state, api, save) {
     throw new Error('Incomplete suppression inventory');
   }
   const rows = await scan();
-  if (hash(rows) !== hash(await scan())) throw new Error('Changing suppression inventory');
+  if (hash(rows.map(r => suppressionIdentity(r, state.owner))) !== hash((await scan()).map(r => suppressionIdentity(r, state.owner)))) throw new Error('Changing suppression inventory');
   const matches = rows.filter(r => r.attributes?.monitor_identifier?.monitor_tags?.includes(state.owner));
   if (matches.length !== 1) throw new Error('Suppression creation remains unknown');
   return recoverProtection(state, matches[0].id, api, save);

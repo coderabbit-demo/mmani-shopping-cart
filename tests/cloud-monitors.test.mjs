@@ -139,3 +139,26 @@ test('declared cloud contract matches executable tags/checks and cannot alter lo
   assert.deepEqual(spec.tags,tags);assert.deepEqual(spec.checks,checks);
   assert.ok(definitions(owner).every(r=>!r.query.includes('local-demo')));
 });
+
+test('inventory accepts volatile monitor state but rejects every owned safety configuration drift',async()=>{
+  let n=0;
+  const rows=await inventory(async()=>[{...row(),overall_state:++n%2?'OK':'Alert',modified:n}],owner);
+  assert.ok(rows[0].modified,'actual provider rows are returned');
+  const changes=[r=>r.message='changed',r=>r.query='changed',r=>r.tags.pop(),r=>r.type='metric alert',r=>r.name='changed',r=>r.options.thresholds.critical=3,r=>r.options.thresholds.ok=3,r=>r.options.notify_no_data=true,r=>r.options.include_tags=false,r=>r.options.new_group_delay=60];
+  for(const change of changes){let reads=0;await assert.rejects(inventory(async()=>{const r=structuredClone(row());if(++reads===2)change(r);return[r];},owner),/Changing/);}
+  let reads=0;await assert.rejects(inventory(async()=>{const r={...definitions(owner)[2],id:124};if(++reads===2)r.options.no_data_timeframe=5;return[r];},owner),/Changing/);
+  let unrelated=0;await inventory(async()=>[{...row(),id:200,name:'other',tags:['service:other'],query:String(++unrelated),message:String(unrelated),overall_state:String(unrelated)}],owner);
+});
+test('downtime reconciliation ignores volatile and unrelated attributes but retains owned protection/status',async()=>{
+  const {protection,reconcileProtection}=await import('../scripts/demo/cloud-monitors.mjs');
+  function api(change){let count=0;return {call:async(method,p)=>{
+    const owned={...structuredClone(protection(owner).data),id:'owned'};owned.attributes.status='active';
+    if(p.includes('?')){count++;owned.attributes.modified=String(count);if(count===2)change?.(owned);return {data:[owned,{id:'other',attributes:{status:String(count),message:String(count)}}],meta:{page:{total_filtered_count:2}}};}
+    return {data:owned};
+  }};}
+  const pending=()=>({...state(),protection:{pending:true,id:null}});
+  const s=pending();await reconcileProtection(s,api(),async()=>{});assert.equal(s.protection.id,'owned');
+  for(const change of [r=>r.attributes.status='canceled',r=>r.attributes.status='ended',r=>r.attributes.status='scheduled',r=>r.attributes.scope='host:other',r=>r.attributes.schedule.end='2027-01-01',r=>r.attributes.monitor_identifier.monitor_tags.pop(),r=>r.attributes.mute_first_recovery_notification=false,r=>r.attributes.notify_end_states=['alert'],r=>r.attributes.notify_end_types=['expired']]){
+    const s=pending();await assert.rejects(reconcileProtection(s,api(change),async()=>assert.fail('unsafe change saved')),/Changing/);assert.equal(s.protection.pending,true);
+  }
+});
