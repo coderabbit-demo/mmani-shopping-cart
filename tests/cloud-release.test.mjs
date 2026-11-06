@@ -286,7 +286,9 @@ fi
 `, { mode: 0o700 });
   for (const failure of ['', 'version', 'create', 'inspect', 'build', 'rm']) {
     await put(dir, 'docker-calls.jsonl', Buffer.alloc(0));
-    const result = spawnSync('sh', ['-ceu', shell], { encoding: 'utf8', timeout: 10000, env: { PATH: `${bin}:${process.env.PATH}`, FIXTURE_LOG: log, FIXTURE_FAIL: failure } });
+    const executable = process.platform === 'darwin' ? '/bin/bash' : 'sh';
+    const args = process.platform === 'darwin' ? ['--posix', '-ceu', shell] : ['-ceu', shell];
+    const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 10000, env: { PATH: `${bin}:${process.env.PATH}`, FIXTURE_LOG: log, FIXTURE_FAIL: failure } });
     const diagnostic = JSON.stringify({ failure, status: result.status, signal: result.signal, error: result.error?.message, stdout: result.stdout, stderr: result.stderr });
     assert.equal(result.error, undefined, diagnostic);
     assert.equal(result.signal, null, diagnostic);
