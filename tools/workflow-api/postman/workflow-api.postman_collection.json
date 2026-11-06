@@ -1,0 +1,161 @@
+{
+  "info": {
+    "name": "Workflow API \u2014 milestone 1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Target coderabbitai/coderabbit-automation-demo only. Before use, the harness must read back all-deployments Vercel Authentication and the immutable protected Preview source. Save separately revocable presenter bypass and random 256-bit-or-longer bearer in private Postman Vault as workflow-api-bypass and workflow-api-bearer. The server WORKFLOW_API_AUTH_JSON is an array of {actor, sha256, expiresAt}; use canonical base64url tokens, SHA-256 hex digests and UTC ISO timestamps with milliseconds. Never export real secrets or log request headers. Disable persisted bypass cookies and use a fresh cookie jar for the platform denial case. Run requests individually without retries. No claim of managed rate limiting or indexed US3 intake is made by this collection. Onboarding: each authorized team user must be registered by the harness with a unique non-PII actor ID, unique digest and expiry, plus an independently revocable presenter Vercel bypass. Tokens must be generated with at least 32 cryptographically random bytes and encoded as unpadded base64url. Configuration capacity is bounded at 128 registered actors and 32768 UTF-8 bytes, subject to the project environment budget; this is not access for unregistered callers. Expiry uses strict UTC YYYY-MM-DDTHH:mm:ss.sssZ. To revoke, remove the actor/digest from provider-managed configuration and redeploy every still-accessible Preview containing it; revoke that presenter bypass separately. Existing immutable deployments retain their captured environment, so retiring/restricting old deployments is part of revocation. Never silently truncate the actor list. No local env file or plaintext server token is required."
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const base = pm.environment.get('DEMO_BASE_URL');",
+          "if (typeof base !== 'string' || !/^https:\\/\\/[a-z0-9-]+\\.vercel\\.app\\/$/.test(base)) throw new Error('Set a protected immutable Preview origin');",
+          "if (!/^[a-f0-9]{40}$/.test(pm.environment.get('EXPECTED_COMMIT')) || !/^dpl_[A-Za-z0-9]{1,100}$/.test(pm.environment.get('EXPECTED_DEPLOYMENT_ID'))) throw new Error('Set expected source and deployment identity');"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Platform protection: no credentials",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [],
+        "url": "{{DEMO_BASE_URL}}api/health"
+      },
+      "protocolProfileBehavior": {
+        "followRedirects": false,
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Platform denies access without bypass', () => { pm.expect([401,403,302,307]).to.include(pm.response.code); pm.expect(pm.response.text()).not.to.eql(JSON.stringify({error: 'Unauthorized'})); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Application protection: missing bearer",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "x-vercel-protection-bypass",
+            "value": "{{vault:workflow-api-bypass}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{DEMO_BASE_URL}}api/health"
+      },
+      "protocolProfileBehavior": {
+        "followRedirects": false,
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Application denies access', () => { pm.response.to.have.status(401); pm.expect(pm.response.json()).to.eql({error: 'Unauthorized'}); });",
+              "pm.test('No caching', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Application protection: invalid bearer",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "x-vercel-protection-bypass",
+            "value": "{{vault:workflow-api-bypass}}",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer invalid-not-a-credential",
+            "type": "text"
+          }
+        ],
+        "url": "{{DEMO_BASE_URL}}api/health"
+      },
+      "protocolProfileBehavior": {
+        "followRedirects": false,
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Application denies access', () => { pm.response.to.have.status(401); pm.expect(pm.response.json()).to.eql({error: 'Unauthorized'}); });",
+              "pm.test('No caching', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Protected healthy Preview",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "x-vercel-protection-bypass",
+            "value": "{{vault:workflow-api-bypass}}",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vault:workflow-api-bearer}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{DEMO_BASE_URL}}api/health"
+      },
+      "protocolProfileBehavior": {
+        "followRedirects": false,
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Health is authorized', () => pm.response.to.have.status(200));",
+              "pm.test('Trusted identity', () => { const b = pm.response.json(); pm.expect(b.status).to.eql('ok'); pm.expect(b.requestId).to.match(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/); pm.expect(b.source.commit).to.eql(pm.environment.get('EXPECTED_COMMIT')); pm.expect(b.source.deploymentId).to.eql(pm.environment.get('EXPECTED_DEPLOYMENT_ID')); pm.expect(b.source.environment).to.eql('preview'); pm.expect(b.source.project).to.eql('coderabbit-automation-demo'); });",
+              "pm.test('No caching', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
