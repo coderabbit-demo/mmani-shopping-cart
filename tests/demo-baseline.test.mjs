@@ -1007,3 +1007,36 @@ with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
  with g['lock']('lifecycle.lock'):pass
 `);
 });
+
+test('bootstrap generates and enables the firewall unit required by monitoring and trigger services',async()=>{
+  const firewall=script.split("cat > /etc/systemd/system/deskdrop-firewall.service <<'UNIT'\n")[1]?.split('\nUNIT')[0];
+  assert.ok(firewall);
+  assert.match(firewall,/ExecStart=\/opt\/deskdrop\/bootstrap.sh firewall/);
+  assert.match(firewall,/Before=docker.service/);
+  assert.match(firewall,/RequiredBy=docker.service/);
+  assert.match(script,/systemctl enable deskdrop-firewall.service deskdrop.service/);
+  for(const name of ['deskdrop-trigger.service','deskdrop-trigger-recovery.service']){
+    const unit=await readFile(new URL('../deploy/systemd/'+name,import.meta.url),'utf8');
+    if(name.includes('recovery'))assert.match(unit,/Requires=docker.service deskdrop-firewall.service/);
+    else assert.match(unit,/Requires=deskdrop-trigger-recovery.service/);
+  }
+});
+
+test('trigger maintenance gate excludes monitor management without taking the recurring lifecycle lock',()=>{
+ monitorFixture(`
+import contextlib
+held={'trigger-maintenance.lock'}
+@contextlib.contextmanager
+def lock(name):
+ if name in held:raise BlockingIOError('busy')
+ held.add(name)
+ try:yield
+ finally:held.remove(name)
+g['lock']=lock
+g['owned_container']=lambda *a:(_ for _ in ()).throw(AssertionError('management reached Docker during trigger'))
+try:g['manage']({},'install');raise AssertionError('management overlapped trigger')
+except BlockingIOError:pass
+assert held=={'trigger-maintenance.lock'}
+with lock('lifecycle.lock'):assert len(held)==2
+`);
+});

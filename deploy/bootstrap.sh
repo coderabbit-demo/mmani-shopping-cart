@@ -1533,7 +1533,7 @@ def install(digest,transfer='/tmp/monitoring.tar.gz',release_path='/etc/deskdrop
         print(json.dumps(receipt))
 
 def manage(c,mode):
-    with lock('lifecycle.lock'):
+    with lock('trigger-maintenance.lock'), lock('lifecycle.lock'):
         for kind in ['controller','heartbeat']:
             if owned_container(c,kind):raise ValueError('Stop monitoring service before management operations')
         r=owned_container(c,'installer')
@@ -1610,7 +1610,7 @@ def trigger_install(digest):
     for n in ['cloud-runtime.mjs','cloud-monitors.mjs']:
         if files[n]!=read(BASE+'/'+n):raise ValueError('Monitoring module mismatch')
     target='/opt/deskdrop/trigger';state='/var/lib/deskdrop/trigger'
-    with lock('management.lock'):
+    with lock('trigger-maintenance.lock'):
         if os.path.lexists(target):
             safe_dir(target,private=True)
             if set(os.listdir(target))!=set(files) or any(read(target+'/'+n)!=v for n,v in files.items()):raise ValueError('Explicit trigger migration required; preserve state')

@@ -192,3 +192,51 @@ finally:
 `;
  const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/passed/);
 });
+
+test('actual trigger maintenance flock permits recurrence and excludes management until owner death',()=>{
+ const code=String.raw`
+import importlib.machinery,importlib.util,tempfile,pathlib,os,fcntl,multiprocessing,time,shutil
+loader=importlib.machinery.SourceFileLoader('operator_module','deploy/deskdrop-operator');spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
+multiprocessing.set_start_method('fork');root=pathlib.Path(tempfile.mkdtemp(dir=pathlib.Path.home()/'.cache'));root.chmod(0o700);ready=multiprocessing.Event()
+def trigger():
+ with m.management_lock(root,os.getuid()):ready.set();time.sleep(30)
+p=multiprocessing.Process(target=trigger);p.start()
+try:
+ assert ready.wait(3)
+ with open(root/'lifecycle.lock','w') as f:fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ try:
+  with m.management_lock(root,os.getuid()):raise AssertionError('management overlapped trigger')
+ except BlockingIOError:pass
+ p.kill();p.join(3)
+ with m.management_lock(root,os.getuid()):pass
+ print('maintenance exclusion and recurring lifecycle coexistence passed')
+finally:
+ if p.is_alive():p.kill();p.join(3)
+ shutil.rmtree(root)
+`;
+ const result=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/passed/);
+});
+
+test('unknown parent installer blocks admission but allows runtime-only recovery',()=>{
+ const code=String.raw`
+import importlib.machinery,importlib.util,json
+loader=importlib.machinery.SourceFileLoader('operator_module','deploy/deskdrop-operator');spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
+c={'owner':'cloud_owner:'+'a'*32,'source':'b'*40,'bundleHash':'c'*64};m.installed=lambda:c;calls=[]
+def command(args,**kw):
+ calls.append(args)
+ if args[:3]==['/usr/bin/docker','container','ls']:return 'deskdrop-cloud-installer'
+ if args[:2]==['/usr/bin/docker','run']:
+  assert 'DESKDROP_SUPPRESSION_BLOCKED=1' in args and args[-1]=='recover'
+  return json.dumps({'status':'reconciliation-required'})
+ assert args==['/opt/deskdrop/bootstrap.sh','verify'],args
+ return ''
+h=m.Host(None,c,'boot',command)
+try:h.invoke('inspect');raise AssertionError('installer overlapped admission')
+except ValueError:pass
+assert not any('run' in a for a in calls)
+assert h.invoke('recover')['status']=='reconciliation-required'
+assert not any('management-refresh' in a for a in calls)
+print('parent installer blocks provider actions without blocking restoration worker')
+`;
+ const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/restoration worker/);
+});

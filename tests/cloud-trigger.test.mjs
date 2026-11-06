@@ -213,3 +213,9 @@ test('Alert observation has a monotonic 180-second bound; stale Alert cannot bec
   assert.equal(elapsed,180000);assert.equal(result.status,'restored');assert.ok(!f.saves.some(r=>r.phase==='observed'));
   assert.equal(f.app.State.Running,true);
 });
+
+test('trigger suppression reconciliation tolerates volatile provider metadata but keeps safety comparisons',async()=>{
+ const f=migrationFixture(),call=f.api.call;let tick=0;
+ f.api.call=async(...args)=>{const r=await call(...args);if(args[1].includes('downtime?'))for(const row of r.data)row.attributes.modified=++tick;return r;};
+ await f.handoff.open();assert.equal(f.covering(701).length,0);assert.equal(await f.handoff.close(),true);
+});

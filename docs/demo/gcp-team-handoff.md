@@ -1,5 +1,7 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:98e7509b1ac57459d309c998c84e0c7f7ddb9fb4280692a534dd367bee5622e7 -->
+
 <!-- coderabbit-ai-generated-section:v1:5039f9e7c35a6eacec1f09917ec1f066983771c3e47324e0c32bf79f355f5e9a -->
 
 <!-- coderabbit-ai-generated-section:v1:f2babfc9d896baf352e4346e12fa5e3a05214cc0d8e379dcd1e5197b7741829d -->
@@ -265,6 +267,16 @@ The broad stage14 downtime initially protects all three monitors. A trigger pers
 Recovery always attempts the exact owned app start after bounded protection work, including provider readback failure. It restores a broad guard and retires temporary protections before updating the stage14 protection ID. Unknown writes remain in the journal and are not blindly replayed. A missing unknown POST cannot be retried. An uncertain Docker stop retains its runtime uncertainty even if the app is subsequently running. New admissions require effective suppression, exact app/source, fresh monitoring health and complete reservation reconciliation. The root counter reserves at most three cycles, including admissions whose caller died.
 
 For shutdown, an authorized maintainer stops the broker first, then `systemctl stop deskdrop-trigger-recovery.service`; allow its recovery/cleanup bound. Do not stop recovery to conceal uncertainty or delete its journal. To resume, start recovery then broker; reboot recovery is enabled through systemd. All real systemd/reboot/host isolation and cloud intake results remain pending. See [trigger evidence](gcp-trigger-evidence.md) for source/offline versus live provenance.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+## Reviewed-parent integration and management permissions
+
+The trigger now integrates monitoring `ccaf5b89ec621a1e1f80ea6df03c11485643169b` and foundation `afbde6c9c1d946989918ce5187bae194cc1a0b68`. Neither is represented as main-merged or live accepted. Monitoring retains its exclusive `lifecycle.lock` shared by recurring supervision and management. Trigger recovery and monitor management additionally share `trigger-maintenance.lock`; the trigger does not take the continuously held recurring lifecycle lease. Monitor management acquires the maintenance gate before the lifecycle lease. This permits recurrence during a fault while excluding concurrent management writes. No parent assertions were removed.
+
+The existing management credential needs Datadog **monitors_downtime** for downtime create/cancel and **monitors_read** for notification-rule GET. These are documented prerequisites, not authorization to create a new key, expand scopes or obtain additional permission. Missing scope blocks live admission; runtime restoration is still attempted independently.
+
+The `deskdrop-firewall.service` dependency is installed by `deploy/bootstrap.sh install`: it writes the unit, reloads systemd and enables the firewall and app units. Its firewall unit runs `/opt/deskdrop/bootstrap.sh firewall` before Docker and declares `RequiredBy=docker.service`. The sandbox has not run that privileged host installer, so its missing-unit diagnostic was expected sandbox absence, not a missing production source definition. An offline regression now checks generation, enablement and trigger dependencies. Actual installed unit contents and successful boot execution remain separate live gates.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

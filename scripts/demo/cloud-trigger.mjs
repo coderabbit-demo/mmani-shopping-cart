@@ -108,7 +108,14 @@ export async function downtimeInventory(api) {
     }
     fail();
   }
-  const rows = await scan(); if (!same(rows, await scan())) fail(); return rows;
+  const safety = rows => rows.map(row => {
+    const a = row.attributes ?? {}, identifier = { ...a.monitor_identifier };
+    if (Array.isArray(identifier.monitor_tags)) identifier.monitor_tags = identifier.monitor_tags.slice().sort();
+    return { id: row.id, type: row.type, attributes: { status: a.status, scope: a.scope, schedule: a.schedule,
+      monitor_identifier: identifier, message: a.message, mute_first_recovery_notification: a.mute_first_recovery_notification,
+      notify_end_states: a.notify_end_states, notify_end_types: a.notify_end_types } };
+  });
+  const rows = await scan(); if (!same(safety(rows), safety(await scan()))) fail(); return rows;
 }
 export async function effectiveProtection(api, id, expected) {
   const r = await api.call('GET', `/api/v2/monitor/${id}/downtime_matches?page%5Boffset%5D=0&page%5Blimit%5D=100`);
@@ -307,7 +314,7 @@ async function main() {
     try { const s = await file.stat(); if (!s.isFile() || s.uid !== 0 || s.nlink !== 1 || (s.mode & 0o777) !== 0o600 || s.size > 1024) fail(); return JSON.parse(await file.readFile('utf8')); } finally { await file.close(); }
   };
   let api;
-  try { api = await makeTriggerApi(credentials); } catch { api = { call: async () => fail() }; }
+  try { if (process.env.DESKDROP_SUPPRESSION_BLOCKED === '1') fail(); api = await makeTriggerApi(credentials); } catch { api = { call: async () => fail() }; }
   let route; try { route = await store.load('route.json'); } catch {}
   const result = await runTrigger({ config, state: await journal.read(), api, docker: dockerTransport(), store, journal, route, health, mode: process.argv[2] });
   console.log(JSON.stringify(result));

@@ -1,5 +1,11 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:cf77d85be64e411665f34691697832ddd7b275cabb12f6d932222c7c0036133f -->
+
+<!-- coderabbit-ai-generated-section:v1:afde2061e698e4b63e37d405f619a2bb558ee6125beca8a1169a58012f3c33b5 -->
+
+<!-- coderabbit-ai-generated-section:v1:c563dd6069a1bffd595d6825be4becbe7f861d3cf72906c2d208faf67fcd15c2 -->
+
 <!-- coderabbit-ai-generated-section:v1:b8cef0b408f1af2f7710018de84b9911b130ab11f92256e880fb6ab5fb8a4c4a -->
 
 <!-- coderabbit-ai-generated-section:v1:4c28ff002d834a0ed9a66fcaf14381dd59a9901a9abed4a8254931c797393109 -->
@@ -44,6 +50,44 @@ Required: final merged parent source, exact-head review/security/CI and native Q
 The [cost worksheet](gcp-costs.md) retains the $14.193528 priced illustration plus$20 unpriced reserve and$10 contingency=$44.19 allocation against the approved$100 allowance. It is not a complete quote, guaranteed cap, actual spend or readiness. This work started no GCP resource/consumption; no start/stop timestamps or actual spend have been invented.
 
 All three reserved cloud screenshot slots remain absent until separately observed high-resolution evidence exists. Record actual capture time, source/runtime identity and event/receipt provenance; no placeholders, generated images or relabelled sandbox screenshots. Videos are not required. Native Jira and Debug remain independent in either order. Debug investigates actual source without Jira references or prerequisites. Deliberate app-stop does not establish a product bug. The package remains at most three live cycles, one synthetic incident Bug and one isolated unmerged native fix PR. PR23 stays unmerged and the custom bridge paused. Existing private-infrastructure/reboot/telemetry/publication scenarios remain pending, not replaced by local QA.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+## Updated parent checkpoint and native Verify plan
+
+Superseding preliminary parent references above: integrated monitoring `ccaf5b89ec621a1e1f80ea6df03c11485643169b` and foundation `afbde6c9c1d946989918ce5187bae194cc1a0b68`. Retained all parent and trigger installer tests when resolving their appended-test overlap. Monitoring's stable safety inventories and healthy in-flight scheduler are preserved. Trigger suppression inventories now ignore volatile modification metadata while comparing identifiers, status, scope, schedule, message and notification-safety fields. The shared trigger-maintenance gate excludes monitor management without blocking recurring supervision's lifecycle lease. The original three monitoring review findings were reported corrected by the parent author; this task does not substitute its integration tests for that review receipt.
+
+### Credential-free native workflow (proposed reusable fixture)
+
+Proposed additional path: `tests/fixtures/cloud-trigger.mjs`, following the existing foundation `tests/fixtures/cloud-release.mjs` pattern. **Not added or approved by this checkpoint.** This would require an ALLOW amendment; the existing23-path brief has not been broadened. Until approved and implemented, a native agent can construct a disposable driver around the actual APIs below, but must report its own action/observation evidence rather than a unit-test summary. Do not invoke a nonexistent fixture export or claim this plan has run as native Verify.
+
+Actual JavaScript exports are `runTrigger`, `protectionHandoff`, `verifyRouting`, `TriggerStore` from `scripts/demo/cloud-trigger.mjs`, `makeCloudApi`/`makeTriggerApi` from `cloud-monitors.mjs`, and `inspectTarget`/`verifyTarget`/`jobs` from `cloud-runtime.mjs`. Python `deploy/deskdrop-operator` is importable with `importlib.machinery.SourceFileLoader`; its actual APIs include `Custody(directory, uid)`, `Broker(custody, readiness, boot, now, authenticate, reserve)`, `Broker.serve(endpoint)`, `Broker.request(raw, uid)`, `lease(custody)`, `Host` and `Host.cycle(allow_trigger=False)`. Test injection is confined to a driver; installed public commands do not accept these parameters.
+
+1. Record `git rev-parse HEAD`, tool versions and dirty-tree state. Create a private mode0700 temporary directory under the non-root user's home, not under world-writable ancestors. Use synthetic enrollment for the actual test UID; label it test enrollment, not OS Login acceptance. Start the actual `Broker.serve` in a disposable Python child with a socket in that directory. Keep another unrelated child alive as a cleanup control.
+2. **Action:** send `status`, then malformed/extra-field and spoofed-identity requests through separate real Unix connections. **Observe/assert separately:** kernel peer UID is the real test UID; malformed requests create no lease/provider operation; claimed USER/SUDO_USER/request identities confer no authority. Do not exercise metadata, Docker or provider endpoints.
+3. **Action:** release eight disposable clients simultaneously to request trigger, with one caller disconnecting after send. **Observe:** exactly one durable accepted run, remaining requests busy, same run persists after disconnect. Read only sanitized run/phase evidence. Kill the broker and reconnect to a replacement; the reservation must remain closed to new admission.
+4. **Action:** call the actual `runTrigger` with a controlled in-memory provider/Docker adapter, real disposable `TriggerStore`, private monitor journal and independently recorded operation ledger. Implement only the existing documented API endpoints; reject all other requests and disable outbound networking in the driver. Seed three synthetic owned monitor IDs, one broad protection, exact source/image/isolated-network responses and one Alert-only route. **Observe:** prior persisted intent for every write, all three temporary protections before broad cancellation, only checkout unprotected, stop for the exact app ID, fresh Alert after the stop and complete restoration. Assert the intermediate ledger and durable files outside the invocation; a returned status alone is insufficient.
+5. **Action:** run separate scenarios with failed suppression readback, a lost downtime POST response, stale Alert, wrong source, wrong route and a late/unknown app-stop response. **Observe:** failed suppression still produces the exact owned-app start attempt; unknown outcomes preserve intent, uncertainty and closed admission; no blind duplicate POST; wrong ownership/routing produces no fault mutation; the monotonic Alert observation stops at180seconds. The injected clock is explicitly simulation evidence.
+6. **Action:** start actual `Host.cycle` in a disposable child with a controlled `invoke` boundary, kill it after the durable phase becomes recovering, then run a replacement with a different synthetic boot ID. **Observe:** it invokes recover before inspect/new admission; its flock is released by process death without deleting the lease; the unrelated child survives. Test provider-adapter hang/cancellation separately and inspect cleanup. This proves process-level behavior only, not Docker termination, systemd restart or VM reboot.
+7. Cleanup only driver-owned sockets/processes/directories; retain a redacted action ledger with source SHA, scenario, pre/post phase, observed mutation names, timestamps and independent assertion results. No credentials, storage dumps or raw provider bodies. Native workflow completion must link this ledger; `npm test` output alone is not workflow acceptance.
+
+Actual cloud OS Login denial, IAP/IAM permission, Datadog scopes/readback/intake, Docker isolation, installed systemd/firewall units and VM reboot remain unsupported by these fixtures and separately pending. The parent foundation's reusable fixture can establish source-release workflow separately; it is not a substitute for this trigger workflow. Screenshots must retain their actual sandbox/cloud provenance; reserved cloud slots remain empty. No video is required.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+### Integration follow-up: stale installer guard
+
+The trigger now refuses admission while any stage14 installer container remains, including a stopped/unknown installer requiring explicit reconciliation. In recovery, that condition disables the provider adapter through a fixed trusted controller setting and still launches exact-app restoration; it cannot silently race an unfinished management write. The public protocol cannot select that setting. A controlled host-command regression proves no management refresh/provider path is taken in that case and the restoration worker is still invoked. Real flock tests also show that recurring lifecycle ownership can coexist with the trigger maintenance gate, while a competing management owner is excluded until process death releases the gate.
+
+Raw comparison against monitoring ccaf5b8 includes three unchanged inherited foundation paths: docs/briefs/13-gcp-foundation-release.md, tests/cloud-release.test.mjs and tests/fixtures/cloud-release.mjs. They match afbde6c9 byte-for-byte. The trigger's own scope is evaluated against the combined parent tree, not by adding those foundation paths to brief15. Final publication still requires main-merged parents.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+### Final checks for the supplied parent interfaces
+
+Fresh `npm test`:608 passed, exit0 (earlier merged pass606 passed). Final trigger/operator focused run22 passed, exit0; combined affected suite98 passed before the final two operator cases, covered again by the full suite. Fresh typecheck and29 unchanged goldens passed, exit0. Bash/Python syntax and diff checks passed. Prior28 checkout/persistence browser cases and17 Terraform mocks are reused after confirming their source/tests/configuration/packages/locks have no diff from4b85627. This turn did not start a browser/service or execute live systemd/provider operations.
+
+Scope comparison against the combined published parent tree has17 trigger-owned paths, all within the23-path ALLOW list and below30. Raw monitoring-only comparison has20 paths, including the three inherited foundation files above; the unmodified scope script therefore reports those inherited paths outside brief15. No fixture path was added, no review count substituted, and no parent merge/publication gate is claimed complete.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
