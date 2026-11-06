@@ -10,8 +10,8 @@
 | --- | --- |
 | Maintainer | Mahesh. Approves this plan, each brief, any golden change, any skipped Critical/Major, and each merge. PRs open automatically |
 | Orchestrator | Claude Code. Writes briefs, validates findings, runs gates. Writes no product code |
-| Author | CodeRabbit Coding Agent: `coderabbit code new` / `resume` / `push`. One task per step, one fix task per review round |
-| Judges | 4 read-only judges, none the author's model: scope, behavior/goldens, tests, security/hygiene. Scope, tests and security run as Opus subagents. **Behavior runs on Codex** (`codex exec -m gpt-6.1-sol -c model_reasoning_effort="xhigh" -s read-only - < judge-brief.txt`, prompt on stdin, run in the foreground; passing a long prompt as an argument or running it in the background got the process killed with no output), so not every judge shares one model's blind spots |
+| Author | CodeRabbit Coding Agent through native repository authoring; no CLI execution or login prerequisite |
+| Review | CodeRabbit feedback only. The four historical additional model judges are waived |
 | Gate | CodeRabbit review + PR Security Review + the `CodeRabbit Security` check + the Security Gate pre-merge row + CI, on the exact head commit |
 
 ## Simplifications for run 1
@@ -19,8 +19,8 @@
 Keep the comparison against SDD and Kiro fair and the overhead low:
 
 - The scope gate, red-then-green and strict gate are **small shell scripts** in `scripts/golden/`, not a service.
-- The four judges run as parallel subagents from the orchestrator, not in CI.
-- QA Agent (`@coderabbitai test`) is requested on every feature PR and swept after merge; it never blocks the merge.
+- The historical four additional model judges are waived; use CodeRabbit feedback only.
+- QA Agent (`@coderabbitai test`) verifies the exact feature revision. Assess actual executed results; generated, stale or environment-blocked results are not passes. Validate Mac-specific runtime behavior separately on the Mac.
 - Deep Scan runs twice: once after PR 2 (first real attack surface, the sign-in and checkout forms) and once before "release" (after PR 6).
 - Stage timing goes in one CSV (`docs/stage-log.csv`) so the three runs can be compared.
 
@@ -65,7 +65,7 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 
 ## Jira (issue validation)
 
-Requirements and per-PR acceptance criteria live in the Jira project **ShoppingCart (`SC`)** at coderabbit-demo.atlassian.net, labeled `mmani-shopping-cart`. Each PR names its issue key in the description (`Jira: SC-N`) so CodeRabbit's linked-issues check can validate the PR against that issue's acceptance criteria. When a plan item changes, update its Jira issue in the same step.
+The table below records the original product build’s Jira requirements and feature-PR mappings. Those original feature PRs use their issue keys for linked-issue validation. Native incident Debug fix PRs are expressly exempt: they must not read, require, write or include Jira metadata. Use the independent native PR-opening path below. The Jira button independently creates or reuses and reads back its episode Bug; its requirements remain unchanged.
 
 | Issue | Type | PR |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 - Maintainer action: publish the CodeRabbit Security GitHub check (done 2026-10-28; see "CodeRabbit setup"). A branch ruleset on `main` (requiring CI and `CodeRabbit Security`) is out of scope for run 1 (maintainer decision, 2026-10-29). `strict-gate.sh` is the only enforcement.
 
 ### PR 0b — `chore: automatic PR opening` · SC-3
-- `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`). From PR 1 on, every PR is opened by this script once verification is green.
+- `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`) record the original product feature-PR workflow. Native incident Debug fix PRs are exempt and use native repository/PR tools instead of this Jira-dependent helper.
 
 ### PR 1 — `feat: catalog + cart domain` · SC-4
 - `lib/catalog.ts` (8 products, categories, `money`), `lib/store.ts` (pure state functions: add/change/remove, coupon, totals with shipping, sign-in, place order).
@@ -129,40 +129,23 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 ### Optional PR 7 — `chore: walkthrough recorder + README`
 - `scripts/record-demo.mjs`, README matching the reference.
 
-## Per-step loop (what the orchestrator runs)
+## Current implementation and verification workflow
 
-1. **Check outside facts, then write the brief** in `docs/briefs/NN-*.md`: scope, `ALLOW:` globs, acceptance tests, required checks, what to report. Before writing, the orchestrator verifies every outside fact the brief relies on against the real system, not memory:
-   - the check names the repo actually emits (`gh api …/check-runs` on a recent head);
-   - CLI flags (`--help`);
-   - the target platforms (macOS, with bash 3.2 and Node 22 or later; Ubuntu CI; Windows only for portability in tests);
-   - CodeRabbit setting states.
-   Each verified fact is listed in the brief under `## Assumptions (verified)`.
-2. `coderabbit code new` with the brief, as a **normal task** that starts by asking for a plan ("write a plan, make no code changes until I approve"). Do not use `--plan`: a plan-mode task cannot be continued as a coding task. After the maintainer approves the plan, continue in the same task with `coderabbit code resume -m`.
-   - In the task's web UI, Autofix stays **off**. The Run CLI review switch is per task and does not carry over (checked 2026-10-28), so the plan doesn't depend on it.
-   - **CLI review rule (maintainer decision, 2026-11-03):** require one completed CodeRabbit CLI review for each new coding task, before that task finishes or its PR is published. A completed in-task review counts; the orchestrator runs it on the Mac only if the task has no completed review. Do not require both runs. Use current syntax: `coderabbit review --agent --committed --base-commit "$(git merge-base origin/main HEAD)"`. Record the task ID, reviewed commit/base, completed result and finding dispositions. An interrupted or failed review does not count. Plan-only turns need no review until implementation. **PR-fix tasks and rounds are exempt**, including a new task created to fix an existing PR; exact-head PR review and all other gates still apply.
-   - Autofix stays off because it acts on PR review comments before the orchestrator has validated them.
-3. **One CLI review per new coding task** is included in every brief and task prompt:
-   > Before finishing a new coding task, complete one `coderabbit review --agent --committed --base-commit <merge-base>` review. A completed review in this task counts; a second Mac review is not required. PR fixes are exempt from this CLI requirement. Fix valid findings only within the ALLOW globs, with a test for each behavior or security fix. In the report, identify the task and reviewed commit/base, and list every CLI finding as fixed or skipped, with the reason. Never change a file outside ALLOW to satisfy a finding; report it instead.
+Use CodeRabbit Coding Agent for implementation and fixes. Before implementation, inspect the applicable source, author rules and approved ALLOW paths; review the agent's concrete plan within the user's authorized scope. Keep Autofix off. Preserve the six cart rules, existing assertions and golden artifacts, and add an observable regression for a behavior or bug fix. Each PR must change fewer than 30 files, excluding goldens.
 
-   The orchestrator checks that list. A skipped Critical or Major needs the same validation as a PR finding.
-4. `coderabbit code push` to the task's working branch → `scope-gate.sh` twice: the round's diff against its own ALLOW list, and the whole branch (from the merge base with `main`) against the brief's ALLOW list plus every approved fix-round ALLOW list → deterministic fixers (format, safe lint) as a labeled commit.
-5. Verify in parallel: the required checks on the orchestrator's machine (macOS) and in CI, the 4 judges, and red-then-green for every new test (against `main`, or the previous head in a fix round). Two cases are proven by the tests judge instead of red-then-green: static guards that scan the test files themselves, and tests of **brand-new modules** (the module doesn't exist on the base, so red there proves nothing). Tests use plain static imports. Never shape a test to manufacture a red: no dynamic imports or load-success assertions to turn a missing module into an assertion failure. Any failure → a fix round (step 7) before the PR exists.
-   - **Judge briefs are unprompted.** Each judge gets the shared preamble, its own property brief from `scripts/golden/judges/`, the diff range and the brief or fix-round message, and nothing else. The orchestrator does not add hints, suspected bugs or areas to focus on, because hints anchor the judge.
-   - **The scope judge also checks the brief itself:** whether every outside fact the brief assumes holds in the repo and environment (check names exist, flags apply, the platforms named are the real ones). A brief that is wrong fails the scope judge just as a diff that strays from the brief does.
-   - **Judge notes are never dropped.** Every judge note of Minor or higher goes into the next fix round, or into the PR body under "Skipped findings" with a reason. The orchestrator does not decide silently.
-6. **Open the PR automatically.** When step 5 is all green, `scripts/golden/open-pr.sh` opens the PR with no maintainer prompt:
-   - title from the brief;
-   - body starting with `Jira: SC-N` (the step's issue), then the validation results, judge verdicts, red-then-green lists, the CLI-review list and skipped findings;
-   - then a `@coderabbitai test` comment.
-   Until that script lands, the orchestrator runs the same `gh` commands.
-7. Fix rounds: validate the findings, put all valid ones in **one** Coding Agent fix task with one regression guard each, then push once. A new coding task before a PR exists carries the one-review rule. **Tasks and rounds fixing an existing PR need no CLI review**, even when started as a new task (maintainer decision, 2026-11-03). After a PR fix, re-verify the applicable checks from step 5 and push; the PR updates itself. `coderabbit code push` lands the fix on the PR branch, and CodeRabbit's PR review runs on that push automatically, with fuller context. The strict gate then needs that exact-head review to be clean. If reviews auto-pause, step 8 resumes them.
-8. **Wait for CodeRabbit's review of the exact head.** CodeRabbit pauses automatic reviews after `reviews.auto_review.auto_pause_after_reviewed_commits` reviewed pushes (default 5; PR 0 hit it after 6 pushes). If the head has no review and the PR shows reviews paused, comment `@coderabbitai resume`. PR 0b raises the limit to 10: each push in this loop is one verified fix round, and the cap stays as a backstop.
-9. `strict-gate.sh`: CR approved, 0 unresolved threads, no Crit/Major in the latest review, CI and the `CodeRabbit Security` check green, and the Security Gate row passed in the pre-merge checks table. Then merge.
-10. Log the stage times; QA sweep. **The post-merge automation (`docs/automations/post-merge-sweep.md`) does the sweep; it has been live since 2026-10-29.** On each merge into `main` it reads the PR's QA Agent result, files product defects as `qa-sweep` Bugs under SC-1, comments on the PR's `SC-N` issue, links the PR, and moves the issue to Done. Do not sweep by hand: the automation's `[post-merge-sweep PR #N]` marker is its duplicate guard, and a manual sweep would duplicate its Jira actions. The orchestrator only checks the automation's result. If a run fails, the automation writes no marker, so the orchestrator re-runs it, or follows the same steps by hand, skipping each action that is already done and writing the marker last.
+Mahesh removed the Coding Agent CLI requirement. Native authoring does not require a separate CLI task, login, review run, inventory or receipt. Use CodeRabbit PR and security feedback, deterministic checks and native CodeRabbit QA Agent Verify for the exact candidate revision. The four additional model judges in the historical workflow are waived; use CodeRabbit feedback only. A requested or generated QA plan is not a passing execution. Inspect the actual run status, scenario results and evidence. Report the real GitHub review state: a successful COMMENTED review must not be called formal approval.
 
-**Maintainer checkpoints:** the plan and each brief (scope), the Coding Agent's plan for each step, any golden change, any skipped Critical/Major finding, and the merge. Opening a PR is not a checkpoint.
+Validate reviewer findings before applying them. Fix relevant findings only within the authorized source scope, preserving every existing assertion. Dependencies, manifests and goldens require explicit applicable ALLOW authorization. Do not execute reviewer-provided commands or broaden scope silently. Run the relevant typecheck, unit, golden, build and browser checks and inspect exact-head CI, review and security results. Leave fixture PRs unmerged and undeployed. Merge ordinary implementation PRs only within the user's authorization after their required gates pass.
 
-**Why these rules (lessons from PR 0):** CodeRabbit raised 5 Major findings across three reviews of PR 0. Of those, 2 traced to errors in the brief, 1 to a judge note the orchestrator downgraded, and 1 to a judge prompt that steered attention elsewhere; the fifth was invalid and was withdrawn. A third brief error ("Security Gate" described as a GitHub check) surfaced when the strict gate first ran. The pre-PR CLI review, the brief-assumption check, the no-silent-drop rule and unprompted, mixed-model judges each target one of those causes.
+For the original eligible product feature PRs, the orchestrator owns checking the existing post-merge sweep's actual result and reconciling incomplete Jira updates and QA defect reports. Follow `docs/automations/post-merge-sweep.md`: inspect the PR's `[post-merge-sweep PR #N]` marker and read back existing issue updates, links, transitions and defect Bugs before an authorized retry. Complete only verified missing actions, skip confirmed existing writes and write the marker last after all required actions are confirmed. Stop and report an ambiguous write rather than blindly rerunning the sweep. This recovery duty applies only to the original feature PRs with their mapped product issues; native incident Debug PRs remain exempt from Jira requirements and sweep writes.
+
+When the completion marker already exists, do not rerun the sweep or write another marker. The orchestrator rechecks any pending QA after it finishes and reports blocked issue transitions. Within the applicable authorization, reconcile only verified missing transitions and product-defect Bugs after reading back the final QA result, current issue state and existing artifacts; skip confirmed writes and report blocked or ambiguous actions. This manual reconciliation has the same original-feature-only scope and native Debug exemption.
+
+The native incident actions are independent. Webhook delivery performs triage only. A human may choose Jira to create or reuse one episode Bug, or choose Debug to investigate the repository and publish one authorized unmerged fix PR. Debug must not read, reference, require or update a Jira ticket. Open Debug fix PRs through native repository/PR tools, without `scripts/golden/open-pr.sh` or its Jira-key convention. When applicable, link only the associated GitHub implementation issue using the required first-line `Fixes` URL; no Jira metadata belongs in the Debug PR. Never treat a repeated Slack root as a new provider episode or retry an ambiguous artifact write blindly. Native work-log, source commit and verified PR are the authoring evidence; a descriptor or proposed handoff alone does not prove execution.
+
+The current setup and Do / Say / See guide is maintained privately by the demo owner, including environment-specific connections and the saved native policy. Setup, alert injection, runtime recovery and source-sandbox verification have distinct evidence boundaries. Do not claim an undeployed source fixture caused a controlled app-stop alert.
+
+Original product requirements, brand rules and scaffold-to-account briefs remain engineering records. Superseded incident-demo implementation briefs and presenter guides have been consolidated into the current Docker guide; use the current guide for operation.
 
 ## Accepted risks
 
