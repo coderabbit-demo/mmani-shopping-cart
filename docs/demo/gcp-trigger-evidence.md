@@ -153,6 +153,10 @@ A separate standalone offline workflow driver called the actual APIs and made fi
 Monitoring parent `8f91bc3a35af30979b8e28650a1ff86485fdfd2b` is integrated by merge `28e6b52f52a302b636f93c5a4c5d8b80465eb5c1` after the actual trigger fixture source `d2678968f7dce253f7a8d3410e70324b9f6b500a`. This supersedes earlier preliminary parent identities. The parent already includes foundation `afbde6c9c1d946989918ce5187bae194cc1a0b68`; neither parent is claimed main-merged or live accepted. The merge preserves the independent trigger core, fixture, cost worksheet and every parent assertion. The inherited heartbeat test waits for actual child readiness/progress, exercises both zero and700ms late startup, and awaits owned-process cleanup; this is real local process evidence, not VM boot or provider evidence. Its author's RED/GREEN and585-unit report are external receipts, not this task's execution results.
 
 The diff against that exact monitoring parent has18 paths within the24-path brief; the three previously inherited foundation paths are now part of the base. Real source SHA is recorded separately from fixture synthetic source/boot/provider identities. Native Verify must still independently invoke the APIs and inspect durable intents/returns/calls; unit totals do not replace workflow evidence.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ef4b3024e6eb1c3665db08c71016f2f17f6c23825e56e321cc120e76b6aedaf5 -->
+
 
 ## Access receipt and named-resource prerequisites — November 6, 2026
 
@@ -171,6 +175,15 @@ Before separately approved live operations, an already-authorized administrator 
 These are blockers to establish through existing authorized administration, not instructions to acquire roles, widen identities, guess a group/tester or relax private access. No provider writes occurred here. Mahesh administrator success cannot prove denied non-admin/presenter access; that remains a separate live gate. The $44.19 dated illustration and $100 allowance are unchanged and neither establishes permission readiness. The seven-day allowance begins only at actual first consumption; the hard delivery-window admission cutoff independently still requires reviewed renewal for later activation.
 
 
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+### Integration validation observed in this task
+
+On merge `28e6b52f52a302b636f93c5a4c5d8b80465eb5c1` with the final handoff/evidence edits, Node24.22.2 and unchanged locked dependencies: `npm test` exited0 with615 passed, zero failed/skipped; `node --test tests/cloud-monitoring.test.mjs tests/cloud-trigger.test.mjs tests/cloud-operator.test.mjs tests/demo-baseline.test.mjs` exited0 with93 passed. This includes both deterministic heartbeat-delay cases and original local-demo assertions. The Mac's reported earlier parallel581/583 result and serial diagnosis are separate external observations; this Linux pass does not resolve or relabel those Mac results.
+
+The standalone offline fixture driver exited0 with five independently asserted observations and142 API-call records. It checked readiness, durable stop intent/checkout-only exposure, restoration with health uncertainty retained, separate recovery to broad protection/complete state, and custody removal. Actual code SHA and synthetic fixture identity are separate in its output. This is not native QA Verify or cloud acceptance. Scope-gate and whitespace checks passed;18 paths against the final monitoring parent are within24 ALLOW entries. Prior typecheck,29 goldens,28 shopper browser cases and17 Terraform mocks are reused from the validation record because their source/test/config/runtime inputs are unchanged; they were not rerun. No new screenshot or live claim is made. Publication remains pending the parent-main/QA checkpoints and the Mac's one review of the whole final diff.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
