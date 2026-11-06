@@ -10,8 +10,8 @@
 | --- | --- |
 | Maintainer | Mahesh. Approves this plan, each brief, any golden change, any skipped Critical/Major, and each merge. PRs open automatically |
 | Orchestrator | Claude Code. Writes briefs, validates findings, runs gates. Writes no product code |
-| Author | CodeRabbit Coding Agent: `coderabbit code new` / `resume` / `push`. One task per step, one fix task per review round |
-| Judges | 4 read-only judges, none the author's model: scope, behavior/goldens, tests, security/hygiene. Scope, tests and security run as Opus subagents. **Behavior runs on Codex** (`codex exec -m gpt-6.1-sol -c model_reasoning_effort="xhigh" -s read-only - < judge-brief.txt`, prompt on stdin, run in the foreground; passing a long prompt as an argument or running it in the background got the process killed with no output), so not every judge shares one model's blind spots |
+| Author | CodeRabbit Coding Agent through native repository authoring; no CLI execution or login prerequisite |
+| Review | CodeRabbit feedback only. The four historical additional model judges are waived |
 | Gate | CodeRabbit review + PR Security Review + the `CodeRabbit Security` check + the Security Gate pre-merge row + CI, on the exact head commit |
 
 ## Simplifications for run 1
@@ -19,8 +19,8 @@
 Keep the comparison against SDD and Kiro fair and the overhead low:
 
 - The scope gate, red-then-green and strict gate are **small shell scripts** in `scripts/golden/`, not a service.
-- The four judges run as parallel subagents from the orchestrator, not in CI.
-- QA Agent (`@coderabbitai test`) is requested on every feature PR and swept after merge; it never blocks the merge.
+- The historical four additional model judges are waived; use CodeRabbit feedback only.
+- QA Agent (`@coderabbitai test`) verifies the exact feature revision. Assess actual executed results; generated, stale or environment-blocked results are not passes. Validate Mac-specific runtime behavior separately on the Mac.
 - Deep Scan runs twice: once after PR 2 (first real attack surface, the sign-in and checkout forms) and once before "release" (after PR 6).
 - Stage timing goes in one CSV (`docs/stage-log.csv`) so the three runs can be compared.
 
@@ -65,7 +65,7 @@ The reference supplies scope, UX flows and copy only. Its beige look does not ca
 
 ## Jira (issue validation)
 
-Requirements and per-PR acceptance criteria live in the Jira project **ShoppingCart (`SC`)** at coderabbit-demo.atlassian.net, labeled `mmani-shopping-cart`. Each PR names its issue key in the description (`Jira: SC-N`) so CodeRabbit's linked-issues check can validate the PR against that issue's acceptance criteria. When a plan item changes, update its Jira issue in the same step.
+The table below records the original product build’s Jira requirements and feature-PR mappings. Those original feature PRs use their issue keys for linked-issue validation. Native incident Debug fix PRs are expressly exempt: they must not read, require, write or include Jira metadata. Use the independent native PR-opening path below. The Jira button independently creates or reuses and reads back its episode Bug; its requirements remain unchanged.
 
 | Issue | Type | PR |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ Requirements and per-PR acceptance criteria live in the Jira project **ShoppingC
 - Maintainer action: publish the CodeRabbit Security GitHub check (done 2026-10-28; see "CodeRabbit setup"). A branch ruleset on `main` (requiring CI and `CodeRabbit Security`) is out of scope for run 1 (maintainer decision, 2026-10-29). `strict-gate.sh` is the only enforcement.
 
 ### PR 0b — `chore: automatic PR opening` · SC-3
-- `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`). From PR 1 on, every PR is opened by this script once verification is green.
+- `scripts/golden/open-pr.sh` plus tests (brief: `docs/briefs/00b-open-pr.md`) record the original product feature-PR workflow. Native incident Debug fix PRs are exempt and use native repository/PR tools instead of this Jira-dependent helper.
 
 ### PR 1 — `feat: catalog + cart domain` · SC-4
 - `lib/catalog.ts` (8 products, categories, `money`), `lib/store.ts` (pure state functions: add/change/remove, coupon, totals with shipping, sign-in, place order).
@@ -137,7 +137,7 @@ Mahesh removed the Coding Agent CLI requirement. Native authoring does not requi
 
 Validate reviewer findings before applying them. Fix relevant findings only within the authorized source scope, preserving every existing assertion. Dependencies, manifests and goldens require explicit applicable ALLOW authorization. Do not execute reviewer-provided commands or broaden scope silently. Run the relevant typecheck, unit, golden, build and browser checks and inspect exact-head CI, review and security results. Leave fixture PRs unmerged and undeployed. Merge ordinary implementation PRs only within the user's authorization after their required gates pass.
 
-The native incident actions are independent. Webhook delivery performs triage only. A human may choose Jira to create or reuse one episode Bug, or choose Debug to investigate the repository and publish one authorized unmerged fix PR. Debug must not read, reference, require or update a Jira ticket. Never treat a repeated Slack root as a new provider episode or retry an ambiguous artifact write blindly. Native work-log, source commit and verified PR are the authoring evidence; a descriptor or proposed handoff alone does not prove execution.
+The native incident actions are independent. Webhook delivery performs triage only. A human may choose Jira to create or reuse one episode Bug, or choose Debug to investigate the repository and publish one authorized unmerged fix PR. Debug must not read, reference, require or update a Jira ticket. Open Debug fix PRs through native repository/PR tools, without `scripts/golden/open-pr.sh` or its Jira-key convention. When applicable, link only the associated GitHub implementation issue using the required first-line `Fixes` URL; no Jira metadata belongs in the Debug PR. Never treat a repeated Slack root as a new provider episode or retry an ambiguous artifact write blindly. Native work-log, source commit and verified PR are the authoring evidence; a descriptor or proposed handoff alone does not prove execution.
 
 The current setup and Do / Say / See guide is maintained privately by the demo owner, including environment-specific connections and the saved native policy. Setup, alert injection, runtime recovery and source-sandbox verification have distinct evidence boundaries. Do not claim an undeployed source fixture caused a controlled app-stop alert.
 
