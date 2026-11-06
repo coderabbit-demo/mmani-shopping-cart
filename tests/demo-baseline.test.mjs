@@ -664,3 +664,50 @@ test('Compose gives the app the reserved browser alias and fixes checker navigat
   assert.equal(services.checker.environment.CHECKER_URL, 'http://deskdrop.test:3000', 'bare app is an HSTS domain, not a valid private HTTP browser endpoint');
   assert.ok(services.app.networks.isolated.aliases.includes('deskdrop.test'));
 });
+
+test('zero release identities cannot authorize host installation or deployment', async () => withArtifacts(async dir => {
+  const calls = [], run = fakeRun(calls);
+  const invalid = { ...release, appDigest: `sha256:${'0'.repeat(64)}` };
+  await put(dir, 'release.json', invalid);
+  await allowDeploy(dir);
+  for (const name of ['host-install', 'deploy']) await assert.rejects(action(name, [], run, { artifacts: dir }));
+  assert.equal(calls.filter(x => x.file === 'gcloud').length, 0);
+}));
+
+test('foundation plan needs no build but its applied receipt cannot authorize publication', async () => withArtifacts(async dir => {
+  const calls = [], run = fakeRun(calls), backendFile = path.join(dir, 'backend.json');
+  await put(dir, 'bootstrap-applied.json', { commit, planHash });
+  await put(dir, 'foundation.tfvars.json', { project_id: 'se-demos-project', region: 'us-central1', zone: 'us-central1-a', environment: 'demo', phase: 'foundation' });
+  await put(dir, 'backend.json', { backend: { type: 'gcs', config: { bucket: 'se-demos-project-deskdrop-tfstate', prefix: 'deskdrop/demo' } } });
+  const result = await action('plan', ['foundation'], run, { artifacts: dir, backendFile });
+  assert.equal(result.phase, 'foundation');
+  assert.ok(calls.some(x => x.file === 'terraform' && x.args[0] === '-chdir=infra/terraform'));
+  await put(dir, 'terraform-applied.json', { commit, planHash, phase: 'foundation' });
+  await put(dir, 'build.json', { commit, ids: { app: appDigest, checker: checkerDigest }, manifests: { app: appDigest, checker: checkerDigest } });
+  await put(dir, 'publication-approval.json', { commit, appDigest, checkerDigest, approved: true, owner: 'operator' });
+  await assert.rejects(action('publish', [], run, { artifacts: dir }));
+  assert.equal(calls.filter(x => x.file === 'docker').length, 0);
+}));
+
+test('zero manifest cannot publish even when every approval and inspected image matches', async () => withArtifacts(async dir => {
+  const zero = `sha256:${'0'.repeat(64)}`, calls = [], base = fakeRun(calls);
+  await put(dir, 'build.json', { commit, ids: { app: zero, checker: zero }, manifests: { app: zero, checker: zero } });
+  await put(dir, 'terraform-applied.json', { commit, planHash });
+  await put(dir, 'publication-approval.json', { commit, appDigest: zero, checkerDigest: zero, approved: true, owner: 'operator' });
+  const run = async (file, args, options) => {
+    if (file === 'docker') { calls.push({ file, args, options }); return args[0] === 'image' ? zero : args[0] === 'push' ? `digest: ${zero}` : ''; }
+    return base(file, args, options);
+  };
+  await assert.rejects(action('publish', [], run, { artifacts: dir }));
+  assert.equal(calls.filter(x => x.file === 'docker' && x.args[0] === 'push').length, 0);
+}));
+
+test('typed cloud release cannot use legacy Terraform plan or deployment bypasses', async () => withArtifacts(async dir => {
+  const calls = [], run = fakeRun(calls);
+  await put(dir, 'release.json', { ...release, phase: 'release', evidenceHash: 'e'.repeat(64) });
+  await allowDeploy(dir);
+  for (const name of ['host-install', 'deploy']) await assert.rejects(action(name, [], run, { artifacts: dir }));
+  await put(dir, 'release.tfvars.json', { project_id: 'se-demos-project', region: 'us-central1', zone: 'us-central1-a', environment: 'demo', phase: 'release', cloud_release: true, image_digest: imageFixture });
+  await assert.rejects(action('plan', ['release'], run, { artifacts: dir }));
+  assert.equal(calls.filter(x => ['terraform', 'gcloud'].includes(x.file)).length, 0);
+}));

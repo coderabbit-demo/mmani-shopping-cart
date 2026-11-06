@@ -1,0 +1,39 @@
+{
+  "steps": [
+    {
+      "name": "gcr.io/cloud-builders/docker@sha256:91eaff0806a70dc0b3c853191a2da9995b2aa88d9b24196182344a4cef633603",
+      "entrypoint": "bash",
+      "args": [
+        "-ceu",
+        "docker buildx version\ndocker buildx inspect --bootstrap\nfor kind in app checker; do file=Dockerfile; [ \"$$kind\" != checker ] || file=deploy/checker.Dockerfile; docker buildx build --platform=linux/amd64 --provenance=false --build-arg SOURCE_COMMIT=${_SOURCE_COMMIT} --output type=oci,dest=/workspace/$$kind.oci.tar -f \"$$file\" .; done"
+      ]
+    },
+    {
+      "name": "node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607",
+      "entrypoint": "node",
+      "args": [
+        "scripts/demo/cloud-release.mjs",
+        "worker-verify",
+        "${_SOURCE_COMMIT}"
+      ]
+    }
+  ],
+  "artifacts": {
+    "objects": {
+      "location": "gs://se-demos-project-deskdrop-artifacts/${_SOURCE_COMMIT}/$BUILD_ID/",
+      "paths": [
+        "app.oci.tar",
+        "checker.oci.tar",
+        "worker-receipt.json"
+      ]
+    }
+  },
+  "serviceAccount": "projects/se-demos-project/serviceAccounts/deskdrop-build@se-demos-project.iam.gserviceaccount.com",
+  "options": {
+    "logging": "CLOUD_LOGGING_ONLY",
+    "sourceProvenanceHash": [
+      "SHA256"
+    ]
+  },
+  "timeout": "1800s"
+}

@@ -1,5 +1,8 @@
+# Foundation legitimately has no image identity. Use the same GCS backend/prefix.
 project_id   = "se-demos-project"
 region       = "us-central1"
 zone         = "us-central1-a"
 environment  = "demo"
-image_digest = "us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+phase        = "foundation"
+# For release: phase="release", cloud_release=true and image_digest from the
+# verified owned immutable app digest. Never put a placeholder digest in a plan.

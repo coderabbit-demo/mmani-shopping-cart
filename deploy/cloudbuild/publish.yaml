@@ -1,0 +1,41 @@
+{
+  "steps": [
+    {
+      "name": "node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607",
+      "entrypoint": "node",
+      "args": [
+        "scripts/demo/cloud-release.mjs",
+        "worker-stage",
+        "${_SOURCE_COMMIT}"
+      ]
+    }
+  ],
+  "artifacts": {
+    "oci": [
+      {
+        "file": "/workspace/oci/app",
+        "registryPath": "https://us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop",
+        "tags": [
+          "${_SOURCE_COMMIT}",
+          "approved-current"
+        ]
+      },
+      {
+        "file": "/workspace/oci/checker",
+        "registryPath": "https://us-central1-docker.pkg.dev/se-demos-project/deskdrop/checker",
+        "tags": [
+          "${_SOURCE_COMMIT}",
+          "approved-current"
+        ]
+      }
+    ]
+  },
+  "serviceAccount": "projects/se-demos-project/serviceAccounts/deskdrop-publisher@se-demos-project.iam.gserviceaccount.com",
+  "options": {
+    "logging": "CLOUD_LOGGING_ONLY",
+    "sourceProvenanceHash": [
+      "SHA256"
+    ]
+  },
+  "timeout": "600s"
+}

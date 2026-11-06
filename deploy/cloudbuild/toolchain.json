@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "architecture": "linux/amd64",
+  "builder": "gcr.io/cloud-builders/docker@sha256:91eaff0806a70dc0b3c853191a2da9995b2aa88d9b24196182344a4cef633603",
+  "node": "node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607",
+  "publication": "cloud-build-artifacts.oci",
+  "requiredCapabilities": {
+    "build": [
+      "amd64",
+      "oci-export-without-load"
+    ],
+    "publish": [
+      "amd64",
+      "native-oci-digest-preservation"
+    ]
+  },
+  "execution": "blocked-until-capability-receipt"
+}

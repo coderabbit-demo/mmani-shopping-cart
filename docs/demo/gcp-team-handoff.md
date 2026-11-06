@@ -1,6 +1,22 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f2babfc9d896baf352e4346e12fa5e3a05214cc0d8e379dcd1e5197b7741829d -->
+
 # Next phase: a shared GCP incident demo
 
 Move the runtime and operator trigger off Mahesh's Mac while retaining the native Datadog → CodeRabbit → Slack flow and its two independent actions. Target project: `se-demos-project`; existing baseline region/zone: `us-central1` / `us-central1-a`. This is a requirements and rollout document, not an apply or deployment approval.
+
+## Brief 13 pilot status — November 6, 2026
+
+The foundation/release extension is described in the [cloud release runbook](gcp-baseline.md#brief-13-foundation-before-cloud-release). It reuses the merged private baseline, resource addresses and GCS backend, and separates foundation, cloud build, exact-byte publication, release plan/apply and deployment. Its keyless Cloud Build identities and immutable GCS inputs remove the Mac's image-store requirement. The legacy local controller/trigger/checker/monitor contracts remain unchanged; Linux recurring monitoring and a server-side watchdog/lease are subsequent briefs. Operator disconnect is handled by retaining execution IDs and bounded readback, never blind resubmission. Concurrent presenters remain unsupported until the server lease is implemented and verified.
+
+Mahesh selected a **Mahesh-only pilot**, not team readiness, and approved $100 for the first seven days starting November 5. The team group/second presenter are deferred. The orchestrator reports healthy user/ADC, billing and quota, and absent named resources, but several project IAM/storage/IAP rights remain missing. No credential, role or provider operation was used in this coding task. Actual resource ownership/access must be rechecked by the authorized orchestrator before applying each real plan. Terraform/provider locks, pinned host packages and runtime isolation are retained; only the approved Ubuntu successor `20261104a` changes. Native OCI publication/worker capabilities remain fail-closed live prerequisites.
+
+Release receipts bind source archive/generation, build/config/toolchain/OCI digests, principals/executions, explicit publication approval, readback, saved plan/input/backend/lock, prior rollback identity and host hashes. Foundation cannot deploy. Current and prior approved releases remain tagged and protected; no destructive cleanup is provided. Keyless worker accounts do not make pilot human auth or ungranted permissions disappear. Later unattended services need their own approved identities and fixtures.
+
+GH25 is the engineering acceptance record after the real engineering Jira create 403; no fabricated SC issue is used. Exactly one Mac CLI review is pending before PR publication, then exact-head CodeRabbit PR/security/CI and conclusive native QA Verify. The four legacy external judges are not required. Sandbox browser evidence proves only the unchanged shopper flow. Private GCP/app/metadata/egress/sandbox isolation, reboot, US3 telemetry, publication and team/disconnect/competing-presenter acceptance require their separate real fixtures. Preserve all existing scenario requirements; no local substitute proves live acceptance.
+
+The future cloud US3 installation must be new and separately owned: `service:deskdrop`, `env:gcp-demo`, `demo_id:mmani-shopping-cart-gcp`, `host:deskdrop-demo`, protected random owner tag. Do not replace local monitor IDs/selectors or expose management secrets/Docker sockets to app, checker or presenters. Native Jira/Debug remain independent and authoring has no CLI-login prerequisite. Keep the custom Socket Mode bridge paused.
 
 ## Reuse the reviewed baseline
 
@@ -75,3 +91,6 @@ The phase is team-ready only after an operator other than Mahesh completes the e
 - [Terraform GCS backend](https://developer.hashicorp.com/terraform/language/backend/gcs) for state locking, existing-bucket requirements and recovery recommendations.
 - [Secret Manager access control](https://docs.cloud.google.com/secret-manager/docs/access-control) for least privilege and Compute Engine scope requirements.
 - The existing [private baseline runbook](gcp-baseline.md) and [cost worksheet](gcp-costs.md) remain the detailed deployment references.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

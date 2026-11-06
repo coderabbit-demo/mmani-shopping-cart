@@ -26,10 +26,19 @@ variable "environment" {
     error_message = "Only the demo environment is permitted."
   }
 }
-variable "image_digest" {
-  type = string
+variable "phase" {
+  type    = string
+  default = "release"
   validation {
-    condition     = can(regex("^us-central1-docker\\.pkg\\.dev/se-demos-project/deskdrop/deskdrop@sha256:[a-f0-9]{64}$", var.image_digest))
+    condition     = contains(["foundation", "release"], var.phase)
+    error_message = "Choose foundation or release explicitly."
+  }
+}
+variable "image_digest" {
+  type    = string
+  default = null
+  validation {
+    condition     = var.phase == "foundation" ? var.image_digest == null : (can(regex("^us-central1-docker\\.pkg\\.dev/se-demos-project/deskdrop/deskdrop@sha256:[a-f0-9]{64}$", var.image_digest)) && !can(regex("sha256:0{64}$", var.image_digest)))
     error_message = "Use the owned registry and a sha256 digest."
   }
 }

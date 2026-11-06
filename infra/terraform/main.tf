@@ -78,7 +78,8 @@ resource "google_artifact_registry_repository" "app" {
   location      = var.region
   repository_id = "deskdrop"
   format        = "DOCKER"
-  labels        = local.labels
+  lifecycle { prevent_destroy = true }
+  labels = local.labels
   cleanup_policies {
     id     = "delete-aged-untagged"
     action = "DELETE"
@@ -127,7 +128,7 @@ resource "google_compute_instance" "demo" {
   boot_disk {
     initialize_params {
       labels = local.labels
-      image  = "projects/ubuntu-os-cloud/global/images/ubuntu-2404-noble-amd64-v20261024"
+      image  = "projects/ubuntu-os-cloud/global/images/ubuntu-2404-noble-amd64-v20261104a"
       size   = 30
       type   = "pd-balanced"
     }

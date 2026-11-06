@@ -9,7 +9,7 @@ const defaultArtifacts = path.join(root, 'artifacts', 'gcp-baseline');
 const registry = 'us-central1-docker.pkg.dev/se-demos-project/deskdrop';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const shaPattern = /^[a-f0-9]{40}$/;
-const digestPattern = /^sha256:[a-f0-9]{64}$/;
+const digestPattern = /^sha256:(?!0{64}$)[a-f0-9]{64}$/;
 const image = (name, digest) => `${registry}/${name}@${digest}`;
 const fail = () => { throw new Error('Operation failed or prerequisite invalid'); };
 
@@ -20,7 +20,8 @@ export async function command(file, args, { timeout = 120000, input, binary = fa
   for (const key of Object.keys(env)) if (/^(DD_|DATADOG_)/i.test(key)) delete env[key];
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { cwd: root, env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
-    let output = Buffer.alloc(0), done = false, interrupted, escalation;
+    const chunks = [];
+    let outputSize = 0, done = false, interrupted, escalation;
     const send = signal => {
       if (!child.pid) return;
       try { process.platform === 'win32' ? child.kill(signal) : process.kill(-child.pid, signal); } catch {}
@@ -44,10 +45,10 @@ export async function command(file, args, { timeout = 120000, input, binary = fa
     const timer = setTimeout(() => { send('SIGKILL'); end(true); }, timeout);
     process.on('SIGINT', onInt); process.on('SIGTERM', onTerm);
     child.on('error', () => end(true));
-    child.stdout.on('data', chunk => { if (done) return; if (output.length + chunk.length > maxOutput) { send('SIGKILL'); end(true); } else output = Buffer.concat([output, chunk]); });
+    child.stdout.on('data', chunk => { if (done) return; outputSize += chunk.length; if (outputSize > maxOutput) { send('SIGKILL'); end(true); } else chunks.push(chunk); });
     child.stderr.on('data', () => {});
     if (input !== undefined) { child.stdin.on('error', () => {}); child.stdin.end(input); }
-    child.on('close', code => { if (!interrupted) end(code !== 0, binary ? output : output.toString('utf8')); });
+    child.on('close', code => { if (!interrupted && !done) { const output = Buffer.concat(chunks, outputSize); end(code !== 0, binary ? output : output.toString('utf8')); } });
   });
 }
 async function safeArtifacts(artifacts) {
@@ -108,16 +109,28 @@ const digestFromPush = text => {
   return matches[0];
 };
 function validateRelease(r) {
-  if (!r || !shaPattern.test(r.commit ?? '') || !digestPattern.test(r.appDigest ?? '') || !digestPattern.test(r.checkerDigest ?? '')) fail();
+  if (!r || (r.phase !== undefined && r.phase !== 'release') || !shaPattern.test(r.commit ?? '') || !digestPattern.test(r.appDigest ?? '') || !digestPattern.test(r.checkerDigest ?? '')) fail();
   return r;
 }
 async function remote(run, commandText, timeout = 120000) {
   return run('gcloud', ['compute', 'ssh', 'deskdrop-demo', '--project=se-demos-project', '--zone=us-central1-a', '--tunnel-through-iap', `--command=${commandText}`], { timeout });
 }
-async function deployPrerequisites(artifacts, rel) {
-  const applied = await json('terraform-applied.json', artifacts);
+async function exists(name, artifacts) {
+  try { await lstat(path.join(artifacts, name)); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+async function cloudRelease(artifacts, cloudRoot = root) {
+  return (await import('./cloud-release.mjs')).cloudAction('verify', artifacts, command, cloudRoot);
+}
+async function deployPrerequisites(artifacts, rel, cloudRoot = root, backendFile) {
+  if (rel.phase === 'foundation' || (rel.phase !== 'release' && await exists('foundation-applied.json', artifacts))) fail();
+  if (rel.phase === 'release') { const evidence = await cloudRelease(artifacts, cloudRoot); if (['phase', 'commit', 'appDigest', 'checkerDigest', 'evidenceHash'].some(k => evidence[k] !== rel[k])) fail(); }
+  const applied = await json(rel.phase === 'release' ? 'release-applied.json' : 'terraform-applied.json', artifacts);
+  if (rel.phase === 'release') {
+    const p = await json('release-plan.json', artifacts);
+    if (applied.phase !== 'release' || p.phase !== 'release' || p.which !== 'release' || p.commit !== rel.commit || p.evidenceHash !== rel.evidenceHash || applied.evidenceHash !== rel.evidenceHash || ['planHash', 'inputHash', 'backendDigest', 'lockHash'].some(k => p[k] !== applied[k]) || p.planHash !== await fileHash(path.join(artifacts, 'release.tfplan')) || p.inputHash !== await fileHash(path.join(artifacts, 'release.tfvars.json')) || p.lockHash !== await fileHash(path.join(root, 'infra/terraform/.terraform.lock.hcl')) || p.backendDigest !== await backendHash(backendFile ?? path.join(root, 'infra/terraform/.terraform/terraform.tfstate'))) fail();
+  }
   const approval = await json('deploy-approval.json', artifacts);
-  if (applied.commit !== rel.commit || !/^[a-f0-9]{64}$/.test(applied.planHash ?? '') || approval.commit !== rel.commit || approval.appDigest !== rel.appDigest || approval.checkerDigest !== rel.checkerDigest || approval.planHash !== applied.planHash || approval.secretProvisioned !== true || approval.vmReady !== true || approval.iapAuthorized !== true || approval.costApproved !== true || typeof approval.owner !== 'string' || !approval.owner.trim()) fail();
+  if ((applied.phase !== undefined && applied.phase !== 'release') || applied.commit !== rel.commit || !/^[a-f0-9]{64}$/.test(applied.planHash ?? '') || approval.commit !== rel.commit || approval.appDigest !== rel.appDigest || approval.checkerDigest !== rel.checkerDigest || approval.planHash !== applied.planHash || approval.secretProvisioned !== true || approval.vmReady !== true || approval.iapAuthorized !== true || approval.costApproved !== true || typeof approval.owner !== 'string' || !approval.owner.trim()) fail();
 }
 export async function action(name, args = [], run = command, context = {}) {
   const artifacts = context.artifacts ?? defaultArtifacts;
@@ -147,7 +160,7 @@ export async function action(name, args = [], run = command, context = {}) {
     const b = await json('build.json', artifacts);
     const applied = await json('terraform-applied.json', artifacts);
     const approval = await json('publication-approval.json', artifacts);
-    if (!shaPattern.test(b.commit ?? '') || await head(run) !== b.commit || applied.commit !== b.commit || approval.commit !== b.commit || approval.appDigest !== b.manifests?.app || approval.checkerDigest !== b.manifests?.checker || approval.approved !== true || typeof approval.owner !== 'string' || !approval.owner.trim()) fail();
+    if (!shaPattern.test(b.commit ?? '') || await head(run) !== b.commit || (applied.phase !== undefined && applied.phase !== 'release') || applied.commit !== b.commit || approval.commit !== b.commit || approval.appDigest !== b.manifests?.app || approval.checkerDigest !== b.manifests?.checker || approval.approved !== true || typeof approval.owner !== 'string' || !approval.owner.trim()) fail();
     await absent(path.join(artifacts, 'release.json'));
     const digests = {};
     for (const item of ['app', 'checker']) {
@@ -161,9 +174,17 @@ export async function action(name, args = [], run = command, context = {}) {
     await save('release.json', release, artifacts);
     return { status: 'published', ...release };
   }
-  if (name === 'plan' && args.length === 1 && ['bootstrap', 'terraform'].includes(args[0])) {
+  if (name === 'plan' && args.length === 1 && ['bootstrap', 'terraform', 'foundation', 'release'].includes(args[0])) {
     const commit = await head(run), which = args[0], input = await json(`${which}.tfvars.json`, artifacts);
-    if (which === 'terraform') {
+    if (which === 'foundation') {
+      const bootstrap = await json('bootstrap-applied.json', artifacts);
+      if (bootstrap.commit !== commit || !/^[a-f0-9]{64}$/.test(bootstrap.planHash ?? '') || Object.keys(input).sort().join(',') !== 'environment,phase,project_id,region,zone' || input.phase !== 'foundation' || input.project_id !== 'se-demos-project' || input.region !== 'us-central1' || input.zone !== 'us-central1-a' || input.environment !== 'demo') fail();
+    } else if (which === 'release') {
+      const release = validateRelease(await json('release.json', artifacts));
+      const evidence = await cloudRelease(artifacts, context.cloudRoot);
+      if (release.phase !== 'release' || ['phase', 'commit', 'appDigest', 'checkerDigest', 'evidenceHash'].some(k => evidence[k] !== release[k]) || release.commit !== commit || Object.keys(input).sort().join(',') !== 'cloud_release,environment,image_digest,phase,project_id,region,zone' || input.phase !== 'release' || input.cloud_release !== true || input.project_id !== 'se-demos-project' || input.region !== 'us-central1' || input.zone !== 'us-central1-a' || input.environment !== 'demo' || input.image_digest !== image('deskdrop', release.appDigest)) fail();
+    } else if (which === 'terraform') {
+      if (await exists('foundation-applied.json', artifacts)) fail();
       const bootstrap = await json('bootstrap-applied.json', artifacts);
       const build = await json('build.json', artifacts);
       if (bootstrap.commit !== commit || !/^[a-f0-9]{64}$/.test(bootstrap.planHash ?? '')) fail();
@@ -174,7 +195,7 @@ export async function action(name, args = [], run = command, context = {}) {
     await absent(path.join(artifacts, `${which}-plan.json`));
     let statePath;
     const backendFile = context.backendFile ?? path.join(root, 'infra/terraform/.terraform/terraform.tfstate');
-    const backendDigest = which === 'terraform' ? await backendHash(backendFile) : undefined;
+    const backendDigest = which !== 'bootstrap' ? await backendHash(backendFile) : undefined;
     if (which === 'bootstrap') {
       const config = await json('bootstrap-state.json', artifacts);
       if (Object.keys(config).length !== 1 || typeof config.statePath !== 'string' || !path.isAbsolute(config.statePath)) fail();
@@ -184,19 +205,20 @@ export async function action(name, args = [], run = command, context = {}) {
       if (!stateDir.isDirectory() || stateDir.isSymbolicLink() || stateDir.uid !== process.getuid() || (stateDir.mode & 0o077) !== 0) fail();
       try { const st = await lstat(statePath); if (!st.isFile() || st.isSymbolicLink() || st.uid !== process.getuid() || (st.mode & 0o077) !== 0) fail(); } catch (err) { if (err.code !== 'ENOENT') throw err; }
     }
-    const commandArgs = [`-chdir=infra/${which}`, 'plan', '-input=false', `-var-file=${inputPath}`, `-out=${planPath}`];
+    const commandArgs = [`-chdir=infra/${['foundation', 'release'].includes(which) ? 'terraform' : which}`, 'plan', '-input=false', `-var-file=${inputPath}`, `-out=${planPath}`];
     if (statePath) commandArgs.push(`-state=${statePath}`);
     await run('terraform', commandArgs, { timeout: 600000 });
-    const receipt = { commit, which, statePath, backendDigest, planHash: await fileHash(planPath), inputHash: await fileHash(inputPath), lockHash: await fileHash(path.join(root, 'infra', which, '.terraform.lock.hcl')) };
+    const receipt = { commit, which, ...(['foundation', 'release'].includes(which) ? { phase: which } : {}), ...(which === 'release' ? { evidenceHash: (await cloudRelease(artifacts, context.cloudRoot)).evidenceHash } : {}), statePath, backendDigest, planHash: await fileHash(planPath), inputHash: await fileHash(inputPath), lockHash: await fileHash(path.join(root, 'infra', ['foundation', 'release'].includes(which) ? 'terraform' : which, '.terraform.lock.hcl')) };
     await save(`${which}-plan.json`, receipt, artifacts);
     return { status: 'planned', ...receipt };
   }
-  if (name === 'apply' && args.length === 1 && ['bootstrap', 'terraform'].includes(args[0])) {
+  if (name === 'apply' && args.length === 1 && ['bootstrap', 'terraform', 'foundation', 'release'].includes(args[0])) {
     const which = args[0], p = await json(`${which}-plan.json`, artifacts), a = await json(`${which}-approval.json`, artifacts);
-    if (p.which !== which || p.commit !== await head(run) || p.planHash !== await fileHash(path.join(artifacts, `${which}.tfplan`)) || p.inputHash !== await fileHash(path.join(artifacts, `${which}.tfvars.json`)) || p.lockHash !== await fileHash(path.join(root, 'infra', which, '.terraform.lock.hcl'))) fail();
+    if ((which === 'foundation' ? p.phase !== 'foundation' : p.phase !== undefined && p.phase !== 'release') || p.which !== which || p.commit !== await head(run) || p.planHash !== await fileHash(path.join(artifacts, `${which}.tfplan`)) || p.inputHash !== await fileHash(path.join(artifacts, `${which}.tfvars.json`)) || p.lockHash !== await fileHash(path.join(root, 'infra', ['foundation', 'release'].includes(which) ? 'terraform' : which, '.terraform.lock.hcl'))) fail();
+    if (which === 'release' && (p.phase !== 'release' || p.evidenceHash !== (await cloudRelease(artifacts, context.cloudRoot)).evidenceHash)) fail();
     if (a.planHash !== p.planHash || a.permissionsChecked !== true || a.stateCustodyConfirmed !== true || a.costApproved !== true || typeof a.owner !== 'string' || !a.owner.trim() || typeof a.teardown !== 'string' || !a.teardown.trim()) fail();
-    if (which === 'terraform' && p.backendDigest !== await backendHash(context.backendFile ?? path.join(root, 'infra/terraform/.terraform/terraform.tfstate'))) fail();
-    const commandArgs = [`-chdir=infra/${which}`, 'apply', '-input=false'];
+    if (which !== 'bootstrap' && p.backendDigest !== await backendHash(context.backendFile ?? path.join(root, 'infra/terraform/.terraform/terraform.tfstate'))) fail();
+    const commandArgs = [`-chdir=infra/${['foundation', 'release'].includes(which) ? 'terraform' : which}`, 'apply', '-input=false'];
     if (which === 'bootstrap') {
       const config = await json('bootstrap-state.json', artifacts);
       if (p.statePath !== config.statePath || !path.isAbsolute(p.statePath) || p.statePath.startsWith(root + path.sep) || await realpath(path.dirname(p.statePath)) !== path.dirname(p.statePath)) fail();
@@ -208,12 +230,12 @@ export async function action(name, args = [], run = command, context = {}) {
     commandArgs.push(path.join(artifacts, `${which}.tfplan`));
     await absent(path.join(artifacts, `${which}-applied.json`));
     await run('terraform', commandArgs, { timeout: 1800000 });
-    await save(`${which}-applied.json`, { commit: p.commit, planHash: p.planHash }, artifacts);
+    await save(`${which}-applied.json`, { commit: p.commit, planHash: p.planHash, ...(['foundation', 'release'].includes(which) ? { phase: which, inputHash: p.inputHash, backendDigest: p.backendDigest, lockHash: p.lockHash, ...(which === 'release' ? { evidenceHash: p.evidenceHash } : {}) } : {}) }, artifacts);
     return { status: 'applied', planHash: p.planHash };
   }
   if (name === 'host-install' && args.length === 0) {
     const release = validateRelease(await json('release.json', artifacts)); if (await head(run) !== release.commit) fail();
-    await deployPrerequisites(artifacts, release);
+    await deployPrerequisites(artifacts, release, context.cloudRoot, context.backendFile);
     const bootstrap = await fileHash(path.join(root, 'deploy/bootstrap.sh')), compose = await fileHash(path.join(root, 'deploy/compose.yaml'));
     await absent(path.join(artifacts, 'host-install.json'));
     await run('gcloud', ['compute', 'scp', 'deploy/bootstrap.sh', 'deploy/compose.yaml', 'deskdrop-demo:/tmp/', '--project=se-demos-project', '--zone=us-central1-a', '--tunnel-through-iap']);
@@ -224,7 +246,7 @@ export async function action(name, args = [], run = command, context = {}) {
   }
   if (name === 'deploy' && args.length === 0) {
     const rel = validateRelease(await json('release.json', artifacts)); if (await head(run) !== rel.commit) fail();
-    await deployPrerequisites(artifacts, rel);
+    await deployPrerequisites(artifacts, rel, context.cloudRoot, context.backendFile);
     const bootstrap = await fileHash(path.join(root, 'deploy/bootstrap.sh')), compose = await fileHash(path.join(root, 'deploy/compose.yaml'));
     const installed = await json('host-install.json', artifacts);
     if (installed.commit !== rel.commit || installed.bootstrap !== bootstrap || installed.compose !== compose) fail();

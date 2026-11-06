@@ -1,10 +1,12 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:4a98224ed7fb895c9cb6504d93ddfead83826cea9fc71e4411e76c156b660310 -->
+
 <!-- coderabbit-ai-generated-section:v1:8b8c8b445ed862daa1a10e4f187bcbf6832d598e39e0b9e079260852161bc5df -->
 
 # Phase 2 cost worksheet — incomplete
 
-No price, spend limit, owner or deployment window has been approved. The operator must fill in dated prices and approve this worksheet before any apply. A budget notification does not enforce a spending cap.
+Mahesh approved a Mahesh-only pilot and up to $100 of Google Cloud use for the first seven days on November 5, 2026 (brief 13). Actual prices, line-item forecast, rehearsal/stop deadline and saved plans still need orchestrator review before apply. No cloud spend occurred in this coding task. A budget notification does not enforce a spending cap.
 
 As observed 2026-11-04, USD, before taxes or account-specific discounts. Figures are nonbinding and must be rechecked for the account and intended duration.
 
@@ -24,6 +26,8 @@ As observed 2026-11-04, USD, before taxes or account-specific discounts. Figures
 Illustrative subtotal for 730 hours is approximately $56.59 for the VM, 30 GiB disk, NAT gateway and one NAT IP. It excludes NAT data, registry, state, logging, Secret Manager, data transfer, Datadog, CodeRabbit, taxes and account discounts. Actual charges can differ.
 
 The loopback forwarder shares the existing VM and exact app image; it adds no VM, public ingress, package or separate paid service. Its memory/CPU remain part of the fixed VM estimate.
+
+Cloud Build execution minutes, the two private source/artifact buckets (including versioned OCI archives), retained current/prior releases and Cloud Logging add variable charges. No Cloud Build free-tier eligibility or price is assumed; the operator must record current account-specific rates and artifact volume before live execution. No retention cleanup is automated because it could remove the last rollback release.
 
 Record the source date, applicable pricing tier, estimated hours and traffic, total, contingency, owner, rehearsal period, teardown deadline and approved spend limit.
 

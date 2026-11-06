@@ -4,7 +4,7 @@ variables {
   region       = "us-central1"
   zone         = "us-central1-a"
   environment  = "demo"
-  image_digest = "us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  image_digest = "us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 run "private_resources" {
   command = plan
@@ -73,6 +73,6 @@ run "wrong_environment" {
 }
 run "wrong_registry" {
   command = plan
-  variables { image_digest = "us-central1-docker.pkg.dev/another-project/deskdrop/deskdrop@sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+  variables { image_digest = "us-central1-docker.pkg.dev/another-project/deskdrop/deskdrop@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
   expect_failures = [var.image_digest]
 }
