@@ -1,0 +1,236 @@
+#!/usr/bin/python3
+"""Fixed-installation protocol and durable custody for the DeskDrop operator."""
+import contextlib
+import fcntl
+import json
+import os
+import pathlib
+import pwd
+import socket
+import stat
+import struct
+import sys
+import time
+import uuid
+
+SOCKET = '/run/deskdrop/trigger.sock'
+STATE = '/var/lib/deskdrop/trigger'
+INSTALLATION = 'mmani-shopping-cart-gcp'
+CUTOFF = 1793977200
+ACTIONS = ('status', 'trigger', 'recover')
+
+
+def parse_request(raw):
+    if len(raw) > 128:
+        raise ValueError('Invalid request')
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('Duplicate field')
+            result[key] = value
+        return result
+    value = json.loads(raw, object_pairs_hook=unique)
+    if not isinstance(value, dict) or set(value) != {'action'} or value['action'] not in ACTIONS:
+        raise ValueError('Invalid request')
+    return value['action']
+
+
+def peer_uid(connection):
+    return struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+
+
+class Custody:
+    def __init__(self, directory=STATE, uid=0):
+        self.directory = pathlib.Path(directory)
+        self.uid = uid
+
+    def safe(self):
+        p = self.directory
+        if not p.is_absolute() or str(p.resolve()) != str(p):
+            raise ValueError('Unsafe custody')
+        for parent in (p, *p.parents):
+            st = parent.lstat()
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0, self.uid) or st.st_mode & 0o022:
+                raise ValueError('Unsafe custody')
+            if parent == p and (st.st_uid != self.uid or stat.S_IMODE(st.st_mode) != 0o700):
+                raise ValueError('Unsafe custody')
+
+    def open(self, name, flags):
+        if name not in ('lease.json', 'enrollment.json', 'execution.lock', 'broker.lock'):
+            raise ValueError('Invalid custody file')
+        self.safe()
+        fd = os.open(self.directory / name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != self.uid or st.st_nlink != 1 or stat.S_IMODE(st.st_mode) != 0o600 or st.st_size > 16384:
+            os.close(fd)
+            raise ValueError('Unsafe custody file')
+        return fd
+
+    def read(self, name):
+        with os.fdopen(self.open(name, os.O_RDONLY)) as stream:
+            return json.load(stream)
+
+    @contextlib.contextmanager
+    def locked(self):
+        fd = self.open('execution.lock', os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield
+        finally:
+            os.close(fd)
+
+    def save(self, record):
+        self.safe()
+        try:
+            os.close(self.open('lease.json', os.O_RDONLY))
+        except FileNotFoundError:
+            pass
+        payload = json.dumps(record, allow_nan=False).encode()
+        if len(payload) > 16384:
+            raise ValueError('Oversized lease')
+        name = self.directory / ('.lease-' + uuid.uuid4().hex)
+        fd = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(name, self.directory / 'lease.json')
+            directory = os.open(self.directory, os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            name.unlink(missing_ok=True)
+
+
+def authorize(custody, uid, lookup=pwd.getpwuid):
+    record = custody.read('enrollment.json')
+    if set(record) != {'installation', 'uid', 'username', 'subject', 'verified'} or record['installation'] != INSTALLATION or type(record['uid']) is not int or record['uid'] != uid or uid == 0 or record['verified'] is not True:
+        raise PermissionError('Actor denied')
+    account = lookup(uid)
+    if account.pw_uid != uid or account.pw_name != record['username'] or not isinstance(record['subject'], str) or not record['subject']:
+        raise PermissionError('Actor denied')
+    return record['subject']
+
+
+def lease(custody):
+    value = custody.read('lease.json')
+    if set(value) != {'schema', 'installation', 'run', 'actor', 'boot', 'started', 'deadline', 'phase', 'recoverRequested'} or value['schema'] != 1 or value['installation'] != INSTALLATION or str(uuid.UUID(value['run'])) != value['run'] or value['phase'] not in ('admitted', 'recovering', 'uncertain', 'complete') or type(value['started']) is not int or value['deadline'] != value['started'] + 360 or type(value['recoverRequested']) is not bool or not isinstance(value['actor'], str) or not value['actor'] or not isinstance(value['boot'], str) or not value['boot']:
+        raise ValueError('Lease reconciliation required')
+    return value
+
+
+class Broker:
+    def __init__(self, custody, readiness, boot, now=time.time):
+        self.custody, self.readiness, self.boot, self.now = custody, readiness, boot, now
+
+    def request(self, raw, uid):
+        action = parse_request(raw)
+        actor = authorize(self.custody, uid)
+        with self.custody.locked():
+            try:
+                record = lease(self.custody)
+            except FileNotFoundError:
+                record = None
+            if action == 'status':
+                return {'installation': INSTALLATION, 'phase': record['phase'] if record else 'closed', 'run': record['run'] if record else None}
+            if record and record['phase'] != 'complete':
+                if action == 'recover':
+                    record['recoverRequested'] = True
+                    self.custody.save(record)
+                return {'status': 'joined' if action == 'recover' else 'busy', 'run': record['run']}
+            if action == 'recover':
+                return {'status': 'no-active-run'}
+            now = int(self.now())
+            if now >= CUTOFF or (record and now < record['started']) or self.readiness() is not True:
+                raise ValueError('Admission closed')
+            record = {'schema': 1, 'installation': INSTALLATION, 'run': str(uuid.uuid4()), 'actor': actor, 'boot': self.boot, 'started': now, 'deadline': now + 360, 'phase': 'admitted', 'recoverRequested': False}
+            self.custody.save(record)
+            return {'status': 'accepted', 'run': record['run']}
+
+    def serve(self, endpoint=SOCKET):
+        endpoint = pathlib.Path(endpoint)
+        parent = endpoint.parent
+        if parent.resolve() != parent:
+            raise ValueError('Unsafe socket parent')
+        for directory in (parent, *parent.parents):
+            st = directory.lstat()
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0, self.custody.uid) or st.st_mode & 0o022:
+                raise ValueError('Unsafe socket parent')
+        fd = self.custody.open('broker.lock', os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                st = endpoint.lstat()
+                if not stat.S_ISSOCK(st.st_mode) or st.st_uid != self.custody.uid:
+                    raise ValueError('Unsafe socket')
+                endpoint.unlink()
+            except FileNotFoundError:
+                pass
+            with socket.socket(socket.AF_UNIX) as server:
+                server.bind(str(endpoint))
+                endpoint.chmod(0o666)
+                server.listen(16)
+                while True:
+                    connection, _ = server.accept()
+                    self.connection(connection)
+        finally:
+            os.close(fd)
+
+    def connection(self, connection):
+        with connection:
+            connection.settimeout(2)
+            try:
+                uid = peer_uid(connection)
+                raw = b''
+                while len(raw) <= 128:
+                    part = connection.recv(129 - len(raw))
+                    if not part:
+                        break
+                    raw += part
+                reply = self.request(raw, uid)
+            except BlockingIOError:
+                reply = {'status': 'busy'}
+            except Exception:
+                reply = {'status': 'denied-or-reconciliation-required'}
+            try:
+                connection.sendall(json.dumps(reply).encode())
+            except OSError:
+                pass
+
+
+def main(args):
+    if len(args) != 1 or args[0] not in ACTIONS:
+        raise ValueError('Usage: deskdrop-operator status|trigger|recover')
+    parent = pathlib.Path(SOCKET).parent
+    st = parent.lstat()
+    endpoint = pathlib.Path(SOCKET).lstat()
+    if parent.resolve() != parent or st.st_uid != 0 or not stat.S_ISDIR(st.st_mode) or st.st_mode & 0o022 or endpoint.st_uid != 0 or not stat.S_ISSOCK(endpoint.st_mode):
+        raise ValueError('Unsafe broker endpoint')
+    with socket.socket(socket.AF_UNIX) as client:
+        client.settimeout(5)
+        client.connect(SOCKET)
+        if peer_uid(client) != 0:
+            raise ValueError('Untrusted broker')
+        client.sendall(json.dumps({'action': args[0]}).encode())
+        client.shutdown(socket.SHUT_WR)
+        data = b''
+        while len(data) <= 4096:
+            part = client.recv(4097 - len(data))
+            if not part:
+                break
+            data += part
+        if len(data) > 4096:
+            raise ValueError('Oversized response')
+        print(json.dumps(json.loads(data)))
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except Exception:
+        print('Operator unavailable or request denied', file=sys.stderr)
+        sys.exit(1)
