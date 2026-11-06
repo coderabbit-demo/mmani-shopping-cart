@@ -134,21 +134,57 @@ test('restart reconciliation removes previously owned child before any fresh cre
   assert.ok(f.calls.slice(count).every(([,p])=>!p.includes('/create?')));
 });
 
-test('production heartbeat loop ticks in a distinct process while a real checker hangs; forced cleanup preserves unrelated process',async()=>{
-  const {spawn}=await import('node:child_process');const {once}=await import('node:events');
-  const checker=spawn(process.execPath,['-e',`process.on('SIGTERM',()=>{});process.stdout.write('ready');setInterval(()=>{},1000)`],{stdio:['ignore','pipe','ignore']});
-  const unrelated=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+test('production heartbeat loop ticks in a distinct process while a real checker hangs; forced cleanup preserves unrelated process',async t=>{
+  const {spawn}=await import('node:child_process');
   const heartbeatSource=new URL('../scripts/demo/cloud-runtime.mjs',import.meta.url).href;
-  const hb=spawn(process.execPath,['--input-type=module','-e',`import {heartbeatWorker} from ${JSON.stringify(heartbeatSource)}; const stop=await heartbeatWorker({read:async()=>({healthy:false,updated:Date.now()}),send:async status=>console.log(status),failed:()=>process.exit(1),setTimer:fn=>setInterval(fn,20)});process.on('SIGTERM',()=>{stop();process.exit(0)});`],{stdio:['ignore','pipe','ignore']});
-  let ticks='';hb.stdout.on('data',b=>{ticks+=b.toString()});
-  try{
-    await once(checker.stdout,'data');
-    const exited=once(checker,'exit');const actions=[];
-    const result=await boundedRun({wait:async()=>{await exited;return 1;},term:async()=>{actions.push('term');checker.kill('SIGTERM');},remove:async()=>{actions.push('kill');checker.kill('SIGKILL');await exited;},running:async()=>checker.exitCode===null&&checker.signalCode===null},{setTimer:(fn,ms)=>setTimeout(fn,ms/100),clearTimer:clearTimeout});
-    assert.equal(result,false);assert.deepEqual(actions,['term','kill']);assert.equal(checker.signalCode,'SIGKILL');
-    assert.ok(ticks.trim().split('\n').length>=3);assert.ok(ticks.trim().split('\n').every(s=>s==='2'));
-    assert.equal(unrelated.exitCode,null);assert.equal(unrelated.signalCode,null);
-  }finally{checker.kill('SIGKILL');hb.kill('SIGTERM');unrelated.kill('SIGTERM');}
+  function launch(source) {
+    const child=spawn(process.execPath,['--input-type=module','-e',source],{stdio:['ignore','ignore','ignore','ipc']});
+    const messages=[];child.on('message',m=>messages.push(m));
+    const closed=new Promise(resolve=>{child.once('close',(code,signal)=>resolve({code,signal}));});
+    const waitFor=predicate=>new Promise((resolve,reject)=>{
+      const existing=messages.find(predicate);if(existing){resolve(existing);return;}
+      const clean=()=>{clearTimeout(timer);child.off('message',message);child.off('exit',exit);child.off('error',error);};
+      const message=m=>{if(predicate(m)){clean();resolve(m);}};
+      const exit=()=>{clean();reject(Error('Owned child exited before progress'));};
+      const error=e=>{clean();reject(e);};
+      const timer=setTimeout(()=>{clean();reject(Error('Owned child readiness/progress deadline'));},15000);
+      child.on('message',message);child.once('exit',exit);child.once('error',error);
+      if(child.exitCode!==null||child.signalCode!==null)exit();
+    });
+    return {child,messages,closed,waitFor};
+  }
+  for(const delay of [0,700])await t.test(`heartbeat startup delay ${delay}ms`,async()=>{
+    const checker=launch(`process.on('SIGTERM',()=>{});process.send({ready:true});setInterval(()=>{},1000);`);
+    const unrelated=launch(`process.send({ready:true});setInterval(()=>{},1000);`);
+    const hb=launch(`import {heartbeatWorker} from ${JSON.stringify(heartbeatSource)};
+      await new Promise(r=>setTimeout(r,${delay}));let count=0;
+      const stop=await heartbeatWorker({read:async()=>({healthy:false,updated:Date.now()}),send:async status=>process.send({tick:++count,status}),failed:()=>process.exit(1),setTimer:fn=>setInterval(fn,20)});
+      process.on('SIGTERM',()=>{stop();process.disconnect();});process.send({ready:true});`);
+    let observed;
+    try{
+      await Promise.all([checker.waitFor(m=>m.ready),unrelated.waitFor(m=>m.ready),hb.waitFor(m=>m.ready)]);
+      const baseline=hb.messages.filter(m=>m.tick).length;
+      const progress=hb.waitFor(m=>m.tick>=baseline+3);
+      const actions=[],deadlines=[];
+      const result=await boundedRun({wait:async()=>{await checker.closed;return 1;},term:async()=>{actions.push('term');checker.child.kill('SIGTERM');},remove:async()=>{actions.push('kill');checker.child.kill('SIGKILL');await checker.closed;},running:async()=>checker.child.exitCode===null&&checker.child.signalCode===null},{setTimer:(fn,ms)=>{
+        deadlines.push(ms);
+        // Advance the injected execution clock only after actual independent progress.
+        // Startup contention cannot consume a wall-clock window before HB is ready.
+        if(ms===25000){const token={cancelled:false};progress.then(()=>{if(!token.cancelled)fn();},()=>{if(!token.cancelled)fn();});return token;}
+        return setTimeout(fn,ms/100);
+      },clearTimer:timer=>{if(timer&&Object.hasOwn(timer,'cancelled'))timer.cancelled=true;else clearTimeout(timer);}});
+      observed=await progress;
+      assert.equal(result,false);assert.deepEqual(actions,['term','kill']);assert.equal(checker.child.signalCode,'SIGKILL');
+      const ticks=hb.messages.filter(m=>m.tick>baseline).map(m=>String(m.status)).join('\n');
+      assert.ok(ticks.trim().split('\n').length>=3);assert.ok(ticks.trim().split('\n').every(s=>s==='2'));
+      assert.ok(observed.tick>=baseline+3);assert.equal(deadlines[0],25000);assert.ok(deadlines.includes(3000));
+      assert.equal(unrelated.child.exitCode,null);assert.equal(unrelated.child.signalCode,null);
+    }finally{
+      for(const owned of [checker,hb,unrelated])if(owned.child.exitCode===null&&owned.child.signalCode===null)owned.child.kill('SIGKILL');
+      await Promise.all([checker.closed,hb.closed,unrelated.closed]);
+      assert.ok([checker,hb,unrelated].every(o=>o.child.exitCode!==null||o.child.signalCode!==null));
+    }
+  });
 });
 
 test('normal interleaved completion keeps heartbeat healthy; expired work and failures stay degraded',async()=>{
