@@ -6,12 +6,3 @@ artifacts/
 *.tsbuildinfo
 .env*
 !.env.example
-
-# Terraform and generated deployment material
-**/.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-*.tfvars
-!*.tfvars.example
-backend.hcl

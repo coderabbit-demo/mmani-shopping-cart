@@ -156,6 +156,8 @@ export async function build(run = runCommand, portCheck = requireFreePort) {
   if (names.some(name => name.split('/').some(part => /^\.env/.test(part)) || /(^|\/)(node_modules|\.next|artifacts)(\/|$)/.test(name))) throw new Error('Unsafe tracked build inputs');
   const archive = await run('git', ['archive', '--format=tar', commit]);
   if (!archive.length) throw new Error('Empty source archive');
+  const profile = await run('bash', ['deploy/seccomp-profile.sh']);
+  if (createHash('sha256').update(profile).digest('hex') !== '6c0dc8f64ae4dcd440ae2a009c4399f8ac52e0cd3a325a0b9ade5bd7386ce18c') throw new Error('Seccomp profile mismatch');
   const socket = await desktopSocket();
   await safeDirectory(stateDir, true);
   for (const name of [`checker-seccomp-${commit}.json`, `build-${commit}.json`]) {
@@ -177,8 +179,6 @@ export async function build(run = runCommand, portCheck = requireFreePort) {
     if (!Array.isArray(result) || result.length !== 1) throw new Error('Unexpected image result');
     ids[kind] = result[0].Id; verifyImage(result[0], commit, ids[kind]);
   }
-  const profile = await run('bash', ['deploy/bootstrap.sh', 'seccomp-profile']);
-  if (createHash('sha256').update(profile).digest('hex') !== '6c0dc8f64ae4dcd440ae2a009c4399f8ac52e0cd3a325a0b9ade5bd7386ce18c') throw new Error('Seccomp profile mismatch');
   await writeFile(path.join(stateDir, `checker-seccomp-${commit}.json`), profile, { mode: 0o600, flag: 'wx' });
   await writeFile(path.join(stateDir, `build-${commit}.json`), JSON.stringify({ commit, architecture: 'linux/amd64', ids }) + '\n', { mode: 0o600, flag: 'wx' });
   return { commit, architecture: 'linux/amd64', ids };
