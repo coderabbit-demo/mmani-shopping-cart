@@ -14,24 +14,37 @@ const configuration = ['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/publis
 const target = ['--project=se-demos-project', '--zone=us-central1-a', '--tunnel-through-iap'];
 const kinds = ['git.head', 'git.status', 'git.archive', 'storage.cat', 'registry.describe', 'terraform.plan', 'terraform.apply', 'compute.scp', 'compute.ssh'];
 const blocked = () => { throw new Error('Unsupported offline fixture operation or custody path'); };
-async function checkoutSha() {
-  let git = path.join(repository, '.git');
-  if ((await lstat(git)).isFile()) git = path.resolve(repository, (await readFile(git, 'utf8')).trim().replace(/^gitdir: /, ''));
+export async function checkoutSha(checkout = repository) {
+  const validSha = value => /^[a-f0-9]{40}$/.test(value) && !/^0{40}$/.test(value);
+  let git = path.join(checkout, '.git');
+  const entry = await lstat(git);
+  if (entry.isFile()) {
+    const pointer = (await readFile(git, 'utf8')).trim().match(/^gitdir: ([^\r\n\0]+)$/)?.[1];
+    if (!pointer) blocked();
+    git = path.resolve(checkout, pointer);
+  } else if (!entry.isDirectory()) blocked();
   const head = (await readFile(path.join(git, 'HEAD'), 'utf8')).trim();
-  if (/^[a-f0-9]{40}$/.test(head)) return head;
+  if (validSha(head)) return head;
   const ref = head.match(/^ref: (refs\/[A-Za-z0-9/_.-]+)$/)?.[1];
-  if (!ref || ref.includes('..')) blocked();
-  try {
-    const value = (await readFile(path.join(git, ref), 'utf8')).trim();
-    if (!/^[a-f0-9]{40}$/.test(value)) blocked();
-    return value;
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    const packed = await readFile(path.join(git, 'packed-refs'), 'utf8');
-    const value = packed.split('\n').find(line => line.endsWith(` ${ref}`))?.split(' ')[0];
-    if (!/^[a-f0-9]{40}$/.test(value ?? '')) blocked();
-    return value;
+  if (!ref || ref.includes('..') || ref.split('/').some(part => !part || part.startsWith('.') || part.endsWith('.') || part.endsWith('.lock'))) blocked();
+  let common = git, directory;
+  try { directory = (await readFile(path.join(git, 'commondir'), 'utf8')).trim(); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (directory !== undefined) {
+    if (!directory || /[\r\n\0]/.test(directory)) blocked();
+    common = await realpath(path.resolve(git, directory));
   }
+  try {
+    const value = (await readFile(path.join(common, ref), 'utf8')).trim();
+    if (!validSha(value)) blocked();
+    return value;
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const packed = await readFile(path.join(common, 'packed-refs'), 'utf8');
+  const matches = packed.split(/\r?\n/).filter(line => line.endsWith(` ${ref}`));
+  if (matches.length !== 1) blocked();
+  const value = matches[0].match(/^([a-f0-9]{40}) [^ ]+$/)?.[1];
+  if (!validSha(value ?? '')) blocked();
+  return value;
 }
 export function tar(entries) {
   const blocks = [];

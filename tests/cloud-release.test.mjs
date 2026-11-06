@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile, rm, chmod, symlink, realpath, readdir, stat, link } from 'node:fs/promises';
 import path from 'node:path';
 import { compress, decompress, hash, verifyOci, sourceIdentity, objectIdentity, validateBuild, validatePublication, validateFoundation, capability, identities, prepareRequest, worker, cloudAction, registry, validateExecution } from '../scripts/demo/cloud-release.mjs';
-import { withCloudReleaseFixture as fixture, tar, oci, execution, commit, previous, id, toolchain } from './fixtures/cloud-release.mjs';
+import { withCloudReleaseFixture as fixture, tar, oci, execution, commit, previous, id, toolchain, checkoutSha } from './fixtures/cloud-release.mjs';
 const put = (dir, name, value) => writeFile(path.join(dir, name), Buffer.isBuffer(value) ? value : JSON.stringify(value), { mode: 0o600 });
 const clone = value => structuredClone(value);
 test('OCI bytes bind manifest/config/layers, source and amd64; reject corrupt blobs, paths and descriptors', () => {
@@ -449,3 +449,55 @@ test('empty offline lifecycle uses production foundation/build/publication/relea
     }, { mode: 'empty' });
   } finally { interception.mock.restore(); syncBuiltinESMExports(); }
 });
+
+
+test('checkout identity reads per-worktree HEAD and shared loose or packed refs without guessing', async () => fixture(async f => {
+  let sequence = 0;
+  async function metadata(files) {
+    const root = path.join(f.root, `metadata-${sequence++}`);
+    await mkdir(root);
+    for (const [name, value] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(root, name)), { recursive: true });
+      await writeFile(path.join(root, name), value, { mode: 0o600 });
+    }
+    return path.join(root, 'checkout');
+  }
+  const branch = 'refs/heads/codex/gcp-foundation-qa';
+  for (const files of [
+    { 'checkout/.git/HEAD': `ref: ${branch}\n`, [`checkout/.git/${branch}`]: `${commit}\n` },
+    { 'checkout/.git/HEAD': `ref: ${branch}\n`, 'checkout/.git/packed-refs': `# pack-refs with: peeled\n${previous} refs/heads/other\n${commit} ${branch}\n` },
+    { 'checkout/.git/HEAD': `${commit}\n` },
+    { 'checkout/.git': 'gitdir: ../common.git/worktrees/qa\n', 'common.git/worktrees/qa/HEAD': `${commit}\n` }
+  ]) assert.equal(await checkoutSha(await metadata(files)), commit);
+  const linked = {
+    'checkout/.git': 'gitdir: ../common.git/worktrees/qa\n',
+    'common.git/worktrees/qa/HEAD': `ref: ${branch}\n`,
+    'common.git/worktrees/qa/commondir': '../..\n',
+    'common.git/HEAD': `${previous}\n`,
+    [`common.git/worktrees/qa/${branch}`]: `${previous}\n`,
+    'common.git/worktrees/qa/packed-refs': `${previous} ${branch}\n`
+  };
+  assert.equal(await checkoutSha(await metadata({ ...linked, [`common.git/${branch}`]: `${commit}\n` })), commit);
+  assert.equal(await checkoutSha(await metadata({ ...linked, 'common.git/packed-refs': `${commit} ${branch}\n` })), commit);
+  assert.equal(await checkoutSha(await metadata({ ...linked, [`common.git/${branch}`]: `${commit}\n`, 'common.git/packed-refs': `${previous} ${branch}\n` })), commit);
+  const absentLocalPacked = { ...linked };
+  delete absentLocalPacked['common.git/worktrees/qa/packed-refs'];
+  delete absentLocalPacked[`common.git/worktrees/qa/${branch}`];
+  assert.equal(await checkoutSha(await metadata({ ...absentLocalPacked, [`common.git/${branch}`]: `${commit}\n` })), commit);
+  assert.equal(await checkoutSha(await metadata({ ...absentLocalPacked, 'common.git/packed-refs': `${commit} ${branch}\n` })), commit);
+  for (const files of [
+    { 'checkout/.git/HEAD': 'invalid\n' },
+    { 'checkout/.git/HEAD': `${'0'.repeat(40)}\n` },
+    { 'checkout/.git/HEAD': `ref: ${branch}\n` },
+    { 'checkout/.git': 'not a gitdir pointer\n' },
+    { 'checkout/.git': 'gitdir: ../absent\n' },
+    { ...linked, 'common.git/worktrees/qa/commondir': '' },
+    { ...linked, 'common.git/worktrees/qa/commondir': '../../../absent\n' },
+    { ...linked },
+    { ...linked, [`common.git/${branch}`]: 'invalid\n', 'common.git/packed-refs': `${commit} ${branch}\n` },
+    { ...linked, 'common.git/packed-refs': `invalid ${branch}\n` },
+    { ...linked, 'common.git/packed-refs': `${commit} ${branch}-other\n` },
+    { ...linked, 'common.git/packed-refs': `${commit} ${branch}\n${previous} ${branch}\n` },
+    { 'checkout/.git/HEAD': 'ref: refs/heads/../escape\n' }
+  ]) await assert.rejects(checkoutSha(await metadata(files)));
+}));
