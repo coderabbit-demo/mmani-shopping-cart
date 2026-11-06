@@ -1,6 +1,5 @@
-<!-- coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated-section:v1:dde627c443ef3c15c8c043f063e24dc7672e730c38f31cc3ac43bb7b30cb0c2b -->
+
 
 # DeskDrop incident demo: setup and architecture
 
@@ -14,9 +13,6 @@ The automatic real-alert trigger is a separate implementation described in [brie
 
 ## Architecture
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:1ccd2600932b7c2c726a9592ade5f777e141b74a38ada7a2c796b72f1617ca9e -->
 
 ```mermaid
 flowchart LR
@@ -40,7 +36,6 @@ flowchart LR
 Solid downstream paths were exercised using a Datadog TEST notification. The dashed Mac monitoring/Agent intake path remains unverified; the separate dashed implementation/review path also remains to be proved from the native Debug button. TEST evidence does not prove Agent health, intake or an actual app outage. No Jira edge feeds Debug. The separately implemented MMANI Demo Bridge Socket Mode receiver is paused and is not part of this architecture.
 
 
-<!-- /coderabbit-ai-generated:v1 -->
 ## Resource map
 
 | Resource | Current local value |
@@ -135,67 +130,31 @@ The custom Socket Mode bridge remains stopped. No GCP apply, image publication, 
 
 ### Scoped trigger implementation
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:d3574a3d652053cdde11f42a451b1c13d496a8823a14531caaeaeff58eb4c199 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:64f65fde5a25a2d13a4b8bea50a52df7331980604fca26d2c234ed56426c0235 -->
 
 The five commands above are implemented. Production preflight retains the fixed rule ID/name/five owned tags and requires exactly one conditional recipient scope `transition_type:is_alert` targeting `webhook-deskdrop-mmani-local`. It also enumerates **all** notification rules through the unfiltered US3 collection GET, because Datadog merges recipients from every matching rule. The direct owned record must equal its listed record. Every matching rule must have that same strict Alert-only destination; unrelated rule IDs/names need not equal the owned rule. Ordinary/fallback recipients must be absent or empty arrays. Extra conditions/recipients, bundling, threading, dynamic or unknown delivery fields block proof. There is no attestation flag or override. All runtime, controller, monitor and suppression guards remain required.
 
 The scan uses zero-based pages of100 sorted by `name:asc`, at most1000 rules and an additional empty terminal page. It requires a consistent integer `meta.page.total_count`, exact page lengths and unique IDs. Missing pages, inaccessible responses, count changes, duplicate records, a direct/list conflict or a limit breach block readiness. The entire scan shares the existing10-second request budget, clipped by its calling phase; response size remains capped at1MiB per request, with abort and redirect rejection unchanged. It never sends search filters or writes routing. This is bounded readback evidence, not an atomic provider snapshot: concurrent changes can invalidate it, so verification and recovery repeat the complete scan. No organization rules or recipient data are printed or persisted.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:d97bd217191ab4eeffd090308f7f40853632ecb100ff6729a71166ccd3f4b52e -->
 
 Matching evaluates both monitor-only tags and their union with the validated sole reporting group `host:deskdrop-mmani-local`. It retains every value for a key and evaluates `NOT` separately for each candidate. The pinned monitor query/ownership guard excludes other or unknown reporting groups. Tag arrays are limited to 128 entries and require every exact key:value pair (an empty array is global). The bounded scope parser accepts uppercase explicit/implicit `AND`, `OR`, unary `NOT`, parentheses, grouped same-key values, double-quoted values and `key:*` presence. Mixing `AND` and `OR` at one nesting level requires parentheses; it does not guess precedence. Limits are3000 characters,512 tokens and32 nesting/unary-negation levels. Keys use lowercase letters/digits/underscore/dot/hyphen, starting with a letter; bare values use letters/digits/underscore/dot/slash/hyphen. Quoted values allow spaces and other literal characters, but escapes and wildcard characters in quotes are refused. Partial/question-mark wildcards, keyless tokens, malformed or unsupported expressions and unknown filter fields block proof even if one branch looks nonmatching. Only definitively nonmatching rules can be ignored.
 
-<!-- /coderabbit-ai-generated:v1 -->
 
 These semantics are documented in the [notification rules matching guide](https://docs.datadoghq.com/monitors/notify/notification_rules/#how-matching-works), [collection GET schema](https://docs.datadoghq.com/api/latest/monitors/get-all-monitor-notification-rules/) and [individual GET schema](https://docs.datadoghq.com/api/latest/monitors/get-a-monitor-notification-rule/). `plan` reports ready only after complete successful read-only preflight; failures return sanitized blockers. The observed live plain-recipient rule still fails, and known Agent/journey/checkout readiness failures remain operator prerequisites. Any live routing setup requires separate approval. No live rehearsal, routing edit or controller upgrade was performed by this feature.
 
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- /coderabbit-ai-generated:v1 -->
 
 The detached supervisor owns writes; terminal disconnect and SIGINT/SIGTERM/SIGHUP request recovery. The controller advertises protocol 1 and reserves app controls by protected run identity. An older controller refuses arming. Monitoring remains scheduled, while conflicting manual operations are fenced. Runtime commit/image/container receipts are separate from tooling HEAD. Recovery can start only the exact existing owned app; it cannot rebuild, recreate or repair monitoring.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:ddaf587c3dfa8259a681a86f1779a04562a08df4658722faf966fdc83b50d836 -->
 
 Attempt bounds are preparation 60 seconds, requests 10 seconds, controls 15 seconds, polling 5 seconds, Alert observation at most 180 seconds from arming (before cancellation intent), suppression restoration 20 seconds, app recovery 30 seconds, and final observation until 360 seconds from arming. If suppression remains unknown, app recovery is still attempted subject to pending-control safety checks. Provider failures, SIGKILL, host sleep and power loss can exceed these attempt bounds.
 
-<!-- /coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:43ec8a801aeeeb110f95ac006fdc6a9b2f8f91b7fc5a134764b9edf2ee1dbdfe -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:0967ad3f13a677512cc43a8dc6636c20399dc85bd962d511b71731b3093a8f8c -->
-
-Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. An active old downtime is not proof that an unknown cancellation cannot still arrive; the reservation stays fenced until cancellation is definitively reconciled and replacement suppression is confirmed. App recovery observations continue while protection is uncertain. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. <!-- coderabbit-ai-generated:v1 -->
+Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. An active old downtime is not proof that an unknown cancellation cannot still arrive; the reservation stays fenced until cancellation is definitively reconciled and replacement suppression is confirmed. App recovery observations continue while protection is uncertain. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault.
 
 Protective restoration is separate from arming readiness. After definitive cancellation, a recovery-only guard verifies the runtime operation identity, protected monitor journal, all three monitor identities, the pinned checkout group and the other two suppressions. It can create and read back only the equivalent nonexpiring exact-checkout suppression, attributed to this run, and atomically replace only that journal entry. Routing failure (including an unsafe new matching rule or a rule-list access error/timeout) does not skip that protective attempt. Unknown creates are reconciled by one attributed replacement; they are never blindly repeated. Wrong or unverifiable ownership still prevents the write. App recovery is attempted even if suppression remains uncertain. Arming, cancellation, fault observation and final success retain full effective-route verification; unresolved routing keeps the receipt uncertain and the reservation fenced even when protection and local app recovery were observed.
 
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:04ffabe7bfea47f91593afc794fe1ca0816794ac35a546504862024dca362233 -->
 
 Supervisor leases use a private random socket and matching lock tokens, never PID signaling. Claim exclusion binds a short-lived kernel-owned listener at a deterministic loopback port (20000–49999) derived from the canonical directory and current user; it exchanges no credentials or application data. Process death releases this exclusion. A live or unrelated port owner/collision blocks the claim and is left untouched. Unknown legacy claim files require operator inspection, never automatic deletion. Once a dead lease is positively identified, a missing monitor lock is safe to reconcile; foreign, empty or malformed monitor locks still block recovery.
 
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:f33cbd8ba97e1a3150cde5ebb71294606dd4eaf153ce813adf088f4fdbb3bc6c -->
 
 The controller's legitimate long-lived `start` keeps `local.lock` and `operation.json` pending. The trigger requires their matching protected operation ID and lock inode, bound to controller status, and rechecks them before app control. It does not acquire, remove or steal that lock. Missing or legacy operation markers, unsafe files and replacement operations block arming; an operator must separately approve controller preparation or reconciliation. Status and scheduled monitoring remain available during a reservation.
 
@@ -206,8 +165,3 @@ Run-bound controller journals and a serialized recovery barrier prevent a delaye
 CLI/status evidence separates `alertObserved`, `protected`, `recovered`, `released`, failure/unknown markers and runtime/tooling/image identities. `no-alert-observed-restored` means cleanup completed without the requested Alert; it is not successful alert delivery. Observer exit, IPC loss or timeout reports an uncertain outcome without killing a continuing supervisor. Inspect `status` and use explicit recovery; do not remove journals. Provider event/cycle identifiers remain unavailable.
 
 Offline validation uses `node --test tests/demo-trigger.test.mjs tests/local-demo.test.mjs tests/local-datadog-monitors.test.mjs`. Fixtures canonicalize the OS temporary directory and use short socket paths while retaining production symlink/ownership/mode checks. Fixture success is not Mac recovery, Datadog delivery, native fix-PR handoff or GCP acceptance.
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-
-<!-- /coderabbit-ai-generated:v1 -->

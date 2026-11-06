@@ -1,6 +1,5 @@
-<!-- coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated-section:v1:d9cd81705948fc952e440a24c5c235d1ca7830a1d56987f6567340bfeb9fdfbe -->
+
 
 # DeskDrop incident demo: Do / Say / See
 
@@ -18,13 +17,6 @@ Run the [setup/readiness checks](local-setup.md#pre-demo-checks), confirm the co
 
 ## Stage 1 — Establish the application and the incident
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:51e338dfb18ee4ba233c11388a32804793449404d42f21107cac190b4f4027c9 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:d34694ef7121960754eaeb827431e14b08c8c29aab65a30323460d97611d33fc -->
 
 | Step | Do | Say | See |
 | --- | --- | --- | --- |
@@ -33,10 +25,7 @@ Run the [setup/readiness checks](local-setup.md#pre-demo-checks), confirm the co
 | 3 · Start a controlled incident | With the implemented complete effective-route proof guard, after separately approved live routing/controller readiness and window validation, run `bash scripts/demo/trigger-alert.sh plan`, then `run --execute`. Until then, use Datadog **Edit → Test Notifications → Alert → Run Test**, once; close and Cancel. | Automatic: “I’m deliberately stopping only the demo app for a bounded window. Monitoring stays running, and the controller restores the app and suppression.” TEST fallback: “I’m sending a Datadog TEST notification. This proves routing, not an application outage.” | Automatic: a ready plan only after the pinned Alert-only rule, all matching rules in a complete scan and every readiness guard pass, then an observed fresh Alert. Today's plain-recipient live rule and unhealthy runtime do not pass. Fallback: a Datadog event whose title includes TEST. |
 | 4 · Follow the same event | Capture the fresh Datadog event/cycle and open the new Slack root, not an older thread. | “This message originated in Datadog and came through the native automation. The event ID identifies this event; the alert-cycle key identifies the incident episode.” | Matching monitor/time/identity, new Slack permalink and actual provider cycle. The navigation window is not an outage-duration measurement. |
 
-<!-- /coderabbit-ai-generated:v1 -->
 
-
-<!-- /coderabbit-ai-generated:v1 -->
 **SECURITY:** keep credential files, authenticated webhook values, headers and provider setup secrets off screen. The trigger must not call CodeRabbit directly and pretend that proves Datadog delivery.
 
 **DON'T DO THIS:** do not use all-monitor notification enablement, disable suppression globally, change unrelated containers, or inject a fake Slack message to stand in for the Datadog hop. Do not describe a deliberate app stop as a confirmed application-code defect.
@@ -72,9 +61,6 @@ The recorded [Debug result](https://coderabbitdemo.slack.com/archives/C0CEPB2LUR
 
 **WOW:** point back to the Debug timestamp, then the ticket creation time. The investigation already completed before this issue existed. Do not start Debug from the Jira bot to demonstrate this path; that would be a different workflow.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:76ea2ae104be03bfc7c3badad9b728e73127a495031ce5646f2c36dad3fa740d -->
 
 ## Stage 5 — Recover and close with the boundary of proof
 
@@ -84,8 +70,7 @@ The recorded [Debug result](https://coderabbitdemo.slack.com/archives/C0CEPB2LUR
 | 12 · Close the story | Show the two Slack outcomes and the [GCP handoff](gcp-team-handoff.md). | “We followed one incident into two independent operator choices. Ticket creation and direct repository investigation are demonstrated. A full code-remediation demo still needs a reproducible source fault and authenticated native Coding Agent handoff. Next, the runtime moves to GCP so the team can use it without my Mac.” | Clear separation of demonstrated behavior, remaining fix-PR work and the next deployment phase. |
 
 
-
-<!-- /coderabbit-ai-generated:v1 -->## Optional extension — A real fix PR, once ready
+## Optional extension — A real fix PR, once ready
 
 This extension is not current live evidence. Before using it, approve a reproducible isolated source fixture and exact ALLOW paths, verify native CodeRabbit Code discovery/handoff authentication, and retain a known faulty base and expected failing assertion. Keep branch, task, commits and PR metadata free of Jira identifiers. Use associated GitHub issue metadata where the repository's PR rules require it.
 
@@ -106,6 +91,3 @@ If any handoff or provider credential is missing, show the specific blocker. Do 
 - Runtime not healthy: use the explicitly labelled TEST/recorded route rather than opening a real-fault notification window.
 
 Retain episode links and existing artifacts. Reset synthetic shopper state with a fresh context or `/demo`; keep credentials, ownership journals and previous receipts. Leave any fix PR unmerged unless separately authorized.
-
-
-<!-- /coderabbit-ai-generated:v1 -->
