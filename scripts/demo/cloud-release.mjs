@@ -1,3 +1,4 @@
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, lstat, realpath, readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -17,12 +18,20 @@ const digest = value => typeof value === 'string' && value.startsWith('sha256:')
 const execution = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value ?? '');
 const canonical = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 const equal = (a, b) => canonical(a) === canonical(b);
+const bundleLimit = 4 * 1024 ** 3;
+const compressedLimit = limit => limit + Math.ceil(limit / 16384) * 5 + 65536;
+export function compress(bytes) { return gzipSync(bytes, { level: 9 }); }
+export function decompress(bytes, limit = bundleLimit) {
+  if (!Buffer.isBuffer(bytes) || bytes.length > compressedLimit(limit)) fail();
+  return gunzipSync(bytes, { maxOutputLength: limit });
+}
 export function objectIdentity(value, bucket, prefix) {
   if (!value || value.bucket !== bucket || typeof value.name !== 'string' || !value.name.startsWith(prefix) || !/^[a-zA-Z0-9/_.-]+$/.test(value.name) || value.name.includes('..') || (typeof value.generation !== 'string' || !/^[1-9][0-9]*$/.test(value.generation)) || !sha(value.sha256)) fail();
   return value;
 }
 export function sourceIdentity(value) {
   if (!value || value.repository !== 'https://github.com/coderabbit-demo/mmani-shopping-cart.git' || !commitOk(value.commit)) fail();
+  if (!value.archive?.name?.endsWith('.tar.gz')) fail();
   objectIdentity(value.archive, `${project}-deskdrop-source`, `${value.commit}/`);
   return value;
 }
@@ -112,7 +121,7 @@ async function protectedRead(dir, name, binary = false) {
   const fh = await open(path.join(dir, name), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const f = await fh.stat();
-    if (!f.isFile() || f.uid !== process.getuid() || f.nlink !== 1 || f.mode & 0o077 || f.size > (binary ? 4 * 1024 ** 3 : 1048576)) fail();
+    if (!f.isFile() || f.uid !== process.getuid() || f.nlink !== 1 || f.mode & 0o077 || f.size > (binary ? compressedLimit(bundleLimit) : 1048576)) fail();
     const b = await fh.readFile(); return binary ? b : JSON.parse(b);
   } finally { await fh.close(); }
 }
@@ -134,7 +143,8 @@ export async function foundationEvidence(dir, root, commit) {
 }
 export async function buildEvidence(dir, root) {
   const source = sourceIdentity(await protectedRead(dir, 'source.json'));
-  const sourceBytes = await protectedRead(dir, 'source.tar', true);
+  const sourceBytes = await protectedRead(dir, 'source.tar.gz', true);
+  decompress(sourceBytes, 50000000);
   if (hash(sourceBytes) !== source.archive.sha256) fail();
   const foundation = await foundationEvidence(dir, root, source.commit);
   const toolchain = JSON.parse(await readFile(path.join(root, 'deploy/cloudbuild/toolchain.json')));
@@ -183,7 +193,17 @@ export async function readback(build, run) {
   return observed;
 }
 export async function cloudAction(action, dir, run = command, root = process.cwd()) {
-  if (!['verify', 'publication-status', 'record-build', 'record-publication', 'verify-source', 'verify-publication-source', 'release', 'bundle', 'verify-rollback'].includes(action)) fail();
+  if (!['verify', 'publication-status', 'record-build', 'record-publication', 'verify-source', 'verify-publication-source', 'release', 'bundle', 'verify-rollback', 'source-archive'].includes(action)) fail();
+  if (action === 'source-archive') {
+    const st = await lstat(dir);
+    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid() || st.mode & 0o077 || await realpath(dir) !== dir) fail();
+    const commit = (await run('git', ['rev-parse', 'HEAD'])).trim();
+    if (!commitOk(commit) || (await run('git', ['status', '--porcelain', '--untracked-files=normal'])).trim()) fail();
+    const raw = await run('git', ['archive', '--format=tar', commit], { binary: true, maxOutput: 50000000 });
+    const bytes = compress(raw);
+    await writeFile(path.join(dir, 'source.tar.gz'), bytes, { mode: 0o600, flag: 'wx' });
+    return { commit, sha256: hash(bytes), bytes: bytes.length };
+  }
   if (action === 'verify-rollback') {
     const { build } = await buildEvidence(dir, root);
     const approval = await protectedRead(dir, 'cloud-publication-approval.json');
@@ -201,19 +221,22 @@ export async function cloudAction(action, dir, run = command, root = process.cwd
   if (action === 'verify-publication-source') {
     const source = sourceIdentity(await protectedRead(dir, 'source.json'));
     const object = objectIdentity(await protectedRead(dir, 'publication-source.json'), `${project}-deskdrop-artifacts`, `${source.commit}/publication/`);
-    const bytes = await protectedRead(dir, 'publication-source.tar', true);
-    const remote = await run('gcloud', ['storage', 'cat', `gs://${object.bucket}/${object.name}#${object.generation}`], { binary: true, timeout: 120000, maxOutput: 4 * 1024 ** 3 });
+    if (!object.name.endsWith('.tar.gz')) fail();
+    const bytes = await protectedRead(dir, 'publication-source.tar.gz', true);
+    decompress(bytes);
+    const remote = await run('gcloud', ['storage', 'cat', `gs://${object.bucket}/${object.name}#${object.generation}`], { binary: true, timeout: 120000, maxOutput: compressedLimit(bundleLimit) });
     if (!Buffer.isBuffer(remote) || hash(bytes) !== object.sha256 || hash(remote) !== object.sha256) fail();
     await writeReceipt(dir, 'publication-source-verified.json', object);
     return { status: 'publication-source-verified' };
   }
   if (action === 'verify-source') {
     const source = sourceIdentity(await protectedRead(dir, 'source.json'));
-    const bytes = await protectedRead(dir, 'source.tar', true);
+    const bytes = await protectedRead(dir, 'source.tar.gz', true);
+    decompress(bytes, 50000000);
     if ((await run('git', ['rev-parse', 'HEAD'])).trim() !== source.commit || (await run('git', ['status', '--porcelain', '--untracked-files=normal'])).trim()) fail();
     const archive = await run('git', ['archive', '--format=tar', source.commit], { binary: true, maxOutput: 50000000 });
-    const remote = await run('gcloud', ['storage', 'cat', `gs://${source.archive.bucket}/${source.archive.name}#${source.archive.generation}`], { binary: true, timeout: 120000, maxOutput: 50000000 });
-    if (!Buffer.isBuffer(archive) || !Buffer.isBuffer(remote) || hash(bytes) !== source.archive.sha256 || hash(archive) !== source.archive.sha256 || hash(remote) !== source.archive.sha256) fail();
+    const remote = await run('gcloud', ['storage', 'cat', `gs://${source.archive.bucket}/${source.archive.name}#${source.archive.generation}`], { binary: true, timeout: 120000, maxOutput: compressedLimit(50000000) });
+    if (!Buffer.isBuffer(archive) || !Buffer.isBuffer(remote) || hash(bytes) !== source.archive.sha256 || hash(decompress(bytes, 50000000)) !== hash(archive) || hash(remote) !== source.archive.sha256) fail();
     await writeReceipt(dir, 'source-verified.json', { source, files: await sourceConfiguration(root) });
     return { status: 'source-verified', commit: source.commit };
   }
@@ -222,8 +245,8 @@ export async function cloudAction(action, dir, run = command, root = process.cwd
     publicationApproval(build, await protectedRead(dir, 'cloud-publication-approval.json'));
     const entries = { 'scripts/demo/cloud-release.mjs': await readFile(path.join(root, 'scripts/demo/cloud-release.mjs')), 'publication-input.json': Buffer.from(JSON.stringify({ commit: source.commit, images: Object.fromEntries(['app', 'checker'].map(n => [n, verifyOci(artifacts[n], source.commit)])) })) };
     for (const name of ['app', 'checker']) entries[`${name}.oci.tar`] = artifacts[name];
-    const bytes = archive(entries);
-    await writeFile(path.join(dir, 'publication-source.tar'), bytes, { mode: 0o600, flag: 'wx' });
+    const bytes = compress(archive(entries));
+    await writeFile(path.join(dir, 'publication-source.tar.gz'), bytes, { mode: 0o600, flag: 'wx' });
     return { sha256: hash(bytes), bytes: bytes.length };
   }
   if (action === 'record-build') return recordBuild(dir, root, run);
@@ -264,9 +287,19 @@ export function validateExecution(result, request, phase) {
     // API may add per-step timing/status fields; compare the submitted fields only.
     if (key === 'steps') {
       if (result.steps?.length !== request.steps?.length) fail();
-      for (let i = 0; i < request.steps.length; i++) for (const [field, value] of Object.entries(request.steps[i])) if (!matches(result.steps[i][field], value)) fail();
-    } else if (!matches(result[key], request[key])) fail();
+      for (let i = 0; i < request.steps.length; i++) {
+        const observed = structuredClone(result.steps[i]);
+        for (const field of ['timing', 'pullTiming', 'status', 'exitCode']) delete observed[field];
+        if (!matches(observed, request.steps[i])) fail();
+      }
+    } else {
+      const observed = structuredClone(result[key]);
+      if (key === 'options' && observed) delete observed.resolvedWorkerRelease;
+      if (key === 'artifacts' && observed?.objects) delete observed.objects.timing;
+      if (!matches(observed, request[key])) fail();
+    }
   }
+  if (!equal(result.source, request.source)) fail();
   if (!equal(result.sourceProvenance?.resolvedStorageSource, request.source.storageSource)) fail();
   return result;
 }
@@ -325,7 +358,7 @@ export async function prepareRequest(phase, dir, root = process.cwd()) {
   const read = name => protectedRead(dir, name);
   const source = sourceIdentity(await read('source.json'));
   await foundationEvidence(dir, root, source.commit);
-  if (!equal(await read('source-verified.json'), { source, files: await sourceConfiguration(root) }) || hash(await protectedRead(dir, 'source.tar', true)) !== source.archive.sha256) fail();
+  if (!equal(await read('source-verified.json'), { source, files: await sourceConfiguration(root) }) || hash(await protectedRead(dir, 'source.tar.gz', true)) !== source.archive.sha256) fail();
   const bytes = await readFile(path.join(root, `deploy/cloudbuild/${phase}.yaml`));
   const toolchain = JSON.parse(await readFile(path.join(root, 'deploy/cloudbuild/toolchain.json')));
   capability(await read(`${phase}-capability.json`), toolchain, hash(bytes), phase);
@@ -336,9 +369,10 @@ export async function prepareRequest(phase, dir, root = process.cwd()) {
     const approved = publicationApproval(build, approval);
     if (approved.rollback && !equal(await read('rollback-verified.json'), approved.rollback)) fail();
     object = objectIdentity(await read('publication-source.json'), `${project}-deskdrop-artifacts`, `${source.commit}/publication/`);
-    const bundle = await protectedRead(dir, 'publication-source.tar', true);
+    if (!object.name.endsWith('.tar.gz')) fail();
+    const bundle = await protectedRead(dir, 'publication-source.tar.gz', true);
     if (!equal(await read('publication-source-verified.json'), object) || hash(bundle) !== object.sha256) fail();
-    const entries = tarMembers(bundle);
+    const entries = tarMembers(decompress(bundle));
     if (entries.size !== 4 || !equal(JSON.parse(entries.get('publication-input.json') ?? 'null'), { commit: source.commit, images: Object.fromEntries(['app', 'checker'].map(n => [n, verifyOci(entries.get(`${n}.oci.tar`), source.commit)])) })) fail();
     if (!entries.get('scripts/demo/cloud-release.mjs')?.equals(await readFile(path.join(root, 'scripts/demo/cloud-release.mjs')))) fail();
     for (const name of ['app', 'checker']) if (hash(entries.get(`${name}.oci.tar`)) !== build.images[name].artifact.sha256 || approved.images[name].split('@')[1] !== build.images[name].manifest) fail();
