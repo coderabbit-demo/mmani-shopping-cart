@@ -1148,10 +1148,13 @@ test('host management retains an abandoned installation lock and durable intent 
 import contextlib
 with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
  g['STATE']=d
+ held=[]
  @contextlib.contextmanager
  def lease(name):
-  assert name in ('trigger-maintenance.lock','lifecycle.lock')
-  yield
+  assert name==('trigger-maintenance.lock' if not held else 'lifecycle.lock')
+  held.append(name)
+  try:yield
+  finally:assert held.pop()==name
  g['lock']=lease;g['safe_dir']=lambda p,**kw:None
  g['owned_container']=lambda c,k:None
  g['stop_owned']=lambda *a:(_ for _ in ()).throw(AssertionError('installer removed before reconciliation'))

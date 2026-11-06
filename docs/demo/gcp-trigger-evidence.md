@@ -195,6 +195,10 @@ The standalone offline fixture driver exited0 with five independently asserted o
 
 <!-- coderabbit-ai-generated-section:v1:dd1dc2e0cda45e5387bf8e1194049fe667950fe4cb6caa723a9616de11eaf619 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:cbd33bf8259de206d35d915d02b53a3dfd54d733770c319e2901bdefaca59aca -->
+
 
 ## Single Mac review correction round
 
@@ -208,6 +212,24 @@ The Linux-only test has an explicit per-test platform reason; all its original a
 Correction validation on Linux: `node --test tests/cloud-operator.test.mjs tests/cloud-trigger.test.mjs tests/demo-baseline.test.mjs` exited0 with78 passed; `npm test` exited0 with615 passed, zero failures/skips. This includes the fully enabled kernel-peer case, eight competing clients during blocked inspection, active-worker status/recovery and disconnect, durable early flag visibility, no lease overwrite, worker exclusion, stale-proof/denied-actor refusal and joined-process cleanup. Existing boot/death, counter/cutoff and unknown-installer restoration assertions remain passing. Original-source RED observations are recorded above; the corrected lock-conflict case refuses joined before persistence. Python AST and whitespace checks passed. The separate actual-export offline workflow passed five observations with142 calls; it is not native Verify or live VM evidence.
 
 No Mac test run is claimed here. For the six-test operator file, the expected non-Linux applicability is five enabled cases plus exactly one Linux-only skip; actual Mac counts must come from the Mac runner. Linux CI/native Verify must observe that peer/socket test running, not skipped. This resolves the two reported Major findings in source and Linux tests; final review/PR/security/CI/native acceptance remain with the orchestrator. No additional CLI review or provider operation was performed.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:3002ecf3910c30be9e338c2089d9b9fc90b82c1cbfd51a9bfd0dc86be618b8bf -->
+
+
+## Monitoring correction25ed integration
+
+Published monitoring `25ed7f7e766c56aa998e710ce4d902664ad9c1df` is integrated after the operator review correction `3dc5734b683fa98bb49a42f1f0f727cd9e4d8860` in merge `ea75a90d06b35017bef4ff6e26a070c01bd0c003`. This supersedes earlier monitoring-parent identities; no main merge is claimed. Read the parent's [host metadata protocol and protected-lock receipt](gcp-team-handoff.md#pr29-host-metadata-protocol-boundary-and-protected-lock-recovery). Host-only DNS UDP/TCP53 and NTP UDP123 exceptions precede the nonroot metadata deny for both named metadata addresses; HTTP/HTTPS/other protocols remain denied. A surviving installation.lock blocks before management refresh, removal or launch and retains durable intent; automatic empty-lock removal was not restored.
+
+The appended baseline-test conflict retained both parent policy/lock tests and trigger firewall/maintenance tests. The adapted protected-maintenance fixture asserts exact trigger-maintenance.lock then lifecycle.lock acquisition order. The operator worker/journal fix, Linux peer/socket assertions and single non-Linux applicability skip, fixture bytes and cost worksheet remain unchanged. No exports, protocol or receipt shape changed, so native Verify API recipes remain applicable. Actual firewall/kernel/VM, DNS/NTP service behavior and provider gates remain pending; command-model packet observations are offline evidence only. Current IAM/IAP gaps prevent live acceptance. The November6 07:00Pacific cutoff and renewal requirement are unchanged.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+Fresh Linux validation: five-file focused node --test run exited0 with110 passed, zero skipped/failed; npm test exited0 with618 passed, zero skipped/failed. After strengthening only the merged injected lock-order assertion, the targeted host-management abandoned-lock test exited0 with1 passed. The full run tested the prior membership assertion; the independent targeted run covers its stricter final replacement. Original parent/trigger assertions remain. bash -n deploy/bootstrap.sh, operator Python AST parse, git diff --check and scope-gate against25ed7f7 passed. The standalone exported-API offline workflow exited0 with five observations and142 calls. Earlier typecheck,29goldens,28shopper browser and17Terraform mock passes are reused for unchanged app/TS/infra/test/config/lock/runtime inputs. No native Verify or live firewall/provider/reboot claim is made; real Linux peer/socket tests ran without a platform skip. Mac's single Linux-only applicability skip remains for its own runner to report. Root publication and final native/live gates remain pending.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
