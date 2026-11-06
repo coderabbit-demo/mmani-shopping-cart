@@ -482,6 +482,12 @@ for (const coupon of [false, true]) {
   });
 }
 
+test("rule 4: lamp and organizer with DESK15 and express total $97", () => {
+  const state = applyCoupon(add(add(freshState(), lamp), organizer), "DESK15").state;
+  const express = setDelivery(state, "express");
+  assert.deepEqual(totals(express), { subtotal: 100, discount: 15, shipping: 12, total: 97 });
+});
+
 test("rule 5: sign-in normalizes email and preserves the wishlist and cart", () => {
   const state = toggleWishlist(twoItemCart(), headphones.id);
   const result = signIn(state, " ALEX@DESKDROP.DEMO ", "deskdrop123");
