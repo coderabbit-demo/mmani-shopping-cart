@@ -144,7 +144,7 @@ test('Postman and standalone deployment artifacts are importable, dependency-fre
   assert.equal(collection.info.schema, 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json');
   assert.equal(collection.item.length, 4);
   assert.ok(environment.values.every(v => v.value === ''));
-  assert.deepEqual(environment.values.map(v => v.key), ['DEMO_BASE_URL', 'EXPECTED_COMMIT', 'EXPECTED_DEPLOYMENT_ID']);
+  assert.deepEqual(environment.values.map(v => v.key), ['DEMO_BASE_URL', 'EXPECTED_COMMIT', 'EXPECTED_DEPLOYMENT_ID', 'EXPECTED_PREVIEW_HOST']);
   const [platform, missing, invalid, healthy] = collection.item;
   assert.equal(platform.request.header.length, 0);
   assert.equal(missing.request.header.length, 1);
@@ -163,7 +163,7 @@ test('Postman and standalone deployment artifacts are importable, dependency-fre
     }
   }
   const pre = collection.event[0].script.exec.join('\n');
-  const env = { DEMO_BASE_URL: 'https://coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app/', EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
+  const env = { DEMO_BASE_URL: 'https://coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app/', EXPECTED_PREVIEW_HOST: 'coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app', EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
   const execute = () => runInNewContext(pre, { URL, pm: { environment: { get: key => env[key] } } });
   assert.doesNotThrow(execute);
   for (const url of ['http://fixture.vercel.app/', 'https://attacker.test/', 'https://fixture.vercel.app/?token=secret', 'https://fixture.vercel.app/path', 'https://person:secret@fixture.vercel.app/']) {
@@ -247,7 +247,7 @@ test('every exported script compiles and runs, with origin guard before simulate
     let interpolations = 0, sends = 0, assertions = 0, tests = 0, skipped = 0;
     const prerequests = [...(collection.event ?? []), ...(item.event ?? [])].filter(e => e.listen === 'prerequest');
     const responseScripts = [...(collection.event ?? []), ...(item.event ?? [])].filter(e => e.listen === 'test');
-    const environment = { DEMO_BASE_URL: approved, EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
+    const environment = { DEMO_BASE_URL: approved, EXPECTED_PREVIEW_HOST: 'coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app', EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
     const body = index === 0 ? '<html>Platform protection</html>' : index === 3 ? {
       status: 'ok', requestId: '01234567-0123-4567-89ab-0123456789ab',
       source: { project: 'coderabbit-automation-demo', environment: 'preview', commit, deploymentId: 'dpl_fixture123' },
@@ -298,4 +298,53 @@ test('every exported script compiles and runs, with origin guard before simulate
     assert.equal(assertions, [2, 3, 3, 8][index]);
   }
   assert.equal(scriptCount, 8, 'collection guard and each request test script execute for all four requests');
+});
+
+test('Postman independently pins provider-derived host and namespace before sending credentials', async () => {
+  const collection = JSON.parse(await readFile(new URL('../tools/workflow-api/postman/workflow-api.postman_collection.json', import.meta.url), 'utf8'));
+  const host = 'coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app';
+  const otherApprovedNamespace = 'coderabbit-automation-demo-f6g7h8i9j-coderabbitai.vercel.app';
+  const env = { DEMO_BASE_URL: `https://${host}/`, EXPECTED_PREVIEW_HOST: host,
+    EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
+  let skipped = 0, interpolations = 0, sends = 0;
+  const context = () => ({ pm: {
+    environment: { get: key => env[key] }, execution: { skipRequest() { skipped++; } },
+    test() { assert.fail('invalid script must not execute assertions'); },
+  } });
+  const send = () => {
+    for (const event of collection.event) runInNewContext(event.script.exec.join('\n'), context(), { timeout: 1000 });
+    interpolations++; sends++;
+  };
+  assert.doesNotThrow(send);
+  assert.equal(sends, 1);
+  for (const [base, expected] of [
+    [`https://${otherApprovedNamespace}/`, host],
+    [`https://${host}/`, otherApprovedNamespace],
+    [`https://${host}/`, undefined], [`https://${host}/`, ''],
+    [`https://${host}/`, `https://${host}/`],
+    ['https://unrelated.vercel.app/', 'unrelated.vercel.app'],
+    [`https://${host}.attacker.test/`, `${host}.attacker.test`],
+    [`https://${host}:443/`, `${host}:443`],
+    [`https://person:secret@${host}/`, `person:secret@${host}`],
+    [`https://${host}/?token=private`, host],
+    [`https://${host}/#fragment`, host],
+    [`http://${host}/`, host],
+  ]) {
+    env.DEMO_BASE_URL = base; env.EXPECTED_PREVIEW_HOST = expected;
+    const previous = skipped;
+    assert.throws(send, /Set an approved project\/team immutable Preview origin/);
+    assert.equal(skipped, previous + 1);
+    assert.equal(sends, 1);
+    assert.equal(interpolations, 1);
+  }
+  env.DEMO_BASE_URL = `https://${host}/`; env.EXPECTED_PREVIEW_HOST = host;
+  assert.doesNotThrow(send);
+  assert.equal(sends, 2);
+  assert.equal(interpolations, 2);
+  for (const event of [...collection.event, ...collection.item.flatMap(item => item.event)]) {
+    const malformed = `${event.script.exec.join('\n')}\nconst = ;`;
+    assert.throws(() => new Function(malformed), SyntaxError);
+    assert.throws(() => runInNewContext(malformed, context(), { timeout: 1000 }), { name: 'SyntaxError' });
+  }
+  assert.equal(sends, 2);
 });
