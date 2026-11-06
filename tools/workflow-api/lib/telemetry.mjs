@@ -21,4 +21,5 @@ export function emitEvent(write, { requestId, actor, source, failed = false }) {
   const line = JSON.stringify(event);
   if (Buffer.byteLength(line) > 2048) throw new Error('Event exceeds limit');
   write(line);
+  return event;
 }

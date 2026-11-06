@@ -1,3 +1,4 @@
+import { sendDatadog } from '../lib/datadog.mjs';
 import { randomUUID } from 'node:crypto';
 import { authenticate } from '../lib/auth.mjs';
 import { sourceIdentity, emitEvent } from '../lib/telemetry.mjs';
@@ -11,7 +12,8 @@ function response(status, data, headers = {}) {
   } });
 }
 
-export function createHandler({ environment = () => process.env, write = line => console.log(line) } = {}) {
+export function createHandler({ environment = () => process.env, write = line => console.log(line),
+  fetch: fetchImpl = globalThis.fetch, clock } = {}) {
   return async function health(request) {
     let actor, env;
     try {
@@ -39,7 +41,10 @@ export function createHandler({ environment = () => process.env, write = line =>
       source = sourceIdentity(env);
       if (!source) return response(503);
       requestId = randomUUID();
-      emitEvent(write, { requestId, actor, source });
+      const event = emitEvent(write, { requestId, actor, source });
+      let accepted = false;
+      try { accepted = await sendDatadog(event, { apiKey: env.WORKFLOW_DD_API_KEY, fetch: fetchImpl, clock }); } catch {}
+      if (!accepted) return response(503);
       return response(200, { status: 'ok', requestId, source });
     } catch {
       requestId ??= randomUUID();

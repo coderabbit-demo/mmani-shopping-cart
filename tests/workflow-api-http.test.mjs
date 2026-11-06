@@ -11,9 +11,10 @@ const commit = 'a'.repeat(40);
 const config = JSON.stringify([{ actor: 'presenter-1', sha256: createHash('sha256').update(token).digest('hex'), expiresAt: '2099-01-01T00:00:00.000Z' }]);
 function setup(overrides = {}, writeOverride) {
   const logs = [];
-  const env = { WORKFLOW_API_AUTH_JSON: config, VERCEL_ENV: 'preview', VERCEL_PROJECT_ID: PROJECT_ID,
+  const env = { WORKFLOW_DD_API_KEY: 'b'.repeat(32), WORKFLOW_API_AUTH_JSON: config, VERCEL_ENV: 'preview', VERCEL_PROJECT_ID: PROJECT_ID,
     VERCEL_DEPLOYMENT_ID: 'dpl_fixture123', VERCEL_GIT_COMMIT_SHA: commit, ...overrides };
-  return { env, logs, handler: createHandler({ environment: () => env, write: writeOverride ?? (line => logs.push(JSON.parse(line))) }) };
+  const sends = [];
+  return { env, logs, sends, handler: createHandler({ fetch: async (...args) => { sends.push(args); return new Response(null, { status: 202 }); }, environment: () => env, write: writeOverride ?? (line => logs.push(JSON.parse(line))) }) };
 }
 function request({ method = 'GET', auth = true, url = 'https://fixture.vercel.app/api/health', headers = {} } = {}) {
   return new Request(url, { method, headers: { ...(auth ? { authorization: `Bearer ${token}` } : {}), ...headers } });
@@ -34,7 +35,7 @@ test('native deployment entry fails closed without configuration', async () => {
 });
 
 test('healthy invocation emits exactly one bounded info event and matching trusted source/request identity', async () => {
-  const { handler, logs } = setup();
+  const { handler, logs, sends } = setup();
   const result = await handler(request({ headers: { 'x-actor': 'spoof', 'x-source': 'spoof', 'x-request-id': 'spoof' } }));
   assert.equal(result.status, 200);
   const body = await result.json();
@@ -43,6 +44,7 @@ test('healthy invocation emits exactly one bounded info event and matching trust
   assert.equal(body.source.commit, commit);
   assert.equal(body.source.projectId, PROJECT_ID);
   assert.equal(logs.length, 1);
+  assert.equal(sends.length, 1);
   assert.equal(logs[0].requestId, body.requestId);
   assert.deepEqual(logs[0].source, body.source);
   assert.equal(logs[0].actor, 'presenter-1');
@@ -59,12 +61,13 @@ test('healthy invocation emits exactly one bounded info event and matching trust
 });
 
 test('auth runs before methods, source access and telemetry; denials are identical', async () => {
-  const { handler, env, logs } = setup();
+  const { handler, env, logs, sends } = setup();
   Object.defineProperty(env, 'VERCEL_GIT_COMMIT_SHA', { get() { throw Error('source inspected before auth'); } });
   const denied = await error(await handler(request({ auth: false })), 401);
   for (const method of ['POST', 'HEAD', 'OPTIONS', 'PUT', 'DELETE', 'PATCH']) assert.deepEqual(await error(await handler(request({ method, auth: false })), 401), denied);
   assert.deepEqual(await error(await handler(request({ headers: { authorization: 'Bearer invalid' } })), 401), denied);
   assert.equal(logs.length, 0);
+  assert.equal(sends.length, 0);
   const valid = setup();
   for (const method of ['POST', 'HEAD', 'OPTIONS', 'PUT', 'DELETE', 'PATCH']) {
     const res = await valid.handler(request({ method }));
@@ -72,10 +75,11 @@ test('auth runs before methods, source access and telemetry; denials are identic
     await error(res, 405);
   }
   assert.equal(valid.logs.length, 0);
+  assert.equal(valid.sends.length, 0);
 });
 
 test('all query strings, credential parameters and oversized URLs are rejected without reflection', async () => {
-  const { handler, logs } = setup();
+  const { handler, logs, sends } = setup();
   for (const query of [`?token=${token}`, `?access_token=${token}`, `?x-vercel-protection-bypass=${token}`, '?actor=spoof', '?unknown=value']) {
     await error(await handler(request({ url: `https://fixture.vercel.app/api/health${query}` })), 400);
     await error(await handler(request({ auth: false, url: `https://fixture.vercel.app/api/health${query}` })), 401);
@@ -83,10 +87,11 @@ test('all query strings, credential parameters and oversized URLs are rejected w
   await error(await handler(request({ url: `https://fixture.vercel.app/api/health?x=${'x'.repeat(2048)}` })), 400);
   await error(await handler(request({ url: 'https://fixture.vercel.app/api/quote' })), 400);
   assert.equal(logs.length, 0);
+  assert.equal(sends.length, 0);
 });
 
 test('header budgets accept their boundary and reject over-limit bytes/count', async () => {
-  const { handler, logs } = setup();
+  const { handler, logs, sends } = setup();
   const headers = new Headers({ authorization: `Bearer ${token}` });
   const current = [...headers].reduce((n, [k, v]) => n + Buffer.byteLength(k) + Buffer.byteLength(v) + 4, 0);
   headers.set('x-pad', 'x'.repeat(8192 - current - 9));
@@ -97,10 +102,11 @@ test('header budgets accept their boundary and reject over-limit bytes/count', a
   assert.equal((await handler(request({ headers: many }))).status, 200);
   await error(await handler(request({ headers: { ...many, extra: 'x' } })), 431);
   assert.equal(logs.length, 2);
+  assert.equal(sends.length, 2);
 });
 
 test('no body is read or buffered, including empty streams, lying lengths and unsupported transfer framing', async () => {
-  const { handler, logs } = setup();
+  const { handler, logs, sends } = setup();
   assert.equal((await handler(request({ headers: { 'content-length': '0' } }))).status, 200);
   for (const length of ['1', '-1', 'wat', '00', '1000000000']) await error(await handler(request({ headers: { 'content-length': length } })), 413);
   await error(await handler(request({ headers: { 'transfer-encoding': 'chunked' } })), 413);
@@ -113,22 +119,25 @@ test('no body is read or buffered, including empty streams, lying lengths and un
     assert.equal(cancelled, true);
   }
   assert.equal(logs.length, 1);
+  assert.equal(sends.length, 1);
 });
 
 test('source metadata fails closed and cannot be supplied by request headers', async () => {
   for (const override of [{ VERCEL_ENV: 'production' }, { VERCEL_PROJECT_ID: 'prj_wrong' }, { VERCEL_DEPLOYMENT_ID: '' }, { VERCEL_GIT_COMMIT_SHA: undefined }, { VERCEL_GIT_COMMIT_SHA: 'a'.repeat(41) }, { VERCEL_DEPLOYMENT_ID: 'dpl_\nprivate' }]) {
-    const { handler, logs } = setup(override);
+    const { handler, logs, sends } = setup(override);
     await error(await handler(request({ headers: { 'x-vercel-git-commit-sha': commit } })), 503);
     assert.equal(logs.length, 0);
+    assert.equal(sends.length, 0);
   }
 });
 
 test('authorized unexpected exceptions are sanitized; rejected inputs never emit incident errors', async () => {
   const canary = 'private-person@example.test SECRET_HEADER';
-  const { handler, env, logs } = setup();
+  const { handler, env, logs, sends } = setup();
   Object.defineProperty(env, 'VERCEL_DEPLOYMENT_ID', { get() { throw Error(canary); } });
   const body = await error(await handler(request()), 500);
   assert.equal(logs.length, 1);
+  assert.equal(sends.length, 0);
   assert.equal(logs[0].event, 'health_failed');
   assert.equal(logs[0].code, 'INTERNAL_ERROR');
   const serialized = JSON.stringify({ body, logs });
@@ -184,7 +193,7 @@ test('Postman and standalone deployment artifacts are importable, dependency-fre
 });
 
 test('malformed URLs and locked body streams stay validation failures without incident logs', async () => {
-  const { handler, logs } = setup();
+  const { handler, logs, sends } = setup();
   const req = request();
   await error(await handler({ headers: req.headers, url: 'not a URL', method: 'GET', body: null }), 400);
   const stream = new ReadableStream();
@@ -193,6 +202,7 @@ test('malformed URLs and locked body streams stay validation failures without in
     await error(await handler({ headers: req.headers, url: req.url, method: 'GET', body: stream }), 413);
   } finally { reader.releaseLock(); }
   assert.equal(logs.length, 0);
+  assert.equal(sends.length, 0);
 });
 
 test('Postman response scripts distinguish platform/application denials and verify pinned healthy identity', async () => {
@@ -347,4 +357,72 @@ test('Postman independently pins provider-derived host and namespace before send
     assert.throws(() => runInNewContext(malformed, context(), { timeout: 1000 }), { name: 'SyntaxError' });
   }
   assert.equal(sends, 2);
+});
+
+test('health waits for accepted intake; telemetry failures are generic 503 and never application faults', async () => {
+  const { env } = setup();
+  for (const key of [undefined, '', 'invalid']) {
+    let calls = 0;
+    const logs = [];
+    const handler = createHandler({ environment: () => ({ ...env, WORKFLOW_DD_API_KEY: key }),
+      write: line => logs.push(line), fetch: async () => { calls++; return new Response(null, { status: 202 }); } });
+    await error(await handler(request()), 503);
+    assert.equal(calls, 0);
+    assert.equal(logs.some(line => /health_failed|quote_failed/.test(line)), false);
+  }
+  for (const status of [200, 202, 429, 503, 'throw']) {
+    let release, calls = 0, settled = false;
+    const logs = [];
+    const handler = createHandler({ environment: () => env, write: line => logs.push(line),
+      fetch: async () => { calls++; await new Promise(resolve => { release = resolve; });
+        if (status === 'throw') throw Error(env.WORKFLOW_DD_API_KEY);
+        return new Response(null, { status }); } });
+    const pending = handler(request()).then(value => { settled = true; return value; });
+    await Promise.resolve(); assert.equal(settled, false); assert.equal(calls, 1);
+    release(); const result = await pending;
+    if (status === 200 || status === 202) assert.equal(result.status, 200);
+    else await error(result, 503);
+    assert.equal(calls, 1);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].includes(env.WORKFLOW_DD_API_KEY), false);
+    assert.doesNotMatch(logs[0], /quote_failed|health_failed/);
+  }
+});
+
+test('authenticated health contract over in-memory HTTP dispatch never sends for denied or invalid input', async () => {
+  const { handler, sends } = setup();
+  const dispatch = async (method, path, authorized) => {
+    const headers = new Headers(authorized ? { authorization: `Bearer ${token}` } : {});
+    const response = await handler(new Request(`https://fixture.vercel.app${path}`, { method, headers }));
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await dispatch('GET', '/api/health', false)).status, 401);
+  assert.equal((await dispatch('POST', '/api/health', true)).status, 405);
+  assert.equal((await dispatch('GET', '/api/health?bad=1', true)).status, 400);
+  assert.equal(sends.length, 0);
+  const healthy = await dispatch('GET', '/api/health', true);
+  assert.equal(healthy.status, 200); assert.equal(sends.length, 1);
+  const [log] = JSON.parse(sends[0][1].body);
+  assert.equal(log.requestId, healthy.body.requestId);
+  assert.deepEqual(log.source, healthy.body.source);
+});
+
+test('health timeout remains 503 when transport ignores abort and legacy keys cannot enable delivery', async () => {
+  const { env } = setup();
+  let expire, calls = 0;
+  const logs = [];
+  const handler = createHandler({ environment: () => env, write: line => logs.push(line),
+    fetch: () => { calls++; return new Promise(() => {}); },
+    clock: { setTimeout(fn) { expire = fn; return 1; }, clearTimeout() {} } });
+  const pending = handler(request());
+  expire();
+  const body = await error(await pending, 503);
+  assert.deepEqual(body, { error: 'Unavailable' });
+  assert.equal(calls, 1);
+  assert.equal(logs.length, 1);
+  assert.doesNotMatch(logs[0], /quote_failed|health_failed/);
+  const missing = createHandler({ environment: () => ({ ...env, WORKFLOW_DD_API_KEY: undefined,
+    DD_API_KEY: 'c'.repeat(32), DD_APP_KEY: 'd'.repeat(32) }), write: () => {},
+    fetch: () => { assert.fail('legacy key must never authorize send'); } });
+  await error(await missing(request()), 503);
 });

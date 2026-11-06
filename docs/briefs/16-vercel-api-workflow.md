@@ -36,7 +36,21 @@ ALLOW: docs/demo/vercel-api-walkthrough.md
 
 The first real protected200 must join to searchable logs in Personal US3 before quote/fault/action implementation. API authentication, old-preview revocation/retirement and source/credential isolation must be demonstrated separately. No quote fault, new monitor activation, Jira Bug, Debug fixPR, merge, production action or live alert in this telemetry coding task.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:25d6c6a5d1f1f6765e0a09b4cad2ae59b0fdd7cebf071423795ceb314eb7dbf3 -->
+
+## Isolated transport implementation contract
+
+The isolated approval supersedes the historical Marketplace/drain and no-network instructions: runtime uses only dedicated project-sensitive WORKFLOW_DD_API_KEY and fixed US3 HTTPS. No credential value or provider operation is part of source implementation. The privately created key is not enrolled; Remote Config/PAR defaults await separate narrowing approval.
+
+Health retains auth, input/source validation and sanitized stdout. It awaits one bounded submission before source-matching 200. Expected configuration or transport failure returns generic 503; genuine unexpected application exceptions retain generic 500. Denied/invalid requests never send and this task emits no quote_failed. Only intake 200/202 acknowledges submission, not indexing. The two-second whole-attempt deadline includes response cleanup even if fetch ignores abort. Unknown event/source attributes and fixed service/site overrides fail closed.
+
+Cloud tests use explicit synthetic fetch/clock fixtures on Node 22 and 24, without default mock successes or provider calls. See docs/demo/vercel-api-walkthrough.md for onboarding, source pins and immutable-preview retirement. Protected 200 plus matching indexed Personal US3 logs, trusted provider readback, PR/security/CI and native Verify remain independent required gates. No quote/fault/action implementation proceeds before the live gate.
+
 ## Proposed outcome and smallest architecture
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Use the existing `coderabbit-demo/mmani-shopping-cart` repository and its working native CodeRabbit scope. Add a separate, small `tools/workflow-api` Vercel project root. It exposes a protected health endpoint and a genuine quote-calculation API callable from Postman or a bounded curl script. The shopper application, its localStorage behavior, all six existing cart requirements, goldens, root npm manifest and root lockfile remain untouched.
 
