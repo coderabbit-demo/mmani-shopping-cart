@@ -417,6 +417,13 @@ exec(compile(source,'operator','exec'),g)
 root=pathlib.Path(tempfile.mkdtemp(dir=pathlib.Path.home()/'.cache'));root.chmod(0o700)
 c=g['Custody'](root,os.getuid());calls=[]
 g['Custody']=lambda:c;g['installed']=lambda:{};g['os'].getuid=lambda:0;g['management_lock']=contextlib.nullcontext;g['signal'].signal=lambda *a:None
+read_text=pathlib.Path.read_text
+boot_reads=[]
+def fixture_read(path,*args,**kwargs):
+ if str(path)=='/proc/sys/kernel/random/boot_id':
+  boot_reads.append(str(path));return 'synthetic-boot'
+ return read_text(path,*args,**kwargs)
+pathlib.Path.read_text=fixture_read
 g['Host'].invoke=lambda self,mode:(calls.append(mode) or {'status':'ready'})
 class Done(BaseException):pass
 def sleep(seconds):
@@ -428,7 +435,33 @@ try:
  except Done:pass
  print({'inspections_in_ten_idle_seconds':len(calls),'calls':calls})
  assert calls==['inspect'], 'idle secret/controller storm'
-finally:shutil.rmtree(root)
+ assert boot_reads==['/proc/sys/kernel/random/boot_id']
+ assert c.read('ready.json')['boot']=='synthetic-boot'
+ assert (root/'ready.json').read_text()==read_text(root/'ready.json')
+finally:
+ pathlib.Path.read_text=read_text
+ shutil.rmtree(root)
 `;
  const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);
+});
+
+test('GCP walkthrough retains all operator rows in one CommonMark block with explicit busy recovery guidance',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const {Parser,HtmlRenderer}=await import('commonmark');
+ const source=await readFile(new URL('../docs/demo/incident-walkthrough.md',import.meta.url),'utf8');
+ const section=source.split('## GCP operator walkthrough')[1];assert.ok(section);
+ const tree=new Parser().parse(section),walker=tree.walker();let event,table;
+ while((event=walker.next()))if(event.entering&&event.node.type==='paragraph'){
+  const lines=section.split('\n').slice(event.node.sourcepos[0][0]-1,event.node.sourcepos[1][0]).join('\n');
+  if(lines.startsWith('| Do | Say | See |'))table=lines;
+ }
+ assert.ok(table,'table header must be in a paragraph');
+ const rows=table.split('\n');assert.equal(rows.length,7,'header, separator and five action rows must remain contiguous');
+ assert.ok(rows.every(row=>row.startsWith('|')&&row.endsWith('|')));
+ const rendered=new HtmlRenderer().render(new Parser().parse(table));
+ for(const action of ['status','trigger','recover'])assert.ok(rendered.includes(`deskdrop-operator ${action}`));
+ assert.match(rendered,/native Jira/);assert.match(rendered,/native Debug/);
+ const recovery=rows.find(row=>row.includes('deskdrop-operator recover'));
+ assert.match(recovery,/busy.*not (?:saved|persisted).*read status.*retry.*same.*recover.*joined.*no-active-run/i);
+ assert.match(recovery,/status.*(?:does not|cannot).*acknowledg/i);
 });

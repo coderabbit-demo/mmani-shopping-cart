@@ -241,6 +241,10 @@ Fresh Linux validation: five-file focused node --test run exited0 with110 passed
 
 <!-- coderabbit-ai-generated-section:v1:a583dbae9840e26ee13e07d44cd386cf5fabbe5ec8547281927a6bc6fe800a83 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:aa8b444e112bfe96673c806009df501e5c16fa18e60aeb8bf3c06499dccff4b7 -->
+
 
 ## PR30 cadence and walkthrough correction
 
@@ -254,6 +258,24 @@ The walkthrough now correctly describes joined only for an active reservation an
 <!-- /coderabbit-ai-generated:v1 -->
 
 Fresh Linux checks: node --test tests/cloud-operator.test.mjs tests/cloud-trigger.test.mjs tests/demo-baseline.test.mjs exited0 with82 passed; npm test exited0 with620 passed, zero failures/skips. The real Linux peer test remains enabled. New tests include actual service-loop wiring, separate slow-inspection/active-worker processes, durable flag preservation, no overlapping admissions, retry attempts/backoff, cached-proof expiry/current-health/source denial and joined child cleanup. Python syntax and git diff --check passed. The independent JS fixture workflow passed five observations/142 calls; no public JS fixture contract changed. Prior typecheck/29goldens/28shopper browser/17Terraform mocks reused for unchanged relevant source/test/config/lock/runtime inputs. Mac counts are not claimed; its Linux-only applicability skip is unchanged. Root's earlier firewall timeout under concurrent PDF rendering is an external result; no runtime safety bounds or assertions were changed to address it. Native QA must retarget the final source. Provider/live/publication gates remain pending.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:a434f296ace2ec9cb176f67634ddb9f6b24caff881fd1e7ca3991b8df671b82b -->
+
+
+## PR30 four Minor corrections after1a1fa62
+
+The current PR review posted four Minor findings (4493424149,4493424174,4493424184,4493424194); all were validated and corrected together. Latest read-only review check shows that four-comment review completed, with no additional new inline findings. Handoff prose now consistently separates the120second inspection-cache limit,65second monitoring-health age and five-second internal completion check, with numeric/unit spacing corrected. The complete five-row Do/Say/See table retains every original action/content; generated markers are outside the uninterrupted table. Recovery explicitly retries the same request after busy until joined or no-active-run and never infers persistence from status.
+
+The isolated service-loop fixture supplies synthetic-boot only for the exact /proc/sys/kernel/random/boot_id read, delegates every other Path.read_text and restores the method afterward. It asserts that synthetic boot reaches durable readiness and retains the original one-inspection cadence assertion. Production Linux behavior, all original assertions and the sole Linux peer applicability skip are unchanged. Simulated missing-proc execution of the actual old fixture is RED (Python exit1); corrected operator tests are GREEN. The document regression was RED because the original header block had only three action rows, and GREEN with all five contiguous rows plus explicit busy guidance. The existing CommonMark parser/HTML renderer verifies one uninterrupted pipe-table block and rendered actions; vanilla CommonMark does not implement the GFM table extension, so no vanilla-CommonMark table element or browser screenshot is claimed. Mac execution and native QA retarget remain external gates.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+Final fresh checks: node --test tests/cloud-operator.test.mjs exited0 with9passed, and npm test exited0 with621passed, zero failures/skips on Linux. The boot/cadence test remains enabled without a platform condition; the existing kernel-peer test ran on Linux and retains its single Mac applicability skip. Actual Mac execution remains for Root to report. No production/runtime/timing/lock/dependency/assertion changes were made. Prior unaffected production focused/typecheck/golden/browser/Terraform results remain reused. git diff --check passed. Native plans need final-head retarget; no provider/live/cutoff action occurred.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
