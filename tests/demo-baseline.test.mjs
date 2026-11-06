@@ -1137,7 +1137,7 @@ if __name__=='__main__':
 `;
 test('ordered host metadata policy preserves DNS/NTP on fresh, legacy and repeated firewall runs',async()=>withArtifacts(async dir=>{
   const driver=path.join(dir,'policy.py');await writeFile(driver,firewallPolicyDriver);
-  const result=spawnSync('python3',[driver,new URL('../deploy/bootstrap.sh',import.meta.url).pathname],{encoding:'utf8',timeout:60000,maxBuffer:1000000});
+  const result=spawnSync('python3',[driver,new URL('../deploy/bootstrap.sh',import.meta.url).pathname],{encoding:'utf8',timeout:190000,maxBuffer:1000000});
   assert.equal(result.status,0,result.stderr);const observation=JSON.parse(result.stdout);
   assert.equal(observation.status,'pass');assert.equal(observation.observations.filter(x=>x.packets).length,6);
 }));

@@ -265,6 +265,10 @@ Fresh Linux checks: node --test tests/cloud-operator.test.mjs tests/cloud-trigge
 
 <!-- coderabbit-ai-generated-section:v1:a434f296ace2ec9cb176f67634ddb9f6b24caff881fd1e7ca3991b8df671b82b -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:cdc76fb733138a952053d7acfc4ad9ced11892ae68065a575b841103ac587ee2 -->
+
 
 ## PR30 four Minor corrections after1a1fa62
 
@@ -276,6 +280,24 @@ The isolated service-loop fixture supplies synthetic-boot only for the exact /pr
 <!-- /coderabbit-ai-generated:v1 -->
 
 Final fresh checks: node --test tests/cloud-operator.test.mjs exited0 with9passed, and npm test exited0 with621passed, zero failures/skips on Linux. The boot/cadence test remains enabled without a platform condition; the existing kernel-peer test ran on Linux and retains its single Mac applicability skip. Actual Mac execution remains for Root to report. No production/runtime/timing/lock/dependency/assertion changes were made. Prior unaffected production focused/typecheck/golden/browser/Terraform results remain reused. git diff --check passed. Native plans need final-head retarget; no provider/live/cutoff action occurred.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:3e508f526d40e70ae7d7c8dc1c96ba77d10353ec2a629414760bb4ad981cc429 -->
+
+
+## Offline firewall model aggregate harness bound
+
+Root independently reports the exact untouched policy driver completed outside the Node outer guard in137.475seconds, exit0, with all132packet outcomes and266strict commands passing. Two isolated Mac runs under the original60second outer guard timed out. These failed receipts remain valid historical failures; they are not relabelled as passes. The private Root timing receipt is not accessible in this task and was not independently read here. Root also reports exactcd85408 Mac focused29passed/0failed/1existing Linux-peer applicability skip, including passing synthetic-boot and document regressions.
+
+The delegated correction changes only this offline model's outer spawnSync guard from60000ms to190000ms. It covers six sequential Bash applications, each retaining its30second subprocess timeout, for a cumulative180second budget plus10seconds of startup/reporting allowance. The complete driver, six applications,132observations,266strict commands and all assertions remain unchanged. No production/runtime/admission/recovery deadline, other test timeout, package or skip changes. This is offline command-model evidence; it establishes no live firewall or provider acceptance. Root will run the final Mac model/full suite before PDF rendering; native plan obligations remain.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+Fresh Linux validation: the targeted ordered-policy model exited0 with1passed (13.49seconds), and npm test exited0 with621passed, zero failures/skips. Exact file comparison confirms only the outer60000->190000ms guard changed; every driver/application/packet/command assertion is byte-identical. Production deploy/scripts/app/infra and package/lock files remain identical to1a1fa62. Whitespace check passed. Final Mac model/full-suite results and native QA retarget remain pending with Root; earlier Mac timeout receipts are preserved.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
