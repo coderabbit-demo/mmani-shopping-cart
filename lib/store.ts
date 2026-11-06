@@ -143,7 +143,7 @@ export function setDelivery(state: StoreState, delivery: Delivery): StoreState {
 export function totals(state: StoreState): { subtotal: number; discount: number; shipping: number; total: number } {
   const currentSubtotalCents = subtotalCents(state);
   const discountCents = state.coupon && currentSubtotalCents >= 10000 ? Math.round(currentSubtotalCents * 15 / 100) : 0;
-  const shippingCents = state.delivery === "express" ? 2400 : 0;
+  const shippingCents = state.delivery === "express" ? 1200 : 0;
   return {
     subtotal: currentSubtotalCents / 100,
     discount: discountCents / 100,
