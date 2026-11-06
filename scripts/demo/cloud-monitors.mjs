@@ -110,7 +110,13 @@ export class Journal {
   async locked(fn) {
     await this.directorySafe();
     const lock = path.join(this.directory, 'installation.lock');
-    await mkdir(lock, { mode: 0o700 });
+    try { await mkdir(lock, { mode: 0o700 }); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const held = new Error('Protected installation.lock exists: live or abandoned installer ownership is unknown. Keep the lock and pending evidence. Use protected maintenance to confirm the exact owned installer and host lifecycle lease, then reconcile durable intent before any manual lock removal.');
+      held.code = 'DESKDROP_INSTALLATION_LOCK_HELD';
+      throw held;
+    }
     try { return await fn(); } finally { await (await import('node:fs/promises')).rmdir(lock); }
   }
 }
@@ -240,7 +246,7 @@ async function main() {
     console.log(JSON.stringify({ status: mode === 'install' ? 'protected' : 'reconciled', count: state.monitors.length }));
   });
 }
-main().catch(() => { console.error('Cloud installation requires reconciliation'); process.exitCode = 1; });
+main().catch(error => { console.error(error.code === 'DESKDROP_INSTALLATION_LOCK_HELD' ? error.message : 'Cloud installation requires reconciliation'); process.exitCode = 1; });
 
 export async function recoverProtection(state, id, api, save) {
   validateState(state);
