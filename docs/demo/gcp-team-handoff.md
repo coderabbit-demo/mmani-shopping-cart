@@ -1,5 +1,7 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:85d40e5c02d6bdfa631ad7143fe5541f2823c4fa2ed1c0baec683624a69e1a3e -->
+
 <!-- coderabbit-ai-generated-section:v1:35ea5d7f320c8e0ff88ac666a7bb3b820fe40ffc78e4e6c7ece2a512ff6434d5 -->
 
 <!-- coderabbit-ai-generated-section:v1:98e7509b1ac57459d309c998c84e0c7f7ddb9fb4280692a534dd367bee5622e7 -->
@@ -10,7 +12,7 @@
 
 # Next phase: a shared GCP incident demo
 
-Move the runtime and operator trigger off Mahesh's Mac while retaining the native Datadog → CodeRabbit → Slack flow and its two independent actions. Target project: `se-demos-project`; existing baseline region/zone: `us-central1` / `us-central1-a`. This is a requirements and rollout document, not an apply or deployment approval.
+Move the runtime and operator trigger off Mahesh's Mac while retaining the native Datadog → CodeRabbit → Slack flow and its two independent actions. Target project: `se-demos-project`; existing baseline region/zone: `us-central1` / `us-central1-a`. This is a requirements and rollout document, not an apply or deployment approval. The approved $100 first-seven-days allowance begins at first actual DeskDrop resource consumption; none has started in this work. No actual spend or start/stop time is claimed.
 
 ## Brief 13 pilot status — November 6, 2026
 
@@ -289,7 +291,7 @@ For shutdown, an authorized maintainer stops the broker first, then `systemctl s
 <!-- /coderabbit-ai-generated:v1 -->
 ## Reviewed-parent integration and management permissions
 
-The trigger now integrates monitoring `ccaf5b89ec621a1e1f80ea6df03c11485643169b` and foundation `afbde6c9c1d946989918ce5187bae194cc1a0b68`. Neither is represented as main-merged or live accepted. Monitoring retains its exclusive `lifecycle.lock` shared by recurring supervision and management. Trigger recovery and monitor management additionally share `trigger-maintenance.lock`; the trigger does not take the continuously held recurring lifecycle lease. Monitor management acquires the maintenance gate before the lifecycle lease. This permits recurrence during a fault while excluding concurrent management writes. No parent assertions were removed.
+The trigger now integrates final published monitoring `8f91bc3a35af30979b8e28650a1ff86485fdfd2b`, including foundation `afbde6c9c1d946989918ce5187bae194cc1a0b68`, in merge `28e6b52f52a302b636f93c5a4c5d8b80465eb5c1` after fixture checkpoint `d2678968f7dce253f7a8d3410e70324b9f6b500a`. Neither is represented as main-merged or live accepted. Monitoring retains its exclusive `lifecycle.lock` shared by recurring supervision and management. Trigger recovery and monitor management additionally share `trigger-maintenance.lock`; the trigger does not take the continuously held recurring lifecycle lease. Monitor management acquires the maintenance gate before the lifecycle lease. This permits recurrence during a fault while excluding concurrent management writes. No parent assertions were removed.
 
 The existing management credential needs Datadog **monitors_downtime** for downtime create/cancel and **monitors_read** for notification-rule GET. These are documented prerequisites, not authorization to create a new key, expand scopes or obtain additional permission. Missing scope blocks live admission; runtime restoration is still attempted independently.
 
@@ -302,6 +304,25 @@ The `deskdrop-firewall.service` dependency is installed by `deploy/bootstrap.sh 
 The approved24th path, tests/fixtures/cloud-trigger.mjs, now provides private disposable custody and controlled adapters for the actual exported trigger/recovery APIs. See [the API and independent workflow instructions](gcp-trigger-evidence.md#reusable-verify-fixture-implemented-under-the24-path-amendment). It supplies no credentials, live transport, default root artifacts or precomputed verdict. Native Verify must independently choose operations and assert returns, saved intents/receipts and call records. Real Linux peer/socket/process observations are separate from its synthetic clock/boot/provider responses; actual VM/systemd/reboot/intake remains pending.
 
 The hard November6 2026 07:00Pacific /15:00UTC admission cutoff enforces this delivery window. Any later operator activation requires reviewed renewal; neither the cutoff nor the three-cycle limit was extended. Mahesh reports the07:10UTC work-account/ADC check still returned34/46 permissions, with12 not returned including project.setIamPolicy/IAP. This task did not repeat that credential check. No cloud writes have started; these counts do not establish live readiness or authority to acquire new roles/key scopes.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Access receipt and named-resource prerequisites — November 6, 2026
+
+Mahesh reports the fresh **07:10 UTC** work-account/ADC check returned **34 of 46 permissions**, with **12 not returned**, including project IAM policy writes and IAP. This is orchestrator-supplied evidence, not a credential check performed by this task. A not-returned permission is not tested authorization. Existing Editor, a working login and adequate quota do not establish these missing rights. Foundation native QA is reported RUNNING6 at `afbde6c9c1d946989918ce5187bae194cc1a0b68` in task `c23f828a-b95a-4f13-a5a5-a5c03d7decc1`; running is not a pass or publication approval.
+
+Before separately approved live operations, an already-authorized administrator must establish the exact capabilities required by the reviewed plan, on its named resources:
+
+| Boundary in `se-demos-project` | Required existing authority and verification |
+| --- | --- |
+| State bucket `se-demos-project-deskdrop-tfstate`; source/artifact buckets `se-demos-project-deskdrop-source` and `se-demos-project-deskdrop-artifacts` | Bucket creation/read and bucket-policy get/set where the plan manages bindings; only necessary state-lock/object and source/artifact operations on the respective bucket. |
+| Artifact Registry `us-central1/deskdrop` | Repository administration/policy get/set for reviewed resources; publisher upload and runtime pull remain distinct resource bindings. |
+| Secrets `deskdrop-datadog-intake` and `deskdrop-datadog-management` | Named-secret administration/policy get/set and separately authorized version provisioning; runtime accessor bindings remain scoped to those secrets. Never infer access from an Editor role. |
+| Service accounts `deskdrop-demo-runtime`, `deskdrop-build`, `deskdrop-publisher` | Only the reviewed account creation/policy and `actAs` capabilities for the selected workflow. Project `resourcemanager.projects.setIamPolicy` remains unconfirmed where project-level bindings require it; no broader role is requested. |
+| VM `deskdrop-demo`, zone `us-central1-a` | Actual IAP tunnel authorization for this instance (including `iap.tunnelInstances.accessViaIAP`), OS Login and service-account-use prerequisites must be verified. Protected install/enrollment needs authorized OS Admin Login/root maintainer access; presenter helper access does not grant sudo or Docker. Preserve the IAP-only TCP22 firewall and private app path. |
+
+These are blockers to establish through existing authorized administration, not instructions to acquire roles, widen identities, guess a group/tester or relax private access. No provider writes occurred here. Mahesh administrator success cannot prove denied non-admin/presenter access; that remains a separate live gate. The $44.19 dated illustration and $100 allowance are unchanged and neither establishes permission readiness. The seven-day allowance begins only at actual first consumption; the hard delivery-window admission cutoff independently still requires reviewed renewal for later activation.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

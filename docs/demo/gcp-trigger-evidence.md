@@ -1,5 +1,7 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:aa86cc99e8d2e852132037a7142eb8ca1073185914532b448e1f2b07e6f38cfd -->
+
 <!-- coderabbit-ai-generated-section:v1:db97358e3da58cd1a054a37eddf9e17f8e1f9026d3291a1b88c55aca74cbfcff -->
 
 <!-- coderabbit-ai-generated-section:v1:5a6885488adcbaa32762e89036f28336f1b919edd65d5066c356a9e41e6deb1e -->
@@ -142,6 +144,33 @@ The original hard07:00Pacific admission cutoff is unchanged. Later activation ne
 Final focused trigger/operator suite:27 passed, exit0. Final full npm suite:613 passed, exit0. Preserved all earlier assertions and production code. New cases exercise caller-driven actual APIs and saved intent bytes, isolated simultaneous fixture instances, normal/exception cleanup, escaped/linked/expired custody refusal, unknown methods/endpoints/IDs/body/options rejection, lost-stop uncertainty with restoration and cancellation of a paused adapter. The first focused attempt exposed a test-driver misuse of the reached Promise as a function; correcting the caller produced the passing runs without weakening production guards.
 
 A separate standalone offline workflow driver called the actual APIs and made five independent observations across142 recorded calls, including durable stop intent, checkout-only exposure, retained uncertainty while Alert persisted, explicit OK readback/recovery and custody removal. Its JSON artifact records the actual checkout SHA separately from synthetic source IDs and the working-tree state. This is offline workflow evidence, not a completed native Verify run. Existing real peer/socket/process tests were freshly included in the focused/full suites; their boot/provider injections remain explicitly synthetic. Production runtime/app/locks/pins are unchanged, so previous typecheck/goldens/browser/Terraform checks remain applicable.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Final published monitoring integration
+
+Monitoring parent `8f91bc3a35af30979b8e28650a1ff86485fdfd2b` is integrated by merge `28e6b52f52a302b636f93c5a4c5d8b80465eb5c1` after the actual trigger fixture source `d2678968f7dce253f7a8d3410e70324b9f6b500a`. This supersedes earlier preliminary parent identities. The parent already includes foundation `afbde6c9c1d946989918ce5187bae194cc1a0b68`; neither parent is claimed main-merged or live accepted. The merge preserves the independent trigger core, fixture, cost worksheet and every parent assertion. The inherited heartbeat test waits for actual child readiness/progress, exercises both zero and700ms late startup, and awaits owned-process cleanup; this is real local process evidence, not VM boot or provider evidence. Its author's RED/GREEN and585-unit report are external receipts, not this task's execution results.
+
+The diff against that exact monitoring parent has18 paths within the24-path brief; the three previously inherited foundation paths are now part of the base. Real source SHA is recorded separately from fixture synthetic source/boot/provider identities. Native Verify must still independently invoke the APIs and inspect durable intents/returns/calls; unit totals do not replace workflow evidence.
+
+## Access receipt and named-resource prerequisites — November 6, 2026
+
+Mahesh reports the fresh **07:10 UTC** work-account/ADC check returned **34 of 46 permissions**, with **12 not returned**, including project IAM policy writes and IAP. This is orchestrator-supplied evidence, not a credential check performed by this task. A not-returned permission is not tested authorization. Existing Editor, a working login and adequate quota do not establish these missing rights. Foundation native QA is reported RUNNING6 at `afbde6c9c1d946989918ce5187bae194cc1a0b68` in task `c23f828a-b95a-4f13-a5a5-a5c03d7decc1`; running is not a pass or publication approval.
+
+Before separately approved live operations, an already-authorized administrator must establish the exact capabilities required by the reviewed plan, on its named resources:
+
+| Boundary in `se-demos-project` | Required existing authority and verification |
+| --- | --- |
+| State bucket `se-demos-project-deskdrop-tfstate`; source/artifact buckets `se-demos-project-deskdrop-source` and `se-demos-project-deskdrop-artifacts` | Bucket creation/read and bucket-policy get/set where the plan manages bindings; only necessary state-lock/object and source/artifact operations on the respective bucket. |
+| Artifact Registry `us-central1/deskdrop` | Repository administration/policy get/set for reviewed resources; publisher upload and runtime pull remain distinct resource bindings. |
+| Secrets `deskdrop-datadog-intake` and `deskdrop-datadog-management` | Named-secret administration/policy get/set and separately authorized version provisioning; runtime accessor bindings remain scoped to those secrets. Never infer access from an Editor role. |
+| Service accounts `deskdrop-demo-runtime`, `deskdrop-build`, `deskdrop-publisher` | Only the reviewed account creation/policy and `actAs` capabilities for the selected workflow. Project `resourcemanager.projects.setIamPolicy` remains unconfirmed where project-level bindings require it; no broader role is requested. |
+| VM `deskdrop-demo`, zone `us-central1-a` | Actual IAP tunnel authorization for this instance (including `iap.tunnelInstances.accessViaIAP`), OS Login and service-account-use prerequisites must be verified. Protected install/enrollment needs authorized OS Admin Login/root maintainer access; presenter helper access does not grant sudo or Docker. Preserve the IAP-only TCP22 firewall and private app path. |
+
+These are blockers to establish through existing authorized administration, not instructions to acquire roles, widen identities, guess a group/tester or relax private access. No provider writes occurred here. Mahesh administrator success cannot prove denied non-admin/presenter access; that remains a separate live gate. The $44.19 dated illustration and $100 allowance are unchanged and neither establishes permission readiness. The seven-day allowance begins only at actual first consumption; the hard delivery-window admission cutoff independently still requires reviewed renewal for later activation.
+
+
 
 
 <!-- /coderabbit-ai-generated:v1 -->
