@@ -25,7 +25,7 @@ Use an approved Google group for demo operators, with named maintainers for infr
 
 After deployment and access approval, the existing harness's `node scripts/demo/baseline.mjs tunnel` provides a bounded local tunnel on `127.0.0.1:3100`. The final team runbook must use verified commands/output from the deployed revision, not assume that Mac-only `local.mjs` works on Linux; it explicitly requires macOS today.
 
-Replace the current Mahesh-only Slack member assignment with an explicitly approved team/group assignment for the chosen demo channel. Preserve other channels and Slack Default. Confirm each eligible operator can invoke both independent buttons and each ineligible actor is rejected. Scope connection availability and native Coding Agent authentication are separate checks; a Mac CLI login does not establish sandbox credentials.
+Replace the current Mahesh-only Slack member assignment with an explicitly approved team/group assignment for the chosen demo channel. Preserve other channels and Slack Default. Confirm each eligible operator can invoke both independent buttons and each ineligible actor is rejected. Verify the native repository authoring identity can read, commit and open a scoped PR for each operator. A Mac CLI login is for the review harness; it is not a native-authoring prerequisite and must not be copied into a sandbox.
 
 ## Terraform requirements before apply
 
@@ -52,9 +52,9 @@ Keep the custom Socket Mode bridge paused. Deploying it would be a separate prod
 
 ## Complete native source remediation
 
-Verify CodeRabbit Code discovery/handoff authentication within the native Slack execution environment. The latest local Debug investigation could inspect and test the repository, but task discovery required authentication and no defect was reproduced. Do not solve that gap by copying an unrestricted presenter CLI token into a shared sandbox.
+The local source rehearsal produced [native PR #23](https://github.com/coderabbit-demo/mmani-shopping-cart/pull/23) from an explicitly approved faulty branch. Native CodeRabbit repository tools authored and published the fix after the Mac's one CLI review. Do not reintroduce separate cloud-task creation or sandbox CLI authentication as a prerequisite to coding. Retain native work-log, source/PR identity, CodeRabbit review and QA receipts.
 
-Approve a reproducible isolated source fixture with expected failing/passing behavior and a safe reset. The native Debug path must create at most one repository task/PR for that episode without consulting or attaching a Jira ticket. It must retain one CLI review per new coding task, PR/security/CI feedback and exact-head native QA Agent Verify. Jira remains an independent artifact path. Cloud availability does not itself prove any of this handoff.
+For the team rollout, approve a reproducible isolated source fixture with expected failing/passing behavior and a safe reset. Use fresh refs; do not reset an earlier fixed branch. The native Debug path must produce at most one fix PR for that episode without consulting or attaching a Jira record. Keep one CLI review per new remediation flow, PR/security/CI feedback and exact-head native QA Agent Verify. Jira remains an independent path. Prove the same native authoring flow under the approved team actor mapping; cloud availability alone does not prove it.
 
 ## Rollout and acceptance
 
@@ -64,7 +64,7 @@ Approve a reproducible isolated source fixture with expected failing/passing beh
 | B · Always-on monitoring | Linux checker/Agent and cloud-owned monitors | Fresh successful checks and real US3 intake; bounded failure/recovery; heartbeat loss; restart/reboot recovery; exact ownership and suppression readback |
 | C · Team trigger | Private trigger, lease, supervisor and operator docs | One isolated alert and restored state; second operator busy/rejected; terminal/tunnel disconnect; failed-write reconciliation; no unrelated monitor/container changes |
 | D · Native choices | Independent Jira and Debug actions for approved team actors | Both button orders; one correct incident Bug when Jira is selected; repository investigation when only Debug is selected; visible provider failures; replay/concurrent-click tests |
-| E · Fix PR proof | Approved faulty source to one unmerged fix PR | Actual native task and PR links; assertion RED/GREEN; single CLI receipt; exact-head PR/security/CI and conclusive native Verify; no Jira dependency |
+| E · Fix PR proof | Approved faulty source to one unmerged fix PR | Actual native work-log, commit and PR links; assertion RED/GREEN; single CLI receipt; exact-head PR/security/CI and conclusive native Verify; no Jira dependency |
 | F · Handoff | A second presenter runs and resets the demo unaided | Do / Say / See rehearsal, owner/escalation map, dated receipts, restore drill, cost review and teardown exercise |
 
 The phase is team-ready only after an operator other than Mahesh completes the end-to-end rehearsal and reset without using his Mac, local credential files, browser session or personal tokens. Record remaining limits explicitly. Do not present Terraform validation, mocked checks, sandbox QA or the local SC-41 run as live GCP acceptance.

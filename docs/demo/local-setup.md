@@ -1,6 +1,3 @@
-
-
-
 # DeskDrop incident demo: setup and architecture
 
 This is the local Mac version of the Datadog → CodeRabbit → Slack demo. Jira creation and repository debugging are independent user choices. Start with the [Do / Say / See walkthrough](incident-walkthrough.md) for presentation; use this page for preparation and [the provider evidence](../automations/datadog-to-slack-mmani.md) for exact observed results. The [next phase](gcp-team-handoff.md) moves the runtime and trigger to Google Cloud for team use.
@@ -9,7 +6,7 @@ This is the local Mac version of the Datadog → CodeRabbit → Slack demo. Jira
 
 Verified November 5, 2026: Datadog TEST notifications reach the native MMANI automation, both Slack buttons render, Debug investigates the repository without a ticket, and Create Jira Ticket creates a verified SC Bug. The latest recorded run created [SC-41](https://coderabbit-demo.atlassian.net/browse/SC-41) after Debug completed. Debug reported 68 domain and three checkout browser tests passing on `main@80bf508`, with no reproduced defect and no PR.
 
-The automatic real-alert trigger is a separate implementation described in [brief 12](../briefs/12-demo-guide-trigger.md). Its command examples below require reviewed implementation and verified live readiness before execution. The tested Datadog UI fallback is available now. The complete native CodeRabbit Code → fix PR → review → Verify path has not been demonstrated.
+The automatic real-alert trigger is a separate implementation described in [brief 12](../briefs/12-demo-guide-trigger.md). Its command examples below require reviewed implementation and verified live readiness before execution. The tested Datadog UI fallback is available now. A separately approved source rehearsal subsequently produced native [PR #23](https://github.com/coderabbit-demo/mmani-shopping-cart/pull/23) at `4d73cba4f5f93e89d6db93438687eaddff1ada5a`. CodeRabbit authored the two-file fix in the incident thread, the Mac completed one CLI review with zero findings, and CodeRabbit opened the unmerged PR. See its current PR/security/CI and native Verify evidence. Native authoring does not require CLI authentication or a separate cloud-task API.
 
 ## Architecture
 
@@ -26,14 +23,14 @@ flowchart LR
   JiraButton --> Bug[Create or reuse SC Bug]
   Slack --> DebugButton[Debug and Create PR]
   DebugButton --> Repo[Investigate repository and reproduce]
-  Repo -. Source defect and authenticated handoff required .-> Code[CodeRabbit Code]
-  Code -.-> CLI[One CLI review for the new task]
-  CLI -.-> PR[Fix PR in the same repository]
+  Repo --> Code[Native CodeRabbit repository authoring]
+  Code --> CLI[One Mac CLI review before publication]
+  CLI --> PR[Native fix PR in the same repository]
   PR -.-> Review[CodeRabbit PR feedback and CI]
   Review -.-> Verify[Native QA Agent Verify]
 ```
 
-Solid downstream paths were exercised using a Datadog TEST notification. The dashed Mac monitoring/Agent intake path remains unverified; the separate dashed implementation/review path also remains to be proved from the native Debug button. TEST evidence does not prove Agent health, intake or an actual app outage. No Jira edge feeds Debug. The separately implemented MMANI Demo Bridge Socket Mode receiver is paused and is not part of this architecture.
+Solid downstream paths were exercised using a Datadog TEST notification and the separately approved source rehearsal, with same-thread plan clarification before native authoring. The dashed Mac monitoring/Agent intake path remains unverified. The PR links provide the current exact-head review and Verify evidence; the recorded rehearsal does not prove a fresh single-click run after the saved instruction change or concurrent/replayed actions. TEST evidence does not prove Agent health, intake or an actual app outage. No Jira edge feeds Debug. The separately implemented MMANI Demo Bridge Socket Mode receiver is paused and is not part of this architecture.
 
 
 ## Resource map
@@ -62,7 +59,7 @@ The notification rule's ownership selector is separate from the service-check qu
 ## Install and enroll a Mac
 
 1. Use a reviewed committed checkout. Install Git, Docker Desktop, npm and Node 22.6 or newer; use the reviewed Node 24 toolchain where available. The future shell entry point must support macOS Bash 3.2. The application and checker image pins are in `deploy/runtime-versions.json`; do not silently update them.
-2. Confirm GitHub access and the CodeRabbit CLI's `coderabbit-demo` organization. `coderabbit auth status`, `coderabbit doctor` and `coderabbit code ls --repo . --agent` are read-only readiness checks after authentication. Interactive login belongs to the operator. Mac CLI authentication is distinct from authentication inside CodeRabbit's Slack sandbox.
+2. Confirm GitHub access and the CodeRabbit CLI's `coderabbit-demo` organization for the Mac's review step. `coderabbit auth status` and `coderabbit doctor` check that review harness. Interactive login belongs to the operator. Native CodeRabbit coding and PR creation use the configured repository authoring identity; neither sandbox CLI login nor separate cloud-task discovery is a prerequisite. Never copy Mac tokens into the agent.
 3. Create the ignored `.env.demo.local` in the checkout used by the local controller, with `DD_API_KEY`, `DD_APP_KEY`, and optionally `DD_SITE=us3.datadoghq.com`. Keep it a regular, current-user-owned mode-0600 file. `DD_APPLICATION_KEY` is a supported alias only when it agrees with `DD_APP_KEY`. The existing loader requires the protected file even if matching variables are exported. Keep values out of shell history, screenshots, Git, app containers and prompts.
 4. The API key enables Agent intake; the application key needs the monitor read/write/downtime permissions required for the owned resources. It stays in the Mac management process. See [local Docker setup](local-docker.md) for reviewed secret-backend and image procedures.
 5. Read the existing ownership journal before provisioning. Reuse the three recorded monitors. Do not run monitor `plan`/`apply` against an already-enrolled installation to make another copy.
@@ -74,7 +71,7 @@ Datadog's saved notification rule routes the owned monitors to the existing MMAN
 
 The scope includes the repository, native Jira CodeRabbit Demo connection and existing environment. An inherited `Meena Atlassian - RO` connection previously conflicted with Jira MCP at the same endpoint and caused `access_scope_duplicate_connection_runtime_override`. With explicit approval, only that inherited connection was excluded in this shared scope. Base Scope and environment scripts were not changed. A scope edit affects all consumers of that reusable scope, including Reviews/Coding and messaging automations.
 
-The saved prompt separates detailed action policies from two concise native definitions, and tells the agent not to print JSON as a substitute for controls. The platform renders the buttons on the first triage reply. When supplying an action prompt in Slack, use the installed CodeRabbit app mention, `<@U0AV4T6LSP2>`, rather than an inert text tag.
+The saved prompt separates detailed action policies from two concise native definitions, and tells the agent not to print JSON as a substitute for controls. The platform renders the buttons on the first triage reply. The saved policy uses native repository authoring and PR tools, checks matching PRs/native run state, and keeps the single CLI review separate from coding. A native work-log and commit/PR link are the authoring evidence; no separate cloud-task link is required. When supplying an action prompt in Slack, use the installed CodeRabbit app mention, `<@U0AV4T6LSP2>`, rather than an inert text tag.
 
 ## Pre-demo checks
 
