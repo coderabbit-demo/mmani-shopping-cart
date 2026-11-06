@@ -13,6 +13,29 @@ Postman collection v2.1 and a secret-free environment JSON are the required oper
 
 Required sequence: CodeRabbit inspects the milestone-1 plan against this approved scope; implement protected/authenticated health API, telemetry, meaningful tests and importable Postman artifacts; complete review/CI/QA; prove actual protected 200 and indexed US3 intake before quote/fault/action implementation. Do not re-prompt for routine choices within this approved scope. A real access/credential blocker must be reported precisely. Merge is still a separate checkpoint.
 
+
+## Isolated telemetry approval - November 6, 2026
+
+Mahesh confirmed `Personal` in Datadog US3 (`manimahesh1@gmail.com`) is demo-only and explicitly approved isolated logging with a new ingestion key stored only in `coderabbitai/coderabbit-automation-demo`. The shared Vercel Datadog installation serves production `coderabbit-bot`; do not add this project to it, reconnect it, alter its organization/keys/drains/routing, or reuse its credentials. This supersedes the earlier Marketplace/log-drain design. No production Datadog connector is needed for runtime delivery.
+
+Use built-in Node HTTPS fetch to the fixed documented Datadog US3 v2 log-intake endpoint. Read only a new dedicated project-sensitive `WORKFLOW_DD_API_KEY`; no inherited generic DD credential or management key. Enroll it privately after verifying the demo org and key identity. No package, Mac runtime, local env file, redirect, caller-supplied destination, arbitrary proxy, raw request data or retry loop. Await one bounded send within the function lifetime; distinguish transport acceptance from indexed-log proof. Preserve sanitized Vercel stdout events, server-derived source/request/actor identity, request authentication/limits and all prior assertions. Transport failures must not masquerade as a genuine quote defect or successful end-to-end proof.
+
+This is new approved telemetry implementation work, not a PR-fix-only round: complete one additional CLI review for this new behavior, plus exact-head PR/security/CI feedback and native Verify. Existing auth/Postman fixes required no extra review. Scope remains under30 files, zero third-party dependencies.
+
+Exact isolated-telemetry ALLOW subset:
+
+```text
+ALLOW: tools/workflow-api/lib/datadog.mjs
+ALLOW: tools/workflow-api/lib/telemetry.mjs
+ALLOW: tools/workflow-api/api/health.mjs
+ALLOW: tests/workflow-api-datadog.test.mjs
+ALLOW: tests/workflow-api-http.test.mjs
+ALLOW: docs/briefs/16-vercel-api-workflow.md
+ALLOW: docs/demo/vercel-api-walkthrough.md
+```
+
+The first real protected200 must join to searchable logs in Personal US3 before quote/fault/action implementation. API authentication, old-preview revocation/retirement and source/credential isolation must be demonstrated separately. No quote fault, new monitor activation, Jira Bug, Debug fixPR, merge, production action or live alert in this telemetry coding task.
+
 ## Proposed outcome and smallest architecture
 
 Use the existing `coderabbit-demo/mmani-shopping-cart` repository and its working native CodeRabbit scope. Add a separate, small `tools/workflow-api` Vercel project root. It exposes a protected health endpoint and a genuine quote-calculation API callable from Postman or a bounded curl script. The shopper application, its localStorage behavior, all six existing cart requirements, goldens, root npm manifest and root lockfile remain untouched.
