@@ -1,8 +1,9 @@
+import { operationContext } from './trigger-alert.mjs';
 import { readFile, open, lstat, mkdir, realpath, rename, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadCredentials } from './local.mjs';
+import { loadCredentials, refuseRehearsal } from './local.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
@@ -82,8 +83,14 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
   if (!apiKey || !appKey) throw new Error('Missing Datadog credentials');
   if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000) throw new Error('Invalid request deadline');
   async function call(method, path, body, requestDeadline = deadlineMs) {
+    const operation = operationContext();
+    operation?.signal.throwIfAborted();
+    requestDeadline = Math.min(requestDeadline, operation ? operation.deadline - Date.now() : requestDeadline);
+    if (requestDeadline <= 0) throw new Error('Datadog request outcome unknown');
+    const ruleRead = method === 'GET' && path === '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc';
+    const ruleList = method === 'GET' && /^\/api\/v2\/monitor\/notification_rule\?page=(?:[0-9]|10)&per_page=(?:[1-9]|[1-9][0-9]|100)&sort=(?:name|created_at)%3A(?:asc|desc)$/.test(path);
     const groupRead = method === 'GET' && /^\/api\/v1\/monitor\/\d+\?group_states=all$/.test(path);
-    if ((!groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
+    if ((!ruleRead && !ruleList && !groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
     return new Promise((resolve, reject) => {
       let size = 0, chunks = [], finished = false, req, response;
       const fail = () => finish('Datadog request outcome unknown');
@@ -92,7 +99,7 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
       const timer = setTimeout(fail, requestDeadline);
       const finish = (error, value) => {
         if (finished) return;
-        finished = true; clearTimeout(timer);
+        finished = true; clearTimeout(timer); operation?.signal.removeEventListener('abort', fail);
         const dispose = stream => {
           if (!stream || typeof stream.destroy !== 'function') return;
           const ignore = () => {};
@@ -105,7 +112,9 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
         if (error) { dispose(response); dispose(req); }
         if (error) reject(new Error(error)); else resolve(value);
       };
+      operation?.signal.addEventListener('abort', fail, { once: true });
       try {
+        operation?.signal.throwIfAborted();
         req = request({ protocol: 'https:', hostname: 'api.us3.datadoghq.com', port: 443, method, path, headers: { 'DD-API-KEY': apiKey, 'DD-APPLICATION-KEY': appKey, 'content-type': 'application/json', accept: 'application/json' } }, incoming => {
           response = incoming;
           if (finished) { response.destroy?.(); return; }
@@ -117,7 +126,35 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
       } catch { finish('Datadog request outcome unknown'); }
     });
   }
+  const listNotificationRules = (page, perPage = 100, sort = 'name:asc', remaining = deadlineMs) => {
+    if (!Number.isInteger(page) || page < 0 || page > 10 || !Number.isInteger(perPage) || perPage < 1 || perPage > 100 || !['name:asc', 'name:desc', 'created_at:asc', 'created_at:desc'].includes(sort) || !Number.isFinite(remaining) || remaining <= 0) throw new Error('Invalid notification rule page');
+    return call('GET', `/api/v2/monitor/notification_rule?page=${page}&per_page=${perPage}&sort=${encodeURIComponent(sort)}`, undefined, Math.min(deadlineMs, remaining));
+  };
   return {
+    listNotificationRules,
+    async notificationRules() {
+      const end = performance.now() + deadlineMs, rules = [], ids = new Set();
+      let total;
+      for (let page = 0; page <= 10; page++) {
+        const remaining = end - performance.now();
+        if (remaining <= 0) throw new Error('Notification rule coverage incomplete');
+        const result = await listNotificationRules(page, 100, 'name:asc', remaining);
+        const count = result?.meta?.page?.total_count;
+        if (!Number.isSafeInteger(count) || count < 0 || count > 1000 || (total !== undefined && count !== total) || !Array.isArray(result?.data)) throw new Error('Notification rule coverage incomplete');
+        total = count;
+        if (result.data.length !== Math.min(100, Math.max(0, total - page * 100))) throw new Error('Notification rule coverage incomplete');
+        for (const rule of result.data) {
+          if (typeof rule?.id !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(rule.id) || ids.has(rule.id) || !rule.attributes || typeof rule.attributes !== 'object' || Array.isArray(rule.attributes)) throw new Error('Notification rule coverage incomplete');
+          ids.add(rule.id); rules.push(rule);
+        }
+        if (result.data.length === 0) {
+          if (rules.length !== total) throw new Error('Notification rule coverage incomplete');
+          return rules;
+        }
+      }
+      throw new Error('Notification rule coverage incomplete');
+    },
+    getNotificationRule: () => call('GET', '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc'),
     listMonitors: (page, size, remaining = deadlineMs) => call('GET', `/api/v1/monitor?page=${page}&page_size=${size}`, undefined, Math.max(1, Math.min(deadlineMs, remaining))),
     validate: body => call('POST', '/api/v1/monitor/validate', body),
     getMonitor: id => call('GET', `/api/v1/monitor/${id}?group_states=all`),
@@ -311,6 +348,7 @@ async function saveState(state) {
 }
 async function lock(operation) {
   await stateDirectory(true);
+  await refuseRehearsal(stateDir);
   const lockPath = path.join(stateDir, 'monitor.lock');
   const handle = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try { return await operation(); } finally { await handle.close(); await unlink(lockPath); }
