@@ -105,10 +105,90 @@ try:
  rollback=m.Broker(c,lambda:True,'new',lambda:999)
  try:rollback.request(b'{"action":"trigger"}',os.getuid()); raise AssertionError('clock rollback admission')
  except ValueError:pass
+ # Exercise actual broker sockets while a separate supervisor process is blocked.
+ (root/'lease.json').unlink()
+ m.time.time=lambda:1000
+ h=m.Host(c,{},'synthetic-boot');h.mark(True)
+ broker.readiness=h.ready;broker.reserve=h.reserve_cycle
+ entered=multiprocessing.Event();release=multiprocessing.Event();seen=multiprocessing.Event()
+ def inspect_worker():
+  worker=m.Host(c,{},'synthetic-boot')
+  def invoke(mode):
+   assert mode=='inspect';entered.set();assert release.wait(5)
+   return {'status':'ready'}
+  worker.invoke=invoke;worker.cycle(True)
+ worker=multiprocessing.Process(target=inspect_worker);worker.start()
+ try:
+  assert entered.wait(3)
+  assert request('status')['admission']=='ready', 'long inspect blocks valid readiness'
+  competing=multiprocessing.Event();answers=multiprocessing.Queue()
+  def submit():
+   competing.wait();answers.put(request('trigger'))
+  clients=[multiprocessing.Process(target=submit) for _ in range(8)]
+  for client in clients:client.start()
+  competing.set()
+  replies=[answers.get(timeout=3) for _ in clients]
+  for client in clients:client.join(3);assert client.exitcode==0
+  assert sum(r['status']=='accepted' for r in replies)==1,replies
+  assert sum(r['status']=='busy' for r in replies)==7,replies
+  assert request('trigger')['status']=='busy'
+  assert request('recover')['status']=='joined'
+  saved=m.lease(c);assert saved['recoverRequested']
+  release.set();worker.join(3);assert worker.exitcode==0
+  assert m.lease(c)==saved, 'inspection overwrote concurrent admission'
+ finally:
+  release.set()
+  if worker.is_alive():worker.kill()
+  worker.join(3);assert not worker.is_alive()
+ # A real lock conflict must never falsely acknowledge recovery.
+ saved['recoverRequested']=False;c.save(saved)
+ with c.locked():
+  assert request('recover')['status']!='joined'
+ assert not m.lease(c)['recoverRequested']
+ entered.clear();release.clear()
+ def active_worker():
+  worker=m.Host(c,{},'synthetic-boot')
+  def invoke(mode):
+   if mode=='trigger':
+    entered.set();assert release.wait(5)
+    assert m.lease(c)['recoverRequested'];seen.set()
+   return {'status':'restored','run':saved['run']} if mode=='recover' else {'status':'ready'}
+  worker.invoke=invoke;worker.cycle(True)
+ worker=multiprocessing.Process(target=active_worker);worker.start()
+ try:
+  assert entered.wait(3)
+  assert request('status')['phase']=='recovering'
+  assert request('trigger')['status']=='busy'
+  request('recover',True)
+  assert m.lease(c)['recoverRequested'], 'disconnected recovery not persisted'
+  assert request('recover')['status']=='joined'
+  # Resource operations cannot overlap even though the journal lock is free.
+  try:h.cycle(True);raise AssertionError('overlapping worker')
+  except BlockingIOError:pass
+  release.set();worker.join(3);assert worker.exitcode==0 and seen.is_set()
+  result=m.lease(c);assert result['run']==saved['run'] and result['recoverRequested'] and result['phase']=='complete'
+ finally:
+  release.set()
+  if worker.is_alive():worker.kill()
+  worker.join(3);assert not worker.is_alive()
+ assert c.read('runs.json')['reserved']==1
+ h.mark(True);m.time.time=lambda:1006
+ assert request('status')['admission']=='closed'
+ assert request('trigger')['status']=='denied-or-reconciliation-required'
+ m.time.time=lambda:1000
+ enrollment['uid']=os.getuid()+1;c.save(enrollment,'enrollment.json')
+ assert request('recover')['status']=='denied-or-reconciliation-required'
+ enrollment['uid']=os.getuid();c.save(enrollment,'enrollment.json')
+ h.mark(True)
+ def failed(mode):raise TimeoutError()
+ h.invoke=failed
+ try:h.cycle();raise AssertionError('failed inspection accepted')
+ except TimeoutError:pass
+ assert not h.ready()
  print('peer/protocol/enrollment/concurrency/disconnect/death/custody/cutoff passed')
 finally:shutil.rmtree(root)
 `;
-test('Linux kernel peer credentials and durable competing-process admission', { timeout: 20000 }, () => {
+test('Linux kernel peer credentials and durable competing-process admission', { timeout: 20000, skip: process.platform !== 'linux' ? 'Linux SO_PEERCRED protocol requires kernel peer credentials; exercised on Linux CI/native Verify' : false }, () => {
   const result = spawnSync('python3', ['-B', '-c', python], { encoding: 'utf8', timeout: 15000 });
   assert.equal(result.status, 0, JSON.stringify({ status: result.status, signal: result.signal, error: result.error?.message, stderr: result.stderr }));
   assert.match(result.stdout, /passed/);

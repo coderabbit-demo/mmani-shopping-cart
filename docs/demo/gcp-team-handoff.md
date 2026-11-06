@@ -307,6 +307,10 @@ The hard November6 2026 07:00Pacific /15:00UTC admission cutoff enforces this de
 
 
 <!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d22909021627d628842eadd4bdf756175333b2f1e84b7eca2eae3018a08226ef -->
+
 
 ## Access receipt and named-resource prerequisites — November 6, 2026
 
@@ -323,6 +327,15 @@ Before separately approved live operations, an already-authorized administrator 
 | VM `deskdrop-demo`, zone `us-central1-a` | Actual IAP tunnel authorization for this instance (including `iap.tunnelInstances.accessViaIAP`), OS Login and service-account-use prerequisites must be verified. Protected install/enrollment needs authorized OS Admin Login/root maintainer access; presenter helper access does not grant sudo or Docker. Preserve the IAP-only TCP22 firewall and private app path. |
 
 These are blockers to establish through existing authorized administration, not instructions to acquire roles, widen identities, guess a group/tester or relax private access. No provider writes occurred here. Mahesh administrator success cannot prove denied non-admin/presenter access; that remains a separate live gate. The $44.19 dated illustration and $100 allowance are unchanged and neither establishes permission readiness. The seven-day allowance begins only at actual first consumption; the hard delivery-window admission cutoff independently still requires reviewed renewal for later activation.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Broker availability during supervised work
+
+The public status/trigger/recover protocol is unchanged. The supervisor holds a separate protected `worker.lock` while invoking exact-owned controllers; broker and supervisor hold `execution.lock` only for short journal/admission transactions. Existing management exclusion and supervisor lease remain. An active inspection retains the prior readiness proof only within its existing five-second freshness bound; failed/unsafe inspection closes admission. A concurrent admitted lease is never replaced by an inspection result.
+
+`recover` returning `joined` means the request has been durably saved before the response. A transient journal-lock conflict returns `busy`, which does not acknowledge recovery; read status and retry the same recovery request. The broker only enqueues. The active controller reads the durable request during Alert observation; supervised recovery rereads the lease before updating phase and preserves the flag. Native Verify should hold a controlled worker open while independently issuing status/admission/recovery, inspect the saved lease before releasing it, and verify one admission, no lost recovery flag and final owned-child cleanup. The Linux kernel-peer workflow must actually run on Linux; its one non-Linux applicability skip is not peer-authentication evidence. Other operator tests remain enabled on all supported test hosts.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

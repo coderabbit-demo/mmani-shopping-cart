@@ -62,7 +62,7 @@ class Custody:
                 raise ValueError('Unsafe custody')
 
     def open(self, name, flags):
-        if name not in ('lease.json', 'enrollment.json', 'execution.lock', 'broker.lock', 'supervisor.lock', 'ready.json', 'route.json', 'runs.json'):
+        if name not in ('lease.json', 'enrollment.json', 'execution.lock', 'broker.lock', 'supervisor.lock', 'worker.lock', 'ready.json', 'route.json', 'runs.json'):
             raise ValueError('Invalid custody file')
         self.safe()
         fd = os.open(self.directory / name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
@@ -203,13 +203,7 @@ class Broker:
                     raw += part
                 reply = self.request(raw, uid)
             except BlockingIOError:
-                try:
-                    action = parse_request(raw)
-                    self.authenticate(self.custody, uid)
-                    current = lease(self.custody)
-                    reply = {'status': 'joined' if action == 'recover' else 'busy', 'phase': current['phase'], 'run': current['run']}
-                except Exception:
-                    reply = {'status': 'busy'}
+                reply = {'status': 'busy'}
             except Exception:
                 reply = {'status': 'denied-or-reconciliation-required'}
             try:
@@ -413,24 +407,42 @@ class Host:
         self.custody.save({'boot': self.boot, 'ready': ready, 'updated': int(time.time())}, 'ready.json')
 
     def cycle(self, allow_trigger=False):
-        with self.custody.locked():
-            self.mark(False)
-            try: record = lease(self.custody)
-            except FileNotFoundError: record = None
-            if record and record['phase'] != 'complete':
-                fresh = allow_trigger and record['phase'] == 'admitted' and record['boot'] == self.boot and not record['recoverRequested'] and record['started'] <= time.time() < min(record['deadline'], CUTOFF)
-                record['phase'] = 'recovering'; self.custody.save(record)
+        # Only the supervisor executes workers; broker mutations hold the short journal lock.
+        with self.custody.locked('worker.lock'):
+            with self.custody.locked():
+                try: record = lease(self.custody)
+                except FileNotFoundError: record = None
+                active = record and record['phase'] != 'complete'
+                if active:
+                    self.mark(False)
+                    fresh = allow_trigger and record['phase'] == 'admitted' and record['boot'] == self.boot and not record['recoverRequested'] and record['started'] <= time.time() < min(record['deadline'], CUTOFF)
+                    record['phase'] = 'recovering'
+                    self.custody.save(record)
+            if active:
                 if fresh:
                     try: self.invoke('trigger')
                     except Exception: pass
-                # A separate invocation also reconciles a killed/timed-out fault worker.
+                # Recovery also fences a killed or timed-out fault worker.
                 try: result = self.invoke('recover')
                 except Exception: result = {'status': 'reconciliation-required'}
-                record['phase'] = 'complete' if result.get('status') == 'restored' and result.get('run') == record['run'] else 'uncertain'
-                self.custody.save(record)
-                if record['phase'] != 'complete': return
-            result = self.invoke('inspect')
-            if result.get('status') == 'ready': self.mark(True)
+                with self.custody.locked():
+                    current = lease(self.custody)
+                    if current['run'] != record['run']:
+                        self.mark(False)
+                        raise ValueError('Reservation changed during recovery')
+                    current['phase'] = 'complete' if result.get('status') == 'restored' and result.get('run') == current['run'] else 'uncertain'
+                    self.custody.save(current)
+                    if current['phase'] != 'complete': return
+            try:
+                result = self.invoke('inspect')
+            except Exception:
+                with self.custody.locked(): self.mark(False)
+                raise
+            with self.custody.locked():
+                try: current = lease(self.custody)
+                except FileNotFoundError: current = None
+                # An admission during inspection remains owned by the next cycle.
+                self.mark(result.get('status') == 'ready' and (not current or current['phase'] == 'complete'))
 
 
 @contextlib.contextmanager

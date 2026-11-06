@@ -157,6 +157,10 @@ The diff against that exact monitoring parent has18 paths within the24-path brie
 
 <!-- coderabbit-ai-generated-section:v1:ef4b3024e6eb1c3665db08c71016f2f17f6c23825e56e321cc120e76b6aedaf5 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1e7b739ac0780676a7e7c3c820053de230963d94a4588d9db96a4465856e58fe -->
+
 
 ## Access receipt and named-resource prerequisites — November 6, 2026
 
@@ -184,6 +188,26 @@ These are blockers to establish through existing authorized administration, not 
 On merge `28e6b52f52a302b636f93c5a4c5d8b80465eb5c1` with the final handoff/evidence edits, Node24.22.2 and unchanged locked dependencies: `npm test` exited0 with615 passed, zero failed/skipped; `node --test tests/cloud-monitoring.test.mjs tests/cloud-trigger.test.mjs tests/cloud-operator.test.mjs tests/demo-baseline.test.mjs` exited0 with93 passed. This includes both deterministic heartbeat-delay cases and original local-demo assertions. The Mac's reported earlier parallel581/583 result and serial diagnosis are separate external observations; this Linux pass does not resolve or relabel those Mac results.
 
 The standalone offline fixture driver exited0 with five independently asserted observations and142 API-call records. It checked readiness, durable stop intent/checkout-only exposure, restoration with health uncertainty retained, separate recovery to broad protection/complete state, and custody removal. Actual code SHA and synthetic fixture identity are separate in its output. This is not native QA Verify or cloud acceptance. Scope-gate and whitespace checks passed;18 paths against the final monitoring parent are within24 ALLOW entries. Prior typecheck,29 goldens,28 shopper browser cases and17 Terraform mocks are reused from the validation record because their source/test/config/runtime inputs are unchanged; they were not rerun. No new screenshot or live claim is made. Publication remains pending the parent-main/QA checkpoints and the Mac's one review of the whole final diff.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:dd1dc2e0cda45e5387bf8e1194049fe667950fe4cb6caa723a9616de11eaf619 -->
+
+
+## Single Mac review correction round
+
+The Mac completed exactly one CLI0.9.2 review on2303a0f against8f91bc3, covering18 paths and reporting two Major findings. Both were validated: the unconditional LinuxSO_PEERCRED case fails on Mac; the supervisor held the admission lock across long workers and its lock-conflict fallback falsely acknowledged recovery without persistence. This round addresses both; no new CLI review was run.
+
+The Linux-only test has an explicit per-test platform reason; all its original assertions remain enabled on Linux. No production Mac fallback was added. In this Linux sandbox, a new real socket/process regression was RED against the old worker lock, and a separate original-source reproduction returned joined with recoverRequested=false (exit1 assertion). The corrected design uses a protected worker lock for resource execution and short journal locks for admission/read/update. Completion rereads durable lease fields, preserves concurrent recovery requests, refuses changed-run completion, and does not overwrite admissions arriving during inspection. Fresh readiness remains bounded at five seconds and failures close it. No authentication, cutoff, counter, recovery bound, management exclusion or provider boundary was relaxed. Real subprocess/socket observations and simulated controller/provider/boot state remain distinct from live VM evidence.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+Correction validation on Linux: `node --test tests/cloud-operator.test.mjs tests/cloud-trigger.test.mjs tests/demo-baseline.test.mjs` exited0 with78 passed; `npm test` exited0 with615 passed, zero failures/skips. This includes the fully enabled kernel-peer case, eight competing clients during blocked inspection, active-worker status/recovery and disconnect, durable early flag visibility, no lease overwrite, worker exclusion, stale-proof/denied-actor refusal and joined-process cleanup. Existing boot/death, counter/cutoff and unknown-installer restoration assertions remain passing. Original-source RED observations are recorded above; the corrected lock-conflict case refuses joined before persistence. Python AST and whitespace checks passed. The separate actual-export offline workflow passed five observations with142 calls; it is not native Verify or live VM evidence.
+
+No Mac test run is claimed here. For the six-test operator file, the expected non-Linux applicability is five enabled cases plus exactly one Linux-only skip; actual Mac counts must come from the Mac runner. Linux CI/native Verify must observe that peer/socket test running, not skipped. This resolves the two reported Major findings in source and Linux tests; final review/PR/security/CI/native acceptance remain with the orchestrator. No additional CLI review or provider operation was performed.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
