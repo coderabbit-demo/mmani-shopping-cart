@@ -114,7 +114,93 @@ The phase is team-ready only after an operator other than Mahesh completes the e
 - [IAP TCP forwarding](https://docs.cloud.google.com/iap/docs/using-tcp-forwarding) for private VM access and target permissions.
 - [Terraform GCS backend](https://developer.hashicorp.com/terraform/language/backend/gcs) for state locking, existing-bucket requirements and recovery recommendations.
 - [Secret Manager access control](https://docs.cloud.google.com/secret-manager/docs/access-control) for least privilege and Compute Engine scope requirements.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:951885492dd0890a2233ebc3f8b49cffde47a4c12862ab88f6f7883b5de6350f -->
+
 - The existing [private baseline runbook](gcp-baseline.md) and [cost worksheet](gcp-costs.md) remain the detailed deployment references.
+
+# Brief 14: GCP recurring monitoring implementation
+
+## Scope and release gates
+
+This is the cloud-only implementation for [GH26](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/26), under the delegated engineering acceptance exception. Foundation interface source is **5e40a573e7f6554e33e91f71c09acf3ecbd26f5b**; integration merge is **54b8bd1839d824d2376d1fc88f49acb073116e70**. These are published task snapshots, not a foundation main merge or deployment receipt. The separately announced Darwin fixture-only correction and any later foundation interface changes must be integrated before final review. Main-target PR publication waits for foundation merge and a monitoring-only diff under 30 paths, within Brief14's18 allowed paths.
+
+No cloud installation, IAM write, secret provisioning, monitor creation, routing activation or provider acceptance has been performed by this task. The Mac supplies this task's single completed CLI review on the completed diff. Keep Autofix and task CLI review off. Native QA Verify must subsequently run on the final head. Screenshots only; no videos.
+
+## Runtime and trust boundaries
+
+Ubuntu24.04 amd64 must provide the existing foundation's Python3, systemd, Docker29.9.3 and Compose5.7.0. **Host Node is not required.** A distinct trusted container uses the existing pinned image `node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607`. Installation pulls that digest, checks linux/amd64 and executes `node --version` with networking disabled; subsequent starts use `--pull never`. The controller uses Node's standard-library HTTP client on the Unix Docker socket, with exact operation/path allowlists and bounded responses. No Docker CLI is assumed inside that image. The host Python supervisor uses the foundation's existing Docker CLI.
+
+| Actor | Access |
+| --- | --- |
+| App and disposable checker | Nonroot; internal bridge; no socket, key, host mount, metadata or outbound IPv4/IPv6 access. Checker uses the existing Chromium sandbox/seccomp and fresh context. |
+| Controller and cleanup container | Trusted root Docker administrative boundary; fixed source/owner/image configuration; Docker socket; no management or intake secret mount. Not connected to the storefront bridge. |
+| Independent heartbeat container | Host loopback UDP only in its implementation; read-only monitoring state and code; no socket or secrets. Separate process even while a browser hangs. |
+| Agent | Existing pinned trusted Agent; intake secret only; host networking allows loopback DogStatsD. Nonlocal DogStatsD remains disabled. |
+| One-shot installer | Root, separate management-secret mount, no Docker socket. US3 only; no secret values in arguments, output, Terraform or images. |
+
+Root Docker can administer the host; it is intentionally outside the app/checker boundary. Presenters must have neither Docker-group membership nor unrestricted sudo. Nonroot host OUTPUT rules deny169.254.169.254 and fd20:ce::254 independently of bridge rules. Root bootstrap metadata access remains available. Later non-admin testing must verify metadata.google.internal and metadata aliases resolve to the protected addresses and that no alternate metadata path exists. Mahesh's current Editor/admin access is not least-privilege presenter evidence.
+
+The separate `deskdrop-datadog-management` Secret Manager resource has a resource-scoped runtime-service-account accessor grant. It has **no Terraform secret value/version**. The separate installer fetches its JSON `apiKey` and `appKey` through the verified VM identity; recurring processes do not fetch or mount it. Current IAM/IAP/storage authority gaps remain live prerequisites; no broader role or alternate identity is authorized.
+
+## Source-bound installation (later approved cloud stage)
+
+Use only the approved work-account identity and foundation workflow. All steps below describe future operator actions, not actions performed in sandbox validation.
+
+1. Record `git rev-parse HEAD`. Require a clean checkout containing reviewed foundation and monitoring changes. Build/publish the app and checker from that exact source using the foundation's cloud release workflow. The checker image must include `cloud-checker.mjs`; old foundation-only image receipts cannot authorize this stage.
+2. Obtain genuine matching `release.json` (phase `release`), source/bundle verification, release plan/apply, deployment approval, `host-install.json` and `deployment.json` receipts. Apply the approved Terraform management-secret resource/grant only with separately confirmed authority. Provision a scoped US3 management secret separately; never place a value in a command argument or source file.
+3. Run `node scripts/demo/baseline.mjs monitoring-install` in the operator's prepared repository toolchain. This validates current release/plan/backend/image/deployment and exact bootstrap/Compose hashes. It transfers a gzip tar made with the foundation's actual archive/compress helpers, containing exactly both JS modules, the systemd unit, a hash manifest and runtime configuration. Every module/unit and source commit is bound in the bundle. The remote JSON receipt must match the archive digest, manifest digest, source and all module hashes before local `monitoring-install.json` is saved. Foundation-only receipts are rejected.
+4. On the verified VM, use `sudo /opt/deskdrop/bootstrap.sh monitoring-protect`. This is the separate management stage, not recurring runtime. It creates or reconciles the protected cloud installation. It refuses to run while controller/heartbeat containers exist; stop the monitoring service first when reconciling an existing installation. Host flock and the fixed installer-container name serialize installation. A still-running previous installer blocks another attempt. A stopped exact-owned installer is removed and only its empty stale journal lock is reclaimed; the journal and all unknown intents are retained.
+5. Only after `protected` success, `sudo systemctl enable --now deskdrop-monitoring.service`. The source-bound Python supervisor starts the independent heartbeat and controller, checks both processes, and bounds restart attempts through systemd. `sudo systemctl stop deskdrop-monitoring.service` stops only exact-owned control containers and runs the source-bound checker cleanup adapter before returning. Reboot uses the enabled unit and cached pinned image; no Mac or personal browser is involved.
+
+Source/owner disagreement, noncanonical paths, symlinks, hardlinks, unexpected modes, corruption or unknown ownership fail closed. Every installed monitoring file is root0600 under root0700; every parent is checked. The systemd unit is copied from the hashed bundle. The durable journal and bundle receipt live under `/var/lib/deskdrop/monitoring`; updates use fsync and atomic replacement. Installation publishes its directory atomically. An identical interrupted transfer can be retried and returns the same receipt. A different release/bundle does not overwrite existing state: it reports an explicit migration requirement. Retain the bundle and journal for a separately reviewed release migration rather than deleting them.
+
+## Scheduling, health and reconciliation
+
+- Availability and the existing full checkout run every30 seconds. Checkout checks100-15+12=97 at checkout, receipt and history, with Terracotta Arc lamp and Natural oak organizer, quantity1 each. Every execution creates/removes a disposable checker container; the original journey opens/closes a fresh browser context.
+- Each attempt has a25-second execution budget including Docker setup/read calls. At the deadline, the controller requests TERM with3-second grace, then bounded inspect/KILL/delete/readback. Cleanup calls are bounded individually (2 seconds; TERM request4 seconds). Worst-case cleanup may pass the next30-second tick; that tick reports degraded health and **never** overlaps or catches up. A remaining or ambiguous child blocks replacement. Unknown create/start results inspect and clean only the verified owned name; no blind retry POST occurs.
+- The controller checks the running app's source/image and isolated network before mutation. Children carry exact owner/source/check/bundle labels, fixed commands, nonroot UID, seccomp, capabilities, readonly filesystem and approved environment. Foreign or drifted objects are never stopped or deleted.
+- Heartbeat publishes every30 seconds in its own container. Missing, wrong-source, unhealthy or older-than65-second health is critical. Scheduling, reporting or cleanup failure cannot be marked healthy. A failed controller can remain deliberately latched unhealthy pending operator reconciliation; automatic supervisor restarts are bounded. UDP send success is not Datadog intake evidence.
+- Systemd shutdown invokes bounded control cleanup and then a separate trusted cleanup container to handle a killed controller's orphaned checker. On restart, the controller reconciles existing exact-owned checkers before starting new work. Unknown Docker failures retain a degraded state rather than permitting overlap.
+
+## Cloud monitor ownership and suppression
+
+New checks are `deskdrop.cloud.availability`, `deskdrop.cloud.checkout` and `deskdrop.cloud.heartbeat`, US3 only. Exact tags: `service:deskdrop`, `env:gcp-demo`, `demo_id:mmani-shopping-cart-gcp`, `host:deskdrop-demo`, `managed_by:deskdrop-gcp-controller`, plus a root-protected random `cloud_owner:<32hex>`. Both queries and telemetry contain the owner. `deploy/datadog/cloud-monitors.json` documents this contract; JS definitions construct the owner-specific records.
+
+The installer first journals intent for a permanent silent downtime covering only all six installation tags. Then it validates the active downtime before each monitor creation. Each provider write has a durable prior intent. Two complete stable inventory scans and exact GET verification reconcile lost responses without duplicate creates/deletes. Ambiguous, missing or changing records leave the intent pending. Effective downtime matching must cover each real monitor ID before the journal becomes runtime-ready. Monitors contain no notification handles; routing/activation remains separately approved acceptance. No mutation targets local IDs29524290/29524154/29524292, local selectors, defaults or suppressions.
+
+After stopping the service, `sudo /opt/deskdrop/bootstrap.sh monitoring-inspect` reconciles unknown remote outcomes; `monitoring-protect` resumes exact-owned protected installation. A missing result after an unknown POST is not proof that it failed: preserve the pending intent and investigate. Never erase the journal to retry. For separately approved teardown, `monitoring-delete` deletes only exact-owned monitor IDs after revalidation and intent persistence. It retains the protective downtime and ownership journal; it never cancels suppression, alters shared/local resources or silently starts a new installation.
+
+Datadog response assumptions are based on the official [v2 downtime API client](https://github.com/DataDog/datadog-api-client-typescript/blob/master/packages/datadog-api-client-v2/apis/DowntimesApi.ts) and its models: active status, one-time schedule with no end, exact monitor tags, `downtime_matches`, and `meta.page.total_filtered_count`. Offline injected responses test these contracts; live readback remains required.
+
+## Observable verification
+
+From the prepared repository, use its existing Node toolchain:
+
+```sh
+node --test tests/cloud-monitoring.test.mjs tests/cloud-monitors.test.mjs tests/demo-baseline.test.mjs tests/local-datadog-monitors.test.mjs tests/deployed-checker.test.mjs
+npm test
+npm run typecheck
+npm run golden:check
+PLAYWRIGHT_PORT=3101 npm run test:e2e -- tests/e2e/checkout.spec.ts tests/e2e/persistence.spec.ts
+terraform fmt -check -recursive infra
+```
+
+In `infra/terraform`, use pinned Terraform1.15.3, `terraform init -backend=false -lockfile=readonly -input=false`, `terraform validate`, and `env -i PATH="<directory containing pinned terraform>:/usr/bin:/bin" TF_IN_AUTOMATION=1 terraform test`. Backend-disabled mock tests must receive no ADC or provider secret environment. Do not substitute a live plan/apply for a mock test.
+
+| Offline observable test | Separate live acceptance still required |
+| --- | --- |
+| Unix-socket Docker fixture: real HTTP operations, fresh creation/removal, unknown create, forced KILL, wrong owner/app/network, no forbidden mutations | Actual pinned image/Node linkage, Docker Engine socket compatibility, Chromium sandbox, UID/mount/network inspection on Ubuntu24.04 |
+| Disposable OS processes: hung checker ignores TERM, KILL cleanup, unrelated process survives; independent production heartbeat loop ticks | systemd stop/start/reboot; owned orphan reconciliation; persistent root state across VM reboot |
+| Provider fixtures: prior intent, stable pagination, lost create/delete/downtime response, exact effective suppression | Fresh US3 service-check intake, actual new IDs/selectors, effective downtime readback, failure/no-data alerts and separately approved routing |
+| Actual host Python/bundle parsing and security fixtures; metadata policy RED on foundation, GREEN on correction | Non-admin presenter denied metadata/host/socket/egress; private IAP access; resource-scoped IAM/storage permissions |
+| Existing goldens, all assertions, checkout/persistence and shared Chromium screenshots | Live private deployment, worker, reboot, telemetry, publication and independent incident workflow acceptance |
+
+For native sandbox QA, start `bash /home/vercel-sandbox/runtime/repository-startup.sh`, wait for app-ready, and visit `http://localhost:3100/` in the shared cloud Chromium with fresh storage and synthetic shopper data. Record the actual checkout commit. Capture high-resolution checkout/receipt/history screenshots, confirm both items and$97, then clear synthetic storage and stop the managed process. Native Debug directly inspects repository/application behavior and needs no external ticket prerequisite. Sandbox success does not prove private GCP isolation or deployment. Keep existing private-infrastructure, reboot, telemetry and publication scenarios pending until their separately approved fixtures and authority exist.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 
 <!-- /coderabbit-ai-generated:v1 -->

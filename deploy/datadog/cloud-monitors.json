@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "site": "us3.datadoghq.com",
+  "checks": [
+    "availability",
+    "checkout",
+    "heartbeat"
+  ],
+  "tags": [
+    "service:deskdrop",
+    "env:gcp-demo",
+    "demo_id:mmani-shopping-cart-gcp",
+    "host:deskdrop-demo",
+    "managed_by:deskdrop-gcp-controller"
+  ],
+  "protection": "permanent-owner-downtime"
+}

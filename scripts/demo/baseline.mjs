@@ -132,9 +132,20 @@ async function deployPrerequisites(artifacts, rel, cloudRoot = root, backendFile
   const approval = await json('deploy-approval.json', artifacts);
   if ((applied.phase !== undefined && applied.phase !== 'release') || applied.commit !== rel.commit || !/^[a-f0-9]{64}$/.test(applied.planHash ?? '') || approval.commit !== rel.commit || approval.appDigest !== rel.appDigest || approval.checkerDigest !== rel.checkerDigest || approval.planHash !== applied.planHash || approval.secretProvisioned !== true || approval.vmReady !== true || approval.iapAuthorized !== true || approval.costApproved !== true || typeof approval.owner !== 'string' || !approval.owner.trim()) fail();
 }
+export async function monitoringBundle(rel) {
+  validateRelease(rel);
+  const { archive, compress } = await import('./cloud-release.mjs');
+  const paths = { 'cloud-runtime.mjs': 'scripts/demo/cloud-runtime.mjs', 'cloud-monitors.mjs': 'scripts/demo/cloud-monitors.mjs', 'deskdrop-monitoring.service': 'deploy/systemd/deskdrop-monitoring.service' };
+  const files = {}, hashes = {};
+  for (const [name, source] of Object.entries(paths)) { files[name] = await readFile(path.join(root, source)); hashes[name] = hash(files[name]); }
+  files['manifest.json'] = Buffer.from(JSON.stringify({ commit: rel.commit, files: hashes }));
+  files['runtime.json'] = Buffer.from(JSON.stringify({ project: 'se-demos-project', zone: 'us-central1-a', architecture: 'linux/amd64', source: rel.commit, app: image('deskdrop', rel.appDigest), checker: image('checker', rel.checkerDigest), bundleHash: hash(files['manifest.json']) }));
+  const bundle = compress(archive(files)), digest = hash(bundle);
+  return { files, hashes, bundle, digest };
+}
 export async function action(name, args = [], run = command, context = {}) {
   const artifacts = context.artifacts ?? defaultArtifacts;
-  if (name === 'help') return { commands: ['help', 'build', 'publish', 'plan', 'apply', 'host-install', 'deploy', 'tunnel', 'smoke'] };
+  if (name === 'help') return { commands: ['help', 'build', 'publish', 'plan', 'apply', 'host-install', 'deploy', 'monitoring-install', 'tunnel', 'smoke'] };
   if (name === 'build' && args.length === 0) {
     const commit = await head(run);
     const archive = await run('git', ['archive', '--format=tar', commit], { binary: true, maxOutput: 50000000 });
@@ -256,6 +267,27 @@ export async function action(name, args = [], run = command, context = {}) {
     const result = { status: 'deployed', commit: rel.commit, image: image('deskdrop', rel.appDigest) };
     await save('deployment.json', result, artifacts);
     return result;
+  }
+  if (name === 'monitoring-install' && args.length === 0) {
+    const rel = validateRelease(await json('release.json', artifacts));
+    if (rel.phase !== 'release') fail();
+    if (await head(run) !== rel.commit) fail();
+    await deployPrerequisites(artifacts, rel, context.cloudRoot, context.backendFile);
+    const deployment = await json('deployment.json', artifacts);
+    if (deployment.commit !== rel.commit || deployment.image !== image('deskdrop', rel.appDigest)) fail();
+    const host = await json('host-install.json', artifacts);
+    if (host.commit !== rel.commit || host.bootstrap !== await fileHash(path.join(root, 'deploy/bootstrap.sh')) || host.compose !== await fileHash(path.join(root, 'deploy/compose.yaml'))) fail();
+    const { files, hashes, bundle, digest } = await monitoringBundle(rel);
+    await absent(path.join(artifacts, 'monitoring-install.json'));
+    const bundlePath = path.join(artifacts, 'monitoring.tar.gz');
+    if (await exists('monitoring.tar.gz', artifacts)) { if (await fileHash(bundlePath) !== digest) fail(); }
+    else await writeFile(bundlePath, bundle, { mode: 0o600, flag: 'wx' });
+    await run('gcloud', ['compute', 'scp', bundlePath, 'deskdrop-demo:/tmp/monitoring.tar.gz', '--project=se-demos-project', '--zone=us-central1-a', '--tunnel-through-iap']);
+    const output = await remote(run, `sudo /usr/bin/timeout --kill-after=10s 180s /opt/deskdrop/bootstrap.sh monitoring-install ${digest}`, 200000);
+    const receipt = JSON.parse(output.trim().split('\n').at(-1));
+    if (receipt.status !== 'monitoring-bundle-installed' || receipt.source !== rel.commit || receipt.bundleHash !== digest || receipt.manifestHash !== hash(files['manifest.json']) || JSON.stringify(receipt.files) !== JSON.stringify(hashes)) fail();
+    await save('monitoring-install.json', { ...receipt, host }, artifacts);
+    return { status: 'monitoring-bundle-installed', commit: rel.commit };
   }
   if (name === 'smoke' && args.length === 0) {
     const rel = validateRelease(await json('release.json', artifacts)); if (await head(run) !== rel.commit) fail();
