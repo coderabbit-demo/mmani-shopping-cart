@@ -129,7 +129,7 @@ The custom Socket Mode bridge remains stopped. No GCP apply, image publication, 
 
 ### Scoped trigger implementation
 
-The five commands above are implemented. Production arming is deliberately blocked because effective Alert-only delivery cannot be verified from the reviewed tag-only rule. There is no override flag. A separately approved routing setup with machine-verifiable transition evidence is required; the known Agent/journey/checkout readiness failures also remain operator prerequisites. No live rehearsal or controller upgrade was performed by this feature.
+The five commands above are implemented. Production arming is deliberately disabled because effective Alert-only delivery cannot be verified from the reviewed tag-only rule. There is no override flag or accepted production proof adapter in this build. A later reviewed routing-proof integration and separately approved routing setup are required; repairing runtime health alone will not enable execution. The known Agent/journey/checkout readiness failures also remain operator prerequisites. No live rehearsal or controller upgrade was performed by this feature.
 
 The detached supervisor owns writes; terminal disconnect and SIGINT/SIGTERM/SIGHUP request recovery. The controller advertises protocol 1 and reserves app controls by protected run identity. An older controller refuses arming. Monitoring remains scheduled, while conflicting manual operations are fenced. Runtime commit/image/container receipts are separate from tooling HEAD. Recovery can start only the exact existing owned app; it cannot rebuild, recreate or repair monitoring.
 

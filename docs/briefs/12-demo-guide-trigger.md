@@ -1,4 +1,7 @@
-# Brief 12: demo documentation and a scoped local alert trigger
+# Brief 12: `Demo guides and scoped local alert trigger`
+
+**Jira:** SC-42
+**GitHub:** https://github.com/coderabbit-demo/mmani-shopping-cart/issues/21
 
 Status: Mahesh approved this 14-file brief and the amended CodeRabbit plan on November 5, 2026. Implementation, offline validation, the single new-task CLI review, PR feedback and native QA Verify are authorized. Live runtime repair, controller upgrade, routing changes, actual fault/alert execution, image publication, deployment and merge remain separate.
 
@@ -107,4 +110,12 @@ Mahesh approved this brief, the amended CodeRabbit plan, the narrow controller r
 
 GitHub implementation issue: https://github.com/coderabbit-demo/mmani-shopping-cart/issues/21 . Engineering Task: https://coderabbit-demo.atlassian.net/browse/SC-42 (Task, not an incident Bug). The independent native Debug path never depends on this engineering record or any incident ticket.
 
-The feature PR body must begin with `Fixes https://github.com/coderabbit-demo/mmani-shopping-cart/issues/21`, followed by `Jira: SC-42` for this engineering change. Root may publish after the required CLI review and validation, then complete exact-head PR/security/CI and native Verify. Leave the PR unmerged. No CLI review has completed for this task during planning; exactly one is still due during implementation.
+The feature PR body must begin with `Fixes https://github.com/coderabbit-demo/mmani-shopping-cart/issues/21`, followed by `Jira: SC-42` for this engineering change. Root may publish after the required CLI review and validation, then complete exact-head PR/security/CI and native Verify. Leave the PR unmerged.
+
+## Implementation and CLI review receipt
+
+CodeRabbit authored the initial implementation at `74d604692b3fc2ec3fb19c3ec668299fcc2c7a16` and the recovery/fixture repairs at `5e5bb672a4f89a18410e43f32618fabc01b1a6fb` in the same approved task. Its final offline validation passed 105 affected tests, 497 root unit tests, typecheck and all 29 unchanged goldens. Release-crash, expired-recovery and unknown-cancellation regressions failed behavior assertions on the initial implementation and passed with the repairs.
+
+Exactly one CLI review completed on the Mac: CodeRabbit 0.9.2, base `80bf508820d1419a3fa0600a8b3c3dd8fc2405a6`, reviewed head `74d604692b3fc2ec3fb19c3ec668299fcc2c7a16`. The cloud attempt returned review-disabled without analysis and did not count. The completed review reported two Minor findings and no Critical/Major findings. Both were validated and fixed in `5e5bb67`: canonical short macOS fixture paths, and explicit supervisor exit/disconnect reporting. No additional CLI review is required for the repair rounds.
+
+The Mac's default-environment affected suite passed all 105 tests; full Mac validation passed all 497 unit tests, typecheck and 29 goldens. Root must still finish exact-head PR/security/CI and native Verify. The Verify library now contains a focused credential-free trigger/recovery journey; its existence is not a passing run. Production arming is deliberately disabled because no effective Alert-only delivery proof is implemented. A later reviewed routing-proof integration and live runtime/controller readiness work are required before a real alert can be attempted; repairing runtime health alone will not enable this build.
