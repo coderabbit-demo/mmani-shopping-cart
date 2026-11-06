@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createHash } from 'node:crypto';
@@ -132,6 +135,26 @@ test('local command removes listeners after success, exit failure, spawn failure
   assert.deepEqual(counts(), before);
   await assert.rejects(command('git', [], { env: { PATH: '/nonexistent-fixture-bin' } }));
   assert.deepEqual(counts(), before);
-  await assert.rejects(command('git', ['-c', 'alias.wait=!sleep 5', 'wait'], { timeout: 30 }), error => !String(error).includes('sleep'));
+  const directory = await mkdtemp(join(tmpdir(), 'deskdrop-timeout-'));
+  let pid;
+  try {
+    const marker = join(directory, 'started');
+    const began = Date.now();
+    await assert.rejects(command('bash', ['-c', 'printf "%s" "$$" > "$1"; exec sleep 30', 'fixture', marker], { timeout: 1000 }), error => !String(error).includes('sleep'));
+    pid = Number(await readFile(marker, 'utf8'));
+    assert.ok(Number.isInteger(pid) && pid > 0, 'fixture must have started');
+    assert.ok(Date.now() - began >= 900, 'fixture must reach the command timeout');
+    assert.ok(Date.now() - began < 5000, 'timeout must settle within a bounded interval');
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const result = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000 });
+      if (!result.stdout.trim() || result.stdout.trim().startsWith('Z')) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    const state = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000 });
+    assert.ok(!state.stdout.trim() || state.stdout.trim().startsWith('Z'), 'timeout must terminate the started fixture');
+  } finally {
+    if (pid) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    await rm(directory, { recursive: true, force: true });
+  }
   assert.deepEqual(counts(), before);
 });
