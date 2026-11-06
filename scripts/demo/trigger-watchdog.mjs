@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { bounds, target, directory, readState, writeState, exclusive, supervisorLease, validateReceipt, bounded } from './trigger-alert.mjs';
-import { loadCredentials, controlRequest, inspectTriggerRuntime, ownedAvailability, runCommand, recoverTriggerApp } from './local.mjs';
+import { bounds, target, directory, readState, writeState, supervisorLease, validateReceipt, bounded, evidence, confirmedControl } from './trigger-alert.mjs';
+import { loadCredentials, controlRequest, inspectTriggerRuntime, ownedAvailability, runCommand, recoverTriggerApp, runtimeOperation } from './local.mjs';
 import { makeApi, monitorDefinitions, ownedMonitor, idDowntime, verifyDowntime, fixedTags, ownerPattern } from './datadog-monitors.mjs';
 import { readFile } from 'node:fs/promises';
 
@@ -20,19 +20,32 @@ export function groupState(m) {
 }
 export async function production(recover = false) {
   if (process.platform !== 'darwin') throw new Error('Mac required');
-  const api = makeApi(await loadCredentials());
-  const definitions = JSON.parse(await readFile(new URL('../../deploy/datadog/local-monitors.json', import.meta.url), 'utf8'));
-  const state = await readState(directory, 'monitors.json');
+  return productionAdapter({
+    site: target.site, api: makeApi(await loadCredentials()),
+    definitions: JSON.parse(await readFile(new URL('../../deploy/datadog/local-monitors.json', import.meta.url), 'utf8')),
+    read: name => readState(directory, name), write: (name, value) => writeState(directory, name, value),
+    control: command => controlRequest(command, directory, bounds.control),
+    runtime: inspectTriggerRuntime, operation: expected => runtimeOperation(directory, expected),
+    availability: ownedAvailability, tooling: async () => (await runCommand('git', ['rev-parse', 'HEAD'])).toString().trim(),
+    fallback: recoverTriggerApp
+  }, recover);
+}
+export async function productionAdapter(readers, recover = false) {
+  const { api, definitions } = readers;
+  if (readers.site !== target.site) throw new Error('Wrong Datadog site');
+  const state = await readers.read('monitors.json');
+  if (!state || !Array.isArray(state.monitors) || Object.keys(state).some(k => !['owner', 'pending', 'transition', 'tagDowntime', 'monitors'].includes(k)) || state.monitors.some(e => !e || Object.keys(e).some(k => !['id', 'name', 'downtime'].includes(k)))) throw new Error('Invalid monitor journal');
   if (!ownerPattern.test(state.owner ?? '') || state.pending || state.transition || state.tagDowntime || state.monitors?.length !== 3) throw new Error('Monitor reconciliation required');
   const wanted = monitorDefinitions(definitions, state.owner);
   let snapshot = JSON.stringify(state);
   async function verify(recovery = false, replacement) {
-    const current = await readState(directory, 'monitors.json');
+    await readers.operation(operationIdentity);
+    const current = await readers.read('monitors.json');
     if (JSON.stringify(current) !== snapshot) throw new Error('Monitor journal changed');
     for (let i = 0; i < wanted.length; i++) {
       const entry = state.monitors.find(e => e.name === wanted[i].name);
       if (entry?.id !== [target.availability, target.checkout, target.heartbeat][i]) throw new Error('Monitor target changed');
-      ownedMonitor(await api.getMonitor(entry.id), wanted[i]);
+      if (ownedMonitor(await api.getMonitor(entry.id), wanted[i]) !== entry.id) throw new Error('Monitor response ID changed');
       if (recovery && entry.id === target.checkout) {
         const matches = await api.matches(entry.id);
         if (matches.some(id => id !== entry.downtime && id !== replacement)) throw new Error('Unexpected suppression');
@@ -46,30 +59,42 @@ export async function production(recover = false) {
     if (!routeIdentity(await api.getNotificationRule(), state.owner)) throw new Error('Routing identity changed');
   }
   let status;
-  try { status = await controlRequest('status', directory, bounds.control); } catch (e) { if (!recover) throw e; const receipt = validateReceipt(await readState(directory, 'trigger.json')); status = { commit: receipt.identity.commit }; }
-  const { ctx, owned } = await inspectTriggerRuntime(status.commit);
+  try { status = await readers.control('status'); } catch (e) { if (!recover) throw e; const receipt = validateReceipt(await readers.read('trigger.json')); status = { commit: receipt.identity.commit }; }
+  const { ctx, owned } = await readers.runtime(status.commit);
   const app = owned.find(x => x.Config.Labels['com.docker.compose.service'] === 'app');
-  const identity = { checkout: target.checkout, commit: status.commit, appImageId: ctx.ids.app, appContainer: app?.Id, owner: state.owner, toolingCommit: (await runCommand('git', ['rev-parse', 'HEAD'])).toString().trim() };
+  if (!/^[a-f0-9]{40}$/.test(status.commit ?? '') || ctx.commit !== status.commit || !/^sha256:[a-f0-9]{64}$/.test(ctx.ids.app ?? '') || !/^[a-f0-9]{64}$/.test(app?.Id ?? '')) throw new Error('Runtime identity inconsistent');
+  const identity = { checkout: target.checkout, commit: status.commit, appImageId: ctx.ids.app, appContainer: app?.Id, owner: state.owner, toolingCommit: await readers.tooling() };
+  const operationIdentity = await readers.operation(status.operationIdentity);
+  if (!recover && !status.operationIdentity) throw new Error('Controller operation unverified');
   const entry = state.monitors.find(e => e.id === target.checkout);
   return {
     identity, oldDowntime: entry?.downtime,
     async baseline() {
       await verify();
-      if (!healthyController(status) || status.appImageId !== ctx.ids.app || !owned.every(x => x.State.Running) || !owned.some(x => x.Config.Labels['com.docker.compose.service'] === 'agent' && x.State.Health?.Status === 'healthy') || !await ownedAvailability(ctx)) throw new Error('Runtime unhealthy');
+      if (!healthyController(status) || status.appImageId !== ctx.ids.app || !owned.every(x => x.State.Running) || !owned.some(x => x.Config.Labels['com.docker.compose.service'] === 'agent' && x.State.Health?.Status === 'healthy') || !await readers.availability(ctx)) throw new Error('Runtime unhealthy');
       const m = await api.getMonitor(target.checkout);
       if (m.overall_state !== 'OK' || groupState(m).status !== 'OK') throw new Error('Fresh healthy group required');
       // The reviewed tag-only rule exposes no transition restriction.
       throw new Error('Effective Alert-only delivery unverified');
     },
     verify,
-    reserve: run => controlRequest(`trigger:reserve:${run}`, directory, bounds.control),
+    reserve: run => readers.control(`trigger:reserve:${run}`),
     cancel: id => api.cancelDowntime(id),
     canceled: async id => { const d = await api.getDowntime(id); return d?.data?.id === id && d.data.attributes.status === 'canceled'; },
-    stop: run => controlRequest(`trigger:stop:${run}`, directory, bounds.control),
-    restart: run => controlRequest(`trigger:restart:${run}`, directory, bounds.control),
-    fallback: () => recoverTriggerApp(identity),
-    release: run => controlRequest(`trigger:release:${run}`, directory, bounds.control),
-    async monitor() { const m = await api.getMonitor(target.checkout); ownedMonitor(m, wanted[1]); return groupState(m); },
+    stop: run => readers.control(`trigger:stop:${run}`),
+    restart: run => readers.control(`trigger:restart:${run}`),
+    fallback: async () => {
+      const receipt = await readers.read('trigger.json');
+      const stop = await readers.read(`trigger-${receipt.run}-stop.json`);
+      if (!confirmedControl(stop, receipt.run, 'stop')) throw new Error('Stop outcome unresolved');
+      try { await readers.control(`trigger:barrier:${receipt.run}`); } catch {
+        const restart = await readers.read(`trigger-${receipt.run}-restart.json`);
+        if (!confirmedControl(restart, receipt.run, 'restart')) throw new Error('Recovery control unresolved');
+      }
+      return readers.fallback(identity);
+    },
+    release: run => readers.control(`trigger:release:${run}`),
+    async monitor() { const m = await api.getMonitor(target.checkout); if (ownedMonitor(m, wanted[1]) !== target.checkout) throw new Error('Monitor response ID changed'); return groupState(m); },
     async create(run) { const spec = idDowntime(target.checkout); spec.data.attributes.message = `DeskDrop checkout recovery ${run}`; return (await api.createDowntime(spec))?.data?.id; },
     async protection(id) {
       const record = await api.getDowntime(id);
@@ -85,32 +110,40 @@ export async function production(recover = false) {
       if (found.length !== 1) throw new Error('Create reconciliation ambiguous');
       return found[0];
     },
-    async replace(id) { await verify(true, id); const next = structuredClone(state); next.monitors.find(e => e.id === target.checkout).downtime = id; await writeState(directory, 'monitors.json', next); Object.assign(state, next); snapshot = JSON.stringify(state); },
-    async localHealthy() { return healthyController(await controlRequest('status', directory, bounds.control)) && await ownedAvailability(ctx); }
+    async replace(id) { await verify(true, id); const next = structuredClone(state); next.monitors.find(e => e.id === target.checkout).downtime = id; await readers.write('monitors.json', next); Object.assign(state, next); snapshot = JSON.stringify(state); },
+    async localHealthy() { return healthyController(await readers.control('status')) && await readers.availability(ctx); }
   };
 }
 export async function inspectProduction() {
   const blockers = [];
-  try { const a = await bounded(() => production(), bounds.prepare); await bounded(() => a.baseline(), bounds.prepare); }
+  try { await bounded(async () => { const a = await production(); await a.baseline(); }, bounds.prepare); }
   catch { blockers.push('Runtime, ownership or suppression readiness not confirmed'); }
   blockers.push('Effective Alert-only delivery unverified; separate routing verification required');
   return { status: 'blocked', target, bounds, blockers, events: 'unavailable' };
 }
 
-export async function rehearse(a, store, { now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms)), interrupted = () => false, accepted = () => {}, recover = false } = {}) {
+export async function rehearse(a, store, { now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms)), interrupted = () => false, accepted = () => {}, recover = false, preparationDeadline = Date.now() + bounds.prepare } = {}) {
   let r;
   const save = async phase => { r.phase = phase; await store.save(r); };
   let phaseEnd = Infinity;
-  const call = (fn, limit = bounds.request) => bounded(fn, Math.min(limit, Math.max(1, Math.min(r.deadline, phaseEnd) - now())));
+  const call = async (fn, limit = bounds.request) => {
+    const remaining = Math.min(r.attempt?.deadline ?? r.deadline, phaseEnd) - now();
+    if (remaining <= 0) throw new Error('Attempt deadline elapsed');
+    return bounded(fn, Math.min(limit, remaining));
+  };
   if (recover) {
     r = validateReceipt(await store.load());
-    if (JSON.stringify(r.identity) !== JSON.stringify(a.identity)) throw new Error('Recovery identity changed');
+    if (['checkout', 'commit', 'appImageId', 'appContainer', 'owner'].some(key => r.identity[key] !== a.identity[key])) throw new Error('Recovery identity changed');
+    const started = now();
+    r.attempt = { started, deadline: started + bounds.recovery, toolingCommit: a.identity.toolingCommit };
+    await store.save(r);
     accepted(r.run);
-    if (r.phase === 'complete') return r;
   } else {
     try { const prior = await store.load(); if (validateReceipt(prior).phase !== 'complete') throw new Error('Previous rehearsal unresolved'); }
     catch (e) { if (e.code !== 'ENOENT') throw e; }
-    await bounded(() => a.baseline(), bounds.prepare);
+    const remaining = preparationDeadline - Date.now();
+    if (remaining <= 0) throw new Error('Preparation deadline elapsed');
+    await bounded(() => a.baseline(), Math.min(bounds.prepare, remaining));
     const started = now();
     r = { version: 1, run: randomUUID(), identity: a.identity, oldDowntime: a.oldDowntime, phase: 'armed', started, deadline: started + bounds.recovery };
     await store.save(r);
@@ -135,20 +168,21 @@ export async function rehearse(a, store, { now = Date.now, sleep = ms => new Pro
         if (group.status === 'Alert' && Number.isFinite(group.last_triggered_ts) && group.last_triggered_ts * 1000 >= started) { r.alertObserved = true; break; }
         await sleep(Math.min(bounds.poll, Math.max(0, started + bounds.alert - now())));
       }
+      if (!r.alertObserved) r.failure = 'Alert not observed';
     } catch { r.failure = 'Fault outcome requires reconciliation'; }
   }
   let protectedOk = false, appOk = false;
-  const protectionEnd = Math.min(r.deadline, now() + bounds.protection);
+  const protectionEnd = Math.min(r.attempt?.deadline ?? r.deadline, now() + bounds.protection);
   phaseEnd = protectionEnd;
   try {
     await save('protect');
-    if (!r.cancelIntent || await call(() => a.protection(r.oldDowntime))) protectedOk = true;
+    if (!r.cancelIntent) protectedOk = await call(() => a.protection(r.oldDowntime));
     else {
-      await call(() => a.verify(true));
       if (!r.canceled) {
         if (!await call(() => a.canceled(r.oldDowntime))) throw new Error('Cancellation still unknown');
         r.canceled = true; await store.save(r);
       }
+      await call(() => a.verify(true));
       if (!r.createIntent) {
         r.createIntent = true; await store.save(r);
         r.newDowntime = await call(() => a.create(r.run));
@@ -163,37 +197,45 @@ export async function rehearse(a, store, { now = Date.now, sleep = ms => new Pro
       }
     }
   } catch { r.failure = 'Suppression unconfirmed'; }
-  phaseEnd = Math.min(r.deadline, now() + bounds.restart);
+  phaseEnd = Math.min(r.attempt?.deadline ?? r.deadline, now() + bounds.restart);
   try {
     await save('restart');
     if (r.stopIntent) {
       if (!r.restartIntent) { r.restartIntent = true; await store.save(r); try { await call(() => a.restart(r.run), bounds.control); } catch { await call(() => a.fallback(), bounds.control); } }
       else await call(() => a.fallback(), bounds.control);
     }
-    phaseEnd = r.deadline;
+    phaseEnd = r.attempt?.deadline ?? r.deadline;
     await save('verify');
-    while (now() < r.deadline) {
+    while (now() < (r.attempt?.deadline ?? r.deadline)) {
       if (await call(() => a.localHealthy()) && (await call(() => a.monitor())).status === 'OK') { await call(() => a.verify()); appOk = true; break; }
-      await sleep(Math.min(bounds.poll, Math.max(0, r.deadline - now())));
+      await sleep(Math.min(bounds.poll, Math.max(0, (r.attempt?.deadline ?? r.deadline) - now())));
     }
   } catch { r.failure = 'App recovery unconfirmed'; }
   r.protected = protectedOk; r.recovered = appOk;
   await save(protectedOk && appOk ? 'complete' : 'uncertain');
-  if (r.phase === 'complete') { try { await call(() => a.release(r.run), bounds.control); } catch { await save('uncertain'); } }
+  if (r.phase === 'complete') {
+    r.releaseIntent = true; r.releaseConfirmed = false; await store.save(r);
+    try { await call(() => a.release(r.run), bounds.control); r.releaseConfirmed = true; await store.save(r); } catch { await save('uncertain'); }
+  }
   return r;
+}
+function notify(channel, message) {
+  if (channel.connected === false) return;
+  try { channel.send?.(message, () => {}); } catch {}
 }
 export async function supervisorSession(action, channel = process) {
   let stop = false;
   const interrupt = () => { stop = true; };
   for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP', 'disconnect']) channel.on(name, interrupt);
-  try { return await action({ interrupted: () => stop, accepted: run => channel.send?.({ status: 'accepted', run }) }); }
+  try { return await action({ interrupted: () => stop, accepted: run => notify(channel, { status: 'accepted', run }) }); }
   finally { for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP', 'disconnect']) channel.removeListener(name, interrupt); }
 }
 export async function supervise(command) {
   if (!['run', 'recover'].includes(command)) throw new Error('Invalid supervisor command');
   return supervisorSession(options => supervisorLease(directory, command === 'recover', async () => {
-    const a = await production(command === 'recover');
-    return rehearse(a, { load: () => readState(directory, 'trigger.json'), save: r => writeState(directory, 'trigger.json', r) }, { ...options, recover: command === 'recover' });
+    const preparationDeadline = Date.now() + bounds.prepare;
+    const a = await bounded(() => production(command === 'recover'), bounds.prepare);
+    return rehearse(a, { load: () => readState(directory, 'trigger.json'), save: r => writeState(directory, 'trigger.json', r) }, { ...options, recover: command === 'recover', preparationDeadline });
   }));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) supervise(process.argv[2]).then(r => { process.send?.({ status: r.phase, run: r.run }); if (process.connected) process.disconnect(); }, () => { process.send?.({ status: 'blocked' }); if (process.connected) process.disconnect(); process.exitCode = 1; });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) supervise(process.argv[2]).then(r => { notify(process, { status: r.phase, run: r.run, evidence: evidence(r) }); if (process.connected) process.disconnect(); }, () => { notify(process, { status: 'blocked' }); if (process.connected) process.disconnect(); process.exitCode = 1; });

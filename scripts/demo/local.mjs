@@ -1,3 +1,4 @@
+import { operationContext } from './trigger-alert.mjs';
 import { parseEnv } from 'node:util';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -53,6 +54,9 @@ export function verifyContainer(container, expectedId, expectedProject, expected
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const stateDir = path.join(os.homedir(), '.deskdrop-mmani-local');
 export async function runCommand(file, args, { input, timeout = 120000, env = childEnvironment(), maxBytes = 50000000, signal: abortSignal } = {}) {
+  const operation = operationContext();
+  if (operation) { timeout = Math.min(timeout, operation.deadline - Date.now()); abortSignal = abortSignal ? AbortSignal.any([abortSignal, operation.signal]) : operation.signal; }
+  if (timeout <= 0) throw new Error('Local command failed');
   if (!['git', 'docker', 'bash'].includes(file) || !Array.isArray(args)) throw new Error('Invalid command');
   return new Promise((resolve, reject) => {
     if (abortSignal?.aborted) return reject(new Error('Local command failed'));
@@ -367,9 +371,14 @@ export async function start({ freePort = requireFreePort, getContext = context, 
 }
 export async function ownedAvailability(ctx, findContainers = containers, fetcher = fetch) {
   const controller = new AbortController();
+  const operation = operationContext();
+  operation?.signal.throwIfAborted();
+  const signal = operation ? AbortSignal.any([controller.signal, operation.signal]) : controller.signal;
+  const remaining = Math.min(5000, operation ? operation.deadline - Date.now() : 5000);
+  if (remaining <= 0) return false;
   let timer;
-  const deadline = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve(false); }, 5000); });
-  const bounded = { ...ctx, docker: (args, options = {}) => ctx.docker(args, { ...options, timeout: 5000, signal: controller.signal }) };
+  const deadline = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve(false); }, remaining); });
+  const bounded = { ...ctx, docker: (args, options = {}) => ctx.docker(args, { ...options, timeout: remaining, signal }) };
   const work = (async () => {
     try {
       const owned = await findContainers(bounded);
@@ -377,7 +386,7 @@ export async function ownedAvailability(ctx, findContainers = containers, fetche
       const forwarder = owned.find(item => item.Config.Labels['com.docker.compose.service'] === 'forwarder');
       const bindings = forwarder?.NetworkSettings?.Ports?.['3000/tcp'];
       if (!app?.State?.Running || !forwarder?.State?.Running || !Array.isArray(bindings) || bindings.length !== 1 || bindings[0].HostIp !== '127.0.0.1' || bindings[0].HostPort !== '3177') return false;
-      const response = await fetcher('http://127.0.0.1:3177/', { redirect: 'error', signal: controller.signal });
+      const response = await fetcher('http://127.0.0.1:3177/', { redirect: 'error', signal });
       await response.body?.cancel(); return response.ok;
     } catch { return false; }
   })();
@@ -385,14 +394,22 @@ export async function ownedAvailability(ctx, findContainers = containers, fetche
 }
 export async function controlRequest(command, directory = stateDir, timeout = 60000) {
   if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) throw new Error('Invalid control deadline');
+  const operation = operationContext();
+  operation?.signal.throwIfAborted();
+  timeout = Math.min(timeout, operation ? operation.deadline - Date.now() : timeout);
+  if (timeout <= 0) throw new Error('Control outcome unknown');
   await safeDirectory(directory);
   const file = path.join(directory, 'control.sock'), st = await lstat(file);
   if (!st.isSocket() || st.isSymbolicLink() || st.uid !== process.getuid() || (st.mode & 0o077)) throw new Error('Control socket invalid');
   return new Promise((resolve, reject) => {
     const socket = createConnection(file), chunks = []; let length = 0, done = false;
-    const finish = (error, value) => { if (done) return; done = true; socket.destroy(); error ? reject(new Error('Control outcome unknown')) : resolve(value); };
+    const finish = (error, value) => { if (done) return; done = true; operation?.signal.removeEventListener('abort', abort); socket.destroy(); error ? reject(new Error('Control outcome unknown')) : resolve(value); };
+    const abort = () => finish(true);
+    operation?.signal.addEventListener('abort', abort, { once: true });
+    const totalTimer = setTimeout(abort, timeout);
+    socket.once('close', () => clearTimeout(totalTimer));
     socket.setTimeout(timeout, () => finish(true));
-    socket.on('connect', () => socket.write(command + '\n'));
+    socket.on('connect', () => { if (operation?.signal.aborted) finish(true); else socket.write(command + '\n'); });
     socket.on('data', bytes => { length += bytes.length; if (length > 8192) finish(true); else chunks.push(bytes); });
     socket.on('error', () => finish(true));
     socket.on('end', () => { try { const value = JSON.parse(Buffer.concat(chunks).toString()); if (!value.ok) { if (value.error === 'suppression_unconfirmed') { if (!done) { done = true; socket.destroy(); reject(new Error('Suppression not confirmed; owned project remains running')); } } else finish(true); } else finish(false, value.result); } catch { finish(true); } });
@@ -406,7 +423,8 @@ export async function superviseForeground(ctx, { directory = stateDir, findConta
   const { scheduler, diagnostic } = await import('../../deploy/local-checker.mjs');
   const journeys = createJourneys(ctx), observed = {}, createdAt = Date.now();
   let enabled = true, busy = false, closed = false, finish;
-  const rehearsal = rehearsalControl(ctx, directory, findContainers);
+  const operationIdentity = await runtimeOperation(directory).catch(() => null);
+  const rehearsal = rehearsalControl(ctx, directory, findContainers, operationIdentity);
   const completion = new Promise(resolve => { finish = resolve; });
   let scheduled;
   async function report(name, status, observation) {
@@ -446,7 +464,7 @@ export async function superviseForeground(ctx, { directory = stateDir, findConta
       if (!input.includes('\n')) return;
       const command = input.trim();
       const respond = result => { if (!socket.destroyed) socket.end(JSON.stringify(result)); };
-      if (command === 'status') { respond({ ok: true, result: { commit: ctx.commit, since: createdAt, checks: observed, journeyBlocked: journeys.blocked, triggerProtocol: 1, appImageId: ctx.ids.app } }); return; }
+      if (command === 'status') { respond({ ok: true, result: { commit: ctx.commit, since: createdAt, checks: observed, journeyBlocked: journeys.blocked, controlBusy: busy, triggerProtocol: 1, operationIdentity, appImageId: ctx.ids.app } }); return; }
       if (command === 'check') {
         const healthy = ['availability', 'checkout'].every(name => observed[name]?.status === 0 && Date.now() - observed[name].time <= 90000);
         respond(healthy ? { ok: true, result: { status: 'healthy', commit: ctx.commit } } : { ok: false }); return;
@@ -509,9 +527,12 @@ async function withOperation(name, action) {
   try {
     try { const previous = JSON.parse((await runtimeFile('operation.json')).toString()); if (!['pending', 'complete'].includes(previous.status)) throw new Error('Invalid operation journal'); if (previous.status === 'pending') throw new Error('Inspect previous unknown operation before continuing'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await saveOperation({ name, status: 'pending' });
+    const operationId = randomUUID();
+    await fh.writeFile(JSON.stringify({ name, operationId })); await fh.sync();
+    const lockStat = await fh.stat();
+    await saveOperation({ name, status: 'pending', operationId, lockInode: lockStat.ino });
     const result = await action();
-    await saveOperation({ name, status: 'complete' });
+    await saveOperation({ name, status: 'complete', operationId, lockInode: lockStat.ino });
     return result;
   } finally { await fh.close(); await unlink(lockPath); }
 }
@@ -532,14 +553,17 @@ export async function refuseRehearsal(directory = stateDir) {
   try { await lstat(path.join(directory, 'trigger-reservation.json')); throw new Error('Trigger reservation requires recovery'); }
   catch (e) { if (e.code !== 'ENOENT') throw e; }
 }
-export function rehearsalControl(ctx, directory = stateDir, findContainers = containers) {
+export function rehearsalControl(ctx, directory = stateDir, findContainers = containers, operationIdentity) {
+  let recoveryRun;
   return async command => {
-    const { readState, writeState, validateReceipt } = await import('./trigger-alert.mjs');
-    const match = /^trigger:(reserve|stop|restart|release):([a-f0-9-]{36})$/.exec(command);
+    const { readState, writeState, validateReceipt, confirmedControl } = await import('./trigger-alert.mjs');
+    const match = /^trigger:(reserve|stop|restart|release|barrier):([a-f0-9-]{36})$/.exec(command);
     if (!match) throw new Error('Invalid rehearsal command');
     const [, action, run] = match;
     const receipt = validateReceipt(await readState(directory, 'trigger.json'));
     if (receipt.run !== run || receipt.identity.commit !== ctx.commit || receipt.identity.appImageId !== ctx.ids.app) throw new Error('Rehearsal identity changed');
+    if (!operationIdentity) throw new Error('Controller operation unverified');
+    await runtimeOperation(directory, operationIdentity);
     const file = 'trigger-reservation.json';
     if (action === 'reserve') {
       await refuseRehearsal(directory);
@@ -547,17 +571,34 @@ export function rehearsalControl(ctx, directory = stateDir, findContainers = con
       try { await fh.writeFile(JSON.stringify({ run, commit: ctx.commit })); await fh.sync(); } finally { await fh.close(); }
       return { status: 'reserved' };
     }
-    const reservation = await readState(directory, file);
+    let reservation;
+    try { reservation = await readState(directory, file); } catch (e) { if (e.code === 'ENOENT' && action === 'release' && receipt.phase === 'complete') return { status: 'released' }; throw e; }
     if (reservation.run !== run || reservation.commit !== ctx.commit) throw new Error('Reservation changed');
+    if (action === 'barrier') {
+      recoveryRun = run;
+      try { const stop = await readState(directory, `trigger-${run}-stop.json`); if (!confirmedControl(stop, run, 'stop')) throw new Error('Stop outcome unresolved'); } catch (e) { if (e.code !== 'ENOENT' || receipt.stopIntent) throw e; }
+      if (!['restart', 'verify', 'protect'].includes(receipt.phase)) throw new Error('Invalid recovery barrier');
+      try { const restart = await readState(directory, `trigger-${run}-restart.json`); if (!confirmedControl(restart, run, 'restart')) throw new Error('Restart outcome unresolved'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      return { status: 'settled' };
+    }
     if (action === 'release') {
       if (receipt.phase !== 'complete') throw new Error('Recovery incomplete');
       await unlink(path.join(directory, file)); return { status: 'released' };
+    }
+    if (action === 'stop' && (recoveryRun === run || receipt.phase !== 'stop' || Date.now() >= receipt.started + 180000)) throw new Error('Stale fault command');
+    if (action === 'restart') {
+      recoveryRun = run;
+      if (receipt.phase !== 'restart') throw new Error('Stale recovery command');
+      if (receipt.stopIntent && !confirmedControl(await readState(directory, `trigger-${run}-stop.json`), run, 'stop')) throw new Error('Stop outcome unresolved');
     }
     const controlFile = `trigger-${run}-${action}.json`;
     try { await readState(directory, controlFile); throw new Error('Control reconciliation required'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     await writeState(directory, controlFile, { run, action, status: 'pending' });
     const owned = await findContainers(ctx), app = owned.find(x => x.Config.Labels['com.docker.compose.service'] === 'app');
     if (!app || app.Id !== receipt.identity.appContainer) throw new Error('App identity changed');
+    const latest = await readState(directory, 'trigger.json');
+    if (latest.run !== run || latest.phase !== receipt.phase) throw new Error('Control phase changed');
+    if (operationIdentity) await runtimeOperation(directory, operationIdentity);
     await ctx.docker([action === 'stop' ? 'stop' : 'start', ...(action === 'stop' ? ['--time', '10'] : []), app.Id], { timeout: 15000 });
     await writeState(directory, controlFile, { run, action, status: 'confirmed' });
     return { status: action };
@@ -573,4 +614,15 @@ export async function recoverTriggerApp(identity) {
   const app = owned.find(x => x.Config.Labels['com.docker.compose.service'] === 'app');
   if (ctx.ids.app !== identity.appImageId || app?.Id !== identity.appContainer) throw new Error('App identity changed');
   if (!app.State.Running) await ctx.docker(['start', app.Id], { timeout: 15000 });
+}
+
+export async function runtimeOperation(directory = stateDir, expected) {
+  const { readState } = await import('./trigger-alert.mjs');
+  const journal = await readState(directory, 'operation.json');
+  const lock = await readState(directory, 'local.lock');
+  const st = await lstat(path.join(directory, 'local.lock'));
+  if (journal.name !== 'start' || journal.status !== 'pending' || !/^[a-f0-9-]{36}$/.test(journal.operationId ?? '') || lock.operationId !== journal.operationId || lock.name !== 'start' || journal.lockInode !== st.ino) throw new Error('Runtime operation unknown');
+  const identity = { operationId: journal.operationId, lockInode: st.ino, device: st.dev };
+  if (expected && JSON.stringify(identity) !== JSON.stringify(expected)) throw new Error('Runtime operation changed');
+  return identity;
 }

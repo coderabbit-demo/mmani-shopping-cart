@@ -396,18 +396,22 @@ test('owned command transfers input and leaves a separate process group alive', 
 });
 
 test('trigger reservation fences legacy commands and run-bound app control preserves runtime identity', async () => {
-  const { mkdtemp, chmod, rm } = await import('node:fs/promises');
+  const { mkdtemp, realpath, chmod, lstat, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const { rehearsalControl, refuseRehearsal } = await import('../scripts/demo/local.mjs');
+  const { rehearsalControl, refuseRehearsal, runtimeOperation } = await import('../scripts/demo/local.mjs');
   const { writeState, readState, target, bounds } = await import('../scripts/demo/trigger-alert.mjs');
-  const dir = await mkdtemp(join(tmpdir(), 'trigger-control-')); await chmod(dir, 0o700);
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'trigger-control-'))); await chmod(dir, 0o700);
   const run = 'a'.repeat(8)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(12);
   const commit = 'b'.repeat(40), image = `sha256:${'c'.repeat(64)}`, id = 'd'.repeat(64), calls = [];
-  const receipt = { version: 1, run, started: 1, deadline: 1 + bounds.recovery, phase: 'stop', identity: { checkout: target.checkout, commit, appImageId: image, appContainer: id } };
+  const started = Date.now();
+  const receipt = { version: 1, run, started, deadline: started + bounds.recovery, phase: 'stop', identity: { checkout: target.checkout, commit, appImageId: image, appContainer: id } };
   try {
     await writeState(dir, 'trigger.json', receipt);
-    const control = rehearsalControl({ commit, ids: { app: image }, docker: async args => calls.push(args) }, dir, async () => [{ Id: id, Config: { Labels: { 'com.docker.compose.service': 'app' } } }]);
+    const operationId = '11111111-1111-1111-1111-111111111111';
+    await writeState(dir, 'local.lock', {name: 'start', operationId});
+    await writeState(dir, 'operation.json', {name: 'start', operationId, status: 'pending', lockInode: (await lstat(join(dir, 'local.lock'))).ino});
+    const control = rehearsalControl({ commit, ids: { app: image }, docker: async args => calls.push(args) }, dir, async () => [{ Id: id, Config: { Labels: { 'com.docker.compose.service': 'app' } } }], await runtimeOperation(dir));
     await control(`trigger:reserve:${run}`);
     await assert.rejects(refuseRehearsal(dir));
     await assert.rejects(control(`trigger:stop:${'e'.repeat(36)}`));
@@ -419,4 +423,134 @@ test('trigger reservation fences legacy commands and run-bound app control prese
     await writeState(dir, 'trigger.json', { ...receipt, phase: 'complete' });
     await control(`trigger:release:${run}`); await refuseRehearsal(dir);
   } finally { await rm(dir, { recursive: true }); }
+});
+
+test('runtime start operation identity rejects missing, replaced and competing locks', async () => {
+  const { mkdtemp, realpath, chmod, lstat, rm, unlink } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');const { join } = await import('node:path');
+  const { writeState } = await import('../scripts/demo/trigger-alert.mjs');const { runtimeOperation } = await import('../scripts/demo/local.mjs');
+  const dir = await realpath(await mkdtemp(join(tmpdir(),'op-')));await chmod(dir,0o700);
+  try {
+    await assert.rejects(runtimeOperation(dir));
+    const operationId='a'.repeat(8)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(12);
+    await writeState(dir,'local.lock',{name:'start',operationId});const st=await lstat(join(dir,'local.lock'));
+    await writeState(dir,'operation.json',{name:'start',operationId,lockInode:st.ino,status:'pending'});
+    const identity=await runtimeOperation(dir);await runtimeOperation(dir,identity);
+    await chmod(join(dir,'local.lock'),0o644);await assert.rejects(runtimeOperation(dir));await chmod(join(dir,'local.lock'),0o600);
+    await writeState(dir,'operation.json',{name:'build',operationId,lockInode:st.ino,status:'pending'});await assert.rejects(runtimeOperation(dir));
+    await unlink(join(dir,'local.lock'));await writeState(dir,'local.lock',{name:'start',operationId:'other'});await assert.rejects(runtimeOperation(dir,identity));
+  }finally{await rm(dir,{recursive:true});}
+});
+
+test('socket controller serializes delayed stop before recovery and rejects stale fault work', {timeout:5000}, async()=>{
+  const { superviseForeground, controlRequest }=await import('../scripts/demo/local.mjs');
+  const { writeState, readState, bounds, target }=await import('../scripts/demo/trigger-alert.mjs');
+  const {mkdtemp,realpath,lstat,rm}=await import('node:fs/promises');const {join}=await import('node:path');const {tmpdir}=await import('node:os');
+  const dir=await realpath(await mkdtemp(join(tmpdir(),'ctl-')));const run='a'.repeat(8)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(12);
+  let finishStop, finishStart;const delayed=new Promise(r=>finishStop=r), delayedStart=new Promise(r=>finishStart=r);const calls=[];const commit='b'.repeat(40),image=`sha256:${'c'.repeat(64)}`,id='d'.repeat(64),started=Date.now();
+  const receipt={version:1,run,started,deadline:started+bounds.recovery,phase:'stop',stopIntent:true,identity:{checkout:target.checkout,commit,appImageId:image,appContainer:id}};
+  const owned=[{Id:id,Config:{Labels:{'com.docker.compose.service':'app'}}}];
+  const confirmed=async action=>{
+    for(let i=0;i<100;i++){
+      try{if((await readState(dir,`trigger-${run}-${action}.json`)).status==='confirmed' && (await controlRequest('status',dir)).controlBusy===false)return;}
+      catch(e){if(e.code!=='ENOENT' && e.message!=='Unsafe trigger state')throw e;}
+      await new Promise(r=>setTimeout(r,5));
+    }
+    assert.fail('control journal was not confirmed');
+  };
+  const operationId='22222222-2222-2222-2222-222222222222';
+  await writeState(dir,'local.lock',{name:'start',operationId});
+  await writeState(dir,'operation.json',{name:'start',operationId,status:'pending',lockInode:(await lstat(join(dir,'local.lock'))).ino});
+  const task=superviseForeground({commit,ids:{app:image},docker:async args=>{calls.push(args[0]);if(args[0]==='stop')await delayed;if(args[0]==='start')await delayedStart;}},{directory:dir,checkPrevious:async()=>{},findContainers:async()=>owned,createJourneys:()=>({blocked:false}),protect:async()=>{},stopServices:async()=>{},schedulerFactory:()=>({stop:async()=>{}})});
+  try{
+    for(let i=0;i<100;i++){try{await lstat(join(dir,'control.sock'));break;}catch{await new Promise(r=>setTimeout(r,5));}}
+    await writeState(dir,'trigger.json',receipt);await controlRequest(`trigger:reserve:${run}`,dir);
+    const stop=controlRequest(`trigger:stop:${run}`,dir,250);await assert.rejects(stop);
+    assert.equal((await controlRequest('status',dir)).triggerProtocol,1);
+    await writeState(dir,'trigger.json',{...receipt,phase:'restart'});
+    await assert.rejects(controlRequest(`trigger:barrier:${run}`,dir));assert.deepEqual(calls,['stop']);
+    finishStop();await confirmed('stop');
+    await controlRequest(`trigger:barrier:${run}`,dir);await assert.rejects(controlRequest(`trigger:stop:${run}`,dir));
+    await assert.rejects(controlRequest(`trigger:restart:${run}`,dir,250));assert.deepEqual(calls,['stop','start']);
+    finishStart();await confirmed('restart');
+    await controlRequest(`trigger:barrier:${run}`,dir);await assert.rejects(controlRequest(`trigger:restart:${run}`,dir));assert.deepEqual(calls,['stop','start']);
+    await writeState(dir,'trigger.json',{...receipt,phase:'complete'});await controlRequest(`trigger:release:${run}`,dir);await controlRequest(`trigger:release:${run}`,dir);
+    await controlRequest('stop',dir);await task;
+  }finally{
+    finishStop();finishStart();
+    for(let i=0;i<30;i++){
+      try{await writeState(dir,'trigger.json',{...receipt,phase:'complete'});await controlRequest(`trigger:release:${run}`,dir,100);await controlRequest('stop',dir,100);break;}catch{await new Promise(r=>setTimeout(r,5));}
+    }
+    await rm(dir,{recursive:true,force:true});
+  }
+});
+
+test('disposable controller process binds the legitimate start lock and fences competing work', { timeout: 5000 }, async () => {
+  const { spawn } = await import('node:child_process');
+  const { mkdtemp, realpath, lstat, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
+  const { writeState, readState, target, bounds } = await import('../scripts/demo/trigger-alert.mjs');
+  const { controlRequest } = await import('../scripts/demo/local.mjs');
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'cp-')));
+  const run = '11111111-1111-1111-1111-111111111111', operationId = '22222222-2222-2222-2222-222222222222';
+  const commit = 'a'.repeat(40), image = `sha256:${'b'.repeat(64)}`, id = 'c'.repeat(64), started = Date.now();
+  const receipt = { version: 1, run, started, deadline: started + bounds.recovery, phase: 'stop', stopIntent: true, identity: { checkout: target.checkout, commit, appImageId: image, appContainer: id } };
+  await writeState(dir, 'local.lock', { name: 'start', operationId });
+  const lockInode = (await lstat(join(dir, 'local.lock'))).ino;
+  const operation = { name: 'start', status: 'pending', operationId, lockInode };
+  await writeState(dir, 'operation.json', operation); await writeState(dir, 'trigger.json', receipt);
+  const module = new URL('../scripts/demo/local.mjs', import.meta.url).href;
+  const script = `import {superviseForeground} from ${JSON.stringify(module)};
+    const waiting = new Map(); process.on('message', m => waiting.get(m)?.());
+    const ctx = {commit:${JSON.stringify(commit)}, ids:{app:${JSON.stringify(image)}}, docker:async args => {process.send({action:args[0]});await new Promise(r=>waiting.set(args[0],r));}};
+    await superviseForeground(ctx,{directory:${JSON.stringify(dir)},checkPrevious:async()=>{},findContainers:async()=>[{Id:${JSON.stringify(id)},Config:{Labels:{'com.docker.compose.service':'app'}}}],createJourneys:()=>({blocked:false}),protect:async()=>{},stopServices:async()=>{},schedulerFactory:()=>({stop:async()=>{}})});
+    process.disconnect();`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  const done = new Promise(resolve => child.once('exit', code => resolve(code))), calls = [];
+  child.on('message', m => calls.push(m.action));
+  const settled = async action => { for (let i = 0; i < 100; i++) { try { if ((await readState(dir, `trigger-${run}-${action}.json`)).status === 'confirmed' && (await controlRequest('status', dir)).controlBusy === false) return; } catch {} await new Promise(r => setTimeout(r, 5)); } assert.fail('control did not settle'); };
+  try {
+    for (let i = 0; i < 100; i++) { try { await lstat(join(dir, 'control.sock')); break; } catch { await new Promise(r => setTimeout(r, 5)); } }
+    const status = await controlRequest('status', dir); assert.equal(status.operationIdentity.operationId, operationId);
+    await controlRequest(`trigger:reserve:${run}`, dir);
+    await assert.rejects(controlRequest('app-stop', dir));
+    await writeState(dir, 'operation.json', { ...operation, name: 'build' });
+    await assert.rejects(controlRequest(`trigger:stop:${run}`, dir)); assert.deepEqual(calls, []);
+    await writeState(dir, 'operation.json', operation);
+    await assert.rejects(controlRequest(`trigger:stop:${run}`, dir, 250));
+    assert.equal((await controlRequest('status', dir)).commit, commit);
+    await writeState(dir, 'trigger.json', { ...receipt, phase: 'restart' });
+    await assert.rejects(controlRequest(`trigger:restart:${run}`, dir)); assert.deepEqual(calls, ['stop']);
+    child.send('stop'); await settled('stop');
+    await controlRequest(`trigger:barrier:${run}`, dir);
+    await assert.rejects(controlRequest(`trigger:stop:${run}`, dir));
+    await assert.rejects(controlRequest(`trigger:restart:${run}`, dir, 250));
+    child.send('start'); await settled('restart');
+    await assert.rejects(controlRequest(`trigger:restart:${run}`, dir)); assert.deepEqual(calls, ['stop', 'start']);
+    await writeState(dir, 'trigger.json', { ...receipt, phase: 'complete' });
+    await controlRequest(`trigger:release:${run}`, dir); await controlRequest(`trigger:release:${run}`, dir);
+    await controlRequest('stop', dir); assert.equal(await done, 0);
+    assert.equal((await readState(dir, 'operation.json')).operationId, operationId);
+  } finally { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); await done; await rm(dir, {recursive: true}); }
+});
+
+test('a settled but unknown restart journal cannot pass the controller recovery barrier', async () => {
+  const { mkdtemp, realpath, lstat, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
+  const { rehearsalControl, runtimeOperation } = await import('../scripts/demo/local.mjs');
+  const { writeState, target, bounds } = await import('../scripts/demo/trigger-alert.mjs');
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'pj-'))), run = '11111111-1111-1111-1111-111111111111';
+  const commit = 'a'.repeat(40), image = `sha256:${'b'.repeat(64)}`, id = 'c'.repeat(64), started = Date.now();
+  const receipt = {version: 1, run, started, deadline: started + bounds.recovery, phase: 'stop', stopIntent: true, identity: {checkout: target.checkout, commit, appImageId: image, appContainer: id}};
+  try {
+    await writeState(dir, 'local.lock', {name: 'start', operationId: run});
+    await writeState(dir, 'operation.json', {name: 'start', operationId: run, status: 'pending', lockInode: (await lstat(join(dir, 'local.lock'))).ino});
+    await writeState(dir, 'trigger.json', receipt); const calls = [];
+    const control = rehearsalControl({commit, ids: {app: image}, docker: async args => {calls.push(args[0]);if(args[0]==='start')throw new Error('unknown');}}, dir, async () => [{Id: id, Config: {Labels: {'com.docker.compose.service': 'app'}}, State: {Running: true}}], await runtimeOperation(dir));
+    await control(`trigger:reserve:${run}`); await control(`trigger:stop:${run}`);
+    await writeState(dir, 'trigger.json', {...receipt, phase: 'restart'});
+    await assert.rejects(control(`trigger:restart:${run}`));
+    await assert.rejects(control(`trigger:barrier:${run}`), /Restart outcome unresolved/);
+    await assert.rejects(control(`trigger:restart:${run}`)); assert.deepEqual(calls, ['stop', 'start']);
+  } finally {await rm(dir, {recursive: true});}
 });

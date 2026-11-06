@@ -133,11 +133,37 @@ The five commands above are implemented. Production arming is deliberately block
 
 The detached supervisor owns writes; terminal disconnect and SIGINT/SIGTERM/SIGHUP request recovery. The controller advertises protocol 1 and reserves app controls by protected run identity. An older controller refuses arming. Monitoring remains scheduled, while conflicting manual operations are fenced. Runtime commit/image/container receipts are separate from tooling HEAD. Recovery can start only the exact existing owned app; it cannot rebuild, recreate or repair monitoring.
 
-Attempt bounds are preparation 60 seconds, requests 10 seconds, controls 15 seconds, polling 5 seconds, Alert observation 180 seconds from cancellation intent, suppression restoration 20 seconds, app recovery 30 seconds, and final observation until 360 seconds. If suppression remains unknown, app recovery is still attempted. Provider failures, SIGKILL, host sleep and power loss can exceed these bounds.
+<!-- coderabbit-ai-generated:v1 -->
 
-Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. Supervisor leases use a private random socket and matching lock tokens, never PID signaling; unknown or legacy stale locks require operator inspection.
+<!-- coderabbit-ai-generated-section:v1:ddaf587c3dfa8259a681a86f1779a04562a08df4658722faf966fdc83b50d836 -->
 
-Offline validation uses `node --test tests/demo-trigger.test.mjs tests/local-demo.test.mjs tests/local-datadog-monitors.test.mjs`. Fixture success is not Mac recovery, Datadog delivery, native fix-PR handoff or GCP acceptance.
+Attempt bounds are preparation 60 seconds, requests 10 seconds, controls 15 seconds, polling 5 seconds, Alert observation at most 180 seconds from arming (before cancellation intent), suppression restoration 20 seconds, app recovery 30 seconds, and final observation until 360 seconds from arming. If suppression remains unknown, app recovery is still attempted subject to pending-control safety checks. Provider failures, SIGKILL, host sleep and power loss can exceed these attempt bounds.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:43ec8a801aeeeb110f95ac006fdc6a9b2f8f91b7fc5a134764b9edf2ee1dbdfe -->
+
+Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. An active old downtime is not proof that an unknown cancellation cannot still arrive; the reservation stays fenced until cancellation is definitively reconciled and replacement suppression is confirmed. App recovery observations continue while protection is uncertain. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. Supervisor leases use a private random socket and matching lock tokens, never PID signaling; unknown or legacy stale locks require operator inspection.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f33cbd8ba97e1a3150cde5ebb71294606dd4eaf153ce813adf088f4fdbb3bc6c -->
+
+The controller's legitimate long-lived `start` keeps `local.lock` and `operation.json` pending. The trigger requires their matching protected operation ID and lock inode, bound to controller status, and rechecks them before app control. It does not acquire, remove or steal that lock. Missing or legacy operation markers, unsafe files and replacement operations block arming; an operator must separately approve controller preparation or reconciliation. Status and scheduled monitoring remain available during a reservation.
+
+`recover --execute` records a separate recovery-attempt start/deadline, bounded to 360 seconds, even when the original fault deadline has elapsed. It preserves the original run, deadlines and mutation intents, never reopens the fault window, and never blindly repeats an unknown create or control. A changed tooling commit is recorded separately from the original runtime commit/image/container identity. Complete cleanup still reconciles reservation release; a lost release response can be retried idempotently after fresh recovery readbacks.
+
+Run-bound controller journals and a serialized recovery barrier prevent a delayed stop from racing an app restart. A confirmed lost restart response is reconciled without another controller start. An unresolved pending stop/control cannot be assumed settled: recovery stays uncertain and fenced. App recovery is attempted when suppression is unknown, subject to these exact-ownership and pending-control guards. No recovery path repairs or restarts the Agent, runner or controller.
+
+CLI/status evidence separates `alertObserved`, `protected`, `recovered`, `released`, failure/unknown markers and runtime/tooling/image identities. `no-alert-observed-restored` means cleanup completed without the requested Alert; it is not successful alert delivery. Observer exit, IPC loss or timeout reports an uncertain outcome without killing a continuing supervisor. Inspect `status` and use explicit recovery; do not remove journals. Provider event/cycle identifiers remain unavailable.
+
+Offline validation uses `node --test tests/demo-trigger.test.mjs tests/local-demo.test.mjs tests/local-datadog-monitors.test.mjs`. Fixtures canonicalize the OS temporary directory and use short socket paths while retaining production symlink/ownership/mode checks. Fixture success is not Mac recovery, Datadog delivery, native fix-PR handoff or GCP acceptance.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 
 <!-- /coderabbit-ai-generated:v1 -->

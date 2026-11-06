@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, chmod, symlink, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, chmod, symlink, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -90,7 +90,7 @@ test('unknown stop triggers recovery, interruption skips alert observation, dead
   const receipt = await rehearse(h.a, h.store, h.options); assert.equal(receipt.alertObserved, undefined); assert.equal(receipt.phase, 'complete');
 });
 test('protected journal rejects symlinks, unsafe modes, corrupt data and overlaps', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'deskdrop-trigger-')); await chmod(dir, 0o700);
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'deskdrop-trigger-'))); await chmod(dir, 0o700);
   try {
     await writeState(dir, 'receipt.json', { status: 'safe' }); assert.deepEqual(await readState(dir, 'receipt.json'), { status: 'safe' });
     await symlink(path.join(dir, 'receipt.json'), path.join(dir, 'alias.json'));
@@ -109,7 +109,7 @@ test('bounded requests reject stalled operations and abort adapter signal', asyn
 
 test('independent supervisor observes terminal disconnect and SIGTERM using real subprocesses', { timeout: 10000 }, async () => {
   const { spawn } = await import('node:child_process');
-  const dir = await mkdtemp(path.join(tmpdir(), 'trigger-process-'));
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'trigger-process-')));
   try {
     for (const mode of ['disconnect', 'SIGTERM']) {
       const result = path.join(dir, mode);
@@ -129,7 +129,7 @@ test('independent supervisor observes terminal disconnect and SIGTERM using real
 
 test('supervisor lease excludes overlap without signaling or stealing a live owner', async () => {
   const { supervisorLease } = await import('../scripts/demo/trigger-alert.mjs');
-  const dir = await mkdtemp(path.join(tmpdir(), 'trigger-lease-')); await chmod(dir, 0o700);
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'tl-'))); await chmod(dir, 0o700);
   try {
     await supervisorLease(dir, false, async () => {
       await assert.rejects(supervisorLease(dir, false, () => assert.fail('overlap')));
@@ -142,7 +142,7 @@ test('supervisor lease excludes overlap without signaling or stealing a live own
 test('SIGKILL leaves a durable lease that explicit recovery reconciles without a PID', { timeout: 10000 }, async () => {
   const { spawn } = await import('node:child_process');
   const { supervisorLease } = await import('../scripts/demo/trigger-alert.mjs');
-  const dir = await mkdtemp(path.join(tmpdir(), 'trigger-crash-')); await chmod(dir, 0o700);
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'tc-'))); await chmod(dir, 0o700);
   const url = new URL('../scripts/demo/trigger-alert.mjs', import.meta.url).href;
   const child = spawn(process.execPath, ['--input-type=module', '-e', `import {supervisorLease} from ${JSON.stringify(url)}; await supervisorLease(${JSON.stringify(dir)},false,async()=>{process.send('locked');await new Promise(()=>{});});`], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const done = new Promise(resolve => child.once('exit', resolve));
@@ -160,4 +160,222 @@ test('explicit recovery adopts one confirmed create result without another creat
   f.a.reconcileCreate = async () => 'replacement';
   const receipt = await rehearse(f.a, f.store, { ...f.options, recover: true });
   assert.equal(receipt.phase, 'complete'); assert.equal(creates, 0); assert.equal(receipt.newDowntime, 'replacement');
+});
+
+test('complete-before-release crash and expired receipts reconcile release with a fresh attempt', async () => {
+  const f = fixture(); const r = await rehearse(f.a, f.store, f.options);
+  await f.store.save({ ...r, releaseConfirmed: false });
+  const calls = f.calls.length;
+  const now = () => r.deadline + 100000;
+  const recovered = await rehearse(f.a, f.store, { ...f.options, now, recover: true });
+  assert.equal(recovered.releaseConfirmed, true);
+  assert.equal(recovered.deadline, r.deadline);
+  assert.equal(recovered.attempt.deadline, now() + bounds.recovery);
+  assert.ok(f.calls.slice(calls).some(c => c[0] === 'release'));
+  assert.ok(!f.calls.slice(calls).some(c => ['cancel', 'stop', 'create'].includes(c[0])));
+});
+test('expired unknown create is adopted once and recovery uses fresh readbacks', async () => {
+  const f = fixture({ create: async () => { throw new Error('unknown'); } });
+  const old = await rehearse(f.a, f.store, f.options);
+  let creates = 0; f.a.create = async () => { creates++; }; f.a.reconcileCreate = async () => 'replacement';
+  const r = await rehearse(f.a, f.store, { ...f.options, now: () => old.deadline + 1, recover: true });
+  assert.equal(r.phase, 'complete'); assert.equal(r.releaseConfirmed, true); assert.equal(creates, 0);
+});
+test('safe evidence distinguishes no-alert cleanup and excludes untrusted receipt strings', async () => {
+  const { evidence } = await import('../scripts/demo/trigger-alert.mjs');
+  const f = fixture({ monitor: async () => ({ status: 'OK' }) }); const r = await rehearse(f.a, f.store, f.options);
+  const result = evidence({ ...r, failure: 'credential-canary', unexpected: 'credential-canary', attempt: { started: 1, deadline: 2, secret: 'credential-canary' } });
+  assert.equal(result.outcome, 'no-alert-observed-restored'); assert.equal(result.alertObserved, false);
+  assert.equal(result.identity.commit, f.a.identity.commit); assert.equal(result.protected, true);
+  assert.ok(!JSON.stringify(result).includes('credential-canary'));
+});
+test('observer resolves supervisor exit after acceptance using a disposable subprocess', async () => {
+  const { spawn } = await import('node:child_process');
+  const { observeSupervisor } = await import('../scripts/demo/trigger-alert.mjs');
+  const child = spawn(process.execPath, ['-e', "process.send({status:'accepted'});setTimeout(()=>process.exit(7),20)"], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const result = await observeSupervisor(child, async () => ({ unknown: true, phase: 'observe' }), 1000);
+  assert.equal(result.unknown, true); assert.ok(['exited', 'connection-lost'].includes(result.supervisor));
+});
+test('lease paths respect Darwin socket length and aliased fixture roots stay strict', async () => {
+  const { leaseSocket } = await import('../scripts/demo/trigger-alert.mjs');
+  assert.ok(Buffer.byteLength(leaseSocket('/private/var/folders/xx/abcdefghijklmnopqrstuvwxyz/T/demo123456', 'a'.repeat(36))) <= 103);
+  assert.throws(() => leaseSocket('/' + 'x'.repeat(100), 'a'.repeat(36)));
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'alias-')));
+  try { await symlink(dir, path.join(dir, 'alias')); await assert.rejects(writeState(path.join(dir, 'alias'), 'x.json', {})); } finally { await rm(dir, {recursive:true}); }
+});
+
+async function adapterFixture() {
+  const { productionAdapter } = await import('../scripts/demo/trigger-watchdog.mjs');
+  const { monitorDefinitions, idDowntime } = await import('../scripts/demo/datadog-monitors.mjs');
+  const definitions = JSON.parse(await readFile(new URL('../deploy/datadog/local-monitors.json', import.meta.url), 'utf8'));
+  const owner = `local_owner:${'f'.repeat(32)}`, wanted = monitorDefinitions(definitions, owner);
+  const ids = [target.availability, target.checkout, target.heartbeat];
+  const state = { owner, pending: null, monitors: wanted.map((d,i) => ({id:ids[i],name:d.name,downtime:`dt-${i}`})) };
+  const monitors = wanted.map((d,i) => ({...structuredClone(d),id:ids[i],overall_state:'OK',state:{groups:{'host:deskdrop-mmani-local':{status:'OK'}}}}));
+  const downtime = new Map(ids.map((id,i)=> [`dt-${i}`, {data:{...idDowntime(id).data,id:`dt-${i}`,attributes:{...idDowntime(id).data.attributes,status:'active'}}}]));
+  let journal = structuredClone(state); const calls = [];
+  const status = {triggerProtocol:1,journeyBlocked:false,operationIdentity:{operationId:'owned'},commit:'a'.repeat(40),appImageId:`sha256:${'b'.repeat(64)}`,checks:{telemetry:'sent',availability:{status:0,time:Date.now()},checkout:{status:0,time:Date.now()}}};
+  const rule={data:{id:target.rule,attributes:{name:'DeskDrop local demo to CodeRabbit MMANI',filter:{tags:[...fixedTags,owner]},recipients:[target.recipient]}}};
+  const readers={site:target.site,definitions,api:{async getMonitor(id){calls.push(['monitor',id]);return monitors.find(m=>m.id===id);},async getDowntime(id){calls.push(['downtime',id]);return downtime.get(id);},async matches(id){return [journal.monitors.find(m=>m.id===id).downtime];},async getNotificationRule(){calls.push(['rule']);return rule;}},read:async()=>structuredClone(journal),write:async(n,v)=>{journal=structuredClone(v);},control:async()=>status,runtime:async()=>({ctx:{commit:status.commit,ids:{app:status.appImageId}},owned:['app','agent','runner','forwarder'].map(service=>({Id:'c'.repeat(64),Config:{Labels:{'com.docker.compose.service':service}},State:{Running:true,Health:{Status:'healthy'}}}))}),operation:async()=>status.operationIdentity,availability:async()=>true,tooling:async()=>'d'.repeat(40)};
+  return {readers,state,monitors,downtime,status,rule,calls,make:()=>productionAdapter(readers),journal:()=>journal};
+}
+test('production validation reads actual definitions, journal, ownership, routing and runtime', async () => {
+  const good = await adapterFixture(); await assert.rejects((await good.make()).baseline(), /Alert-only/); assert.ok(good.calls.some(c=>c[0]==='rule'));
+  for (const mutate of [f=>f.readers.site='other',f=>f.monitors[1].id=1,f=>f.monitors[1].tags.pop(),f=>f.monitors[1].query='wrong',f=>f.rule.data.attributes.recipients=['other'],f=>f.status.journeyBlocked=true,f=>f.monitors[1].overall_state='Alert',f=>f.monitors[1].state.groups['host:deskdrop-mmani-local'].status='Alert',f=>f.readers.api.matches=async()=>['foreign'],f=>f.readers.api.getMonitor=async()=>({...f.monitors[1],id:1}),f=>{const runtime=f.readers.runtime;f.readers.runtime=async()=>{const r=await runtime();r.owned[1].State.Health.Status='unhealthy';return r;};},f=>f.status.checks.checkout.time=0,f=>f.readers.runtime=async()=>({ctx:{ids:{app:'wrong'}},owned:[]}),f=>f.readers.operation=async()=>{throw new Error('operation mismatch');},f=>f.readers.read=async()=>({...f.state,pending:'unknown'}),f=>f.readers.read=async()=>({...f.state,extra:true})]) {
+    const f=await adapterFixture();mutate(f);await assert.rejects(async()=>{const a=await f.make();await a.baseline();},e=>!e.message.includes('Alert-only'));
+  }
+});
+test('production replacement preserves other monitor entries and strict journal shape', async()=>{
+  const f=await adapterFixture();const a=await f.make();await a.replace('replacement');
+  assert.deepEqual(f.journal().monitors[0],f.state.monitors[0]);assert.deepEqual(f.journal().monitors[2],f.state.monitors[2]);
+  assert.equal(f.journal().monitors[1].downtime,'replacement');assert.deepEqual(Object.keys(f.journal()),Object.keys(f.state));
+});
+
+test('expired operation scope aborts actual API and prevents a delayed subsequent write', async()=>{
+  const {makeApi}=await import('../scripts/demo/datadog-monitors.mjs');const {EventEmitter}=await import('node:events');
+  let destroyed=false,requests=0;
+  const api=makeApi({apiKey:'fixture',appKey:'fixture',request(){requests++;const req=new EventEmitter();req.end=()=>{};req.destroy=()=>{destroyed=true;};return req;}});
+  await assert.rejects(bounded(()=>api.getMonitor(target.checkout),15));
+  await new Promise(r=>setTimeout(r,10));assert.equal(destroyed,true);assert.equal(requests,1);
+  let late;
+  await assert.rejects(bounded(async()=>{await new Promise(r=>setTimeout(r,25));try{await api.cancelDowntime('owned');}catch{late='aborted';}},5));
+  await new Promise(r=>setTimeout(r,40));assert.equal(late,'aborted');assert.equal(requests,1);
+});
+
+test('unknown reservation release on either side reconciles without a second fault', async () => {
+  for (const removed of [false, true]) {
+    const f = fixture(); let reserved = true, releases = 0;
+    f.a.release = async () => { releases++; if (removed) reserved = false; throw new Error('lost release response'); };
+    const first = await rehearse(f.a, f.store, f.options);
+    assert.equal(first.phase, 'uncertain'); assert.equal(first.releaseConfirmed, false);
+    const priorCalls = f.calls.length;
+    f.a.release = async () => { releases++; reserved = false; };
+    const next = await rehearse(f.a, f.store, { ...f.options, recover: true });
+    assert.equal(next.phase, 'complete'); assert.equal(next.releaseConfirmed, true);
+    assert.equal(reserved, false); assert.equal(releases, 2);
+    assert.ok(!f.calls.slice(priorCalls).some(c => ['stop', 'cancel', 'create'].includes(c[0])));
+  }
+});
+test('nested production operation deadline cannot extend its parent or mutate late', async () => {
+  const { operationContext } = await import('../scripts/demo/trigger-alert.mjs');
+  let deadline, lateWrite = false;
+  await assert.rejects(bounded(async () => {
+    deadline = operationContext().deadline;
+    await bounded(async signal => {
+      assert.equal(operationContext().deadline, deadline);
+      await new Promise(resolve => setTimeout(resolve, 35));
+      signal.throwIfAborted(); lateWrite = true;
+    }, 1000);
+  }, 10));
+  await new Promise(resolve => setTimeout(resolve, 45)); assert.equal(lateWrite, false);
+});
+test('observer resolves pre-accept exit and IPC loss without killing a continuing supervisor', async () => {
+  const { spawn } = await import('node:child_process');
+  const { observeSupervisor } = await import('../scripts/demo/trigger-alert.mjs');
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'ob-')));
+  try {
+    const early = spawn(process.execPath, ['-e', 'process.exit(9)'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    assert.ok(['exited', 'connection-lost'].includes((await observeSupervisor(early, async () => ({ unknown: true }), 1000)).supervisor));
+    const file = path.join(dir, 'recovered');
+    const child = spawn(process.execPath, ['-e', `process.send({status:'accepted'});process.disconnect();setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(file)},'protected'),50);`], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    const done = new Promise(resolve => child.once('exit', resolve));
+    assert.equal((await observeSupervisor(child, async () => ({ unknown: true }), 1000)).supervisor, 'connection-lost');
+    await done; assert.equal(await readFile(file, 'utf8'), 'protected');
+  } finally { await rm(dir, {recursive: true}); }
+});
+
+test('recovery retains fault identity while recording the current tooling source separately', async () => {
+  const f = fixture(); const before = structuredClone(await rehearse(f.a, f.store, f.options));
+  f.a.identity.toolingCommit = 'f'.repeat(40);
+  const after = await rehearse(f.a, f.store, { ...f.options, recover: true });
+  assert.equal(after.identity.toolingCommit, before.identity.toolingCommit);
+  assert.equal(after.attempt.toolingCommit, f.a.identity.toolingCommit);
+  f.a.identity.appContainer = '9'.repeat(64);
+  await assert.rejects(rehearse(f.a, f.store, { ...f.options, recover: true }), /identity changed/);
+});
+test('production recovery fallback requires run-bound confirmed control journals', async () => {
+  const f = await adapterFixture(); let fallbacks = 0, barrierLost = false;
+  const run = '11111111-1111-1111-1111-111111111111', read = f.readers.read;
+  const stop = { run, action: 'stop', status: 'pending' }, restart = { run, action: 'restart', status: 'confirmed' };
+  f.readers.read = async name => name === 'trigger.json' ? { run } : name.endsWith('-stop.json') ? stop : name.endsWith('-restart.json') ? restart : read(name);
+  const control = f.readers.control;
+  f.readers.control = async command => { if (command.startsWith('trigger:barrier')) { if (barrierLost) throw new Error('unknown'); return { status: 'settled' }; } return control(command); };
+  f.readers.fallback = async () => { fallbacks++; };
+  const a = await f.make(); await assert.rejects(a.fallback()); assert.equal(fallbacks, 0);
+  stop.status = 'confirmed'; barrierLost = true;
+  await a.fallback(); assert.equal(fallbacks, 1);
+  restart.run = 'other'; await assert.rejects(a.fallback()); assert.equal(fallbacks, 1);
+});
+
+test('actual status command prints safe operational evidence without credential or raw failure values', async () => {
+  const { mkdir } = await import('node:fs/promises');
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), 'st-'))), dir = path.join(home, '.deskdrop-mmani-local');
+  try {
+    await mkdir(dir, {mode: 0o700});
+    const f = fixture({ monitor: async () => ({status: 'OK'}) }); const r = await rehearse(f.a, f.store, f.options);
+    await writeState(dir, 'trigger.json', { ...r, failure: 'secret-canary', providerResponse: 'secret-canary' });
+    const {stdout, stderr} = await run('bash', ['scripts/demo/trigger-alert.sh', 'status'], {env: {...process.env, HOME: home, DD_API_KEY: 'secret-canary'}});
+    const result = JSON.parse(stdout);
+    assert.equal(result.outcome, 'no-alert-observed-restored'); assert.equal(result.alertObserved, false);
+    assert.equal(result.identity.commit, f.a.identity.commit); assert.equal(result.identity.toolingCommit, f.a.identity.toolingCommit);
+    assert.equal(result.identity.appImageId, f.a.identity.appImageId);
+    assert.equal(result.protected, true); assert.equal(result.recovered, true); assert.equal(result.released, true);
+    assert.equal(result.failure, true); assert.equal(result.unknown, false); assert.equal(stderr, '');
+    assert.ok(!stdout.includes('secret-canary')); assert.equal(result.providerEvent, 'unavailable');
+  } finally { await rm(home, {recursive: true}); }
+});
+
+test('an elapsed attempt cannot initiate provider creation or app recovery controls', async () => {
+  let time = 100000; const f = fixture({stop: async () => {time += bounds.recovery + 1;}});
+  const r = await rehearse(f.a, f.store, {...f.options, now: () => time});
+  assert.equal(r.phase, 'uncertain');
+  assert.ok(!f.calls.some(c => ['create', 'restart', 'fallback'].includes(c[0])));
+});
+test('phase abort kills an owned delayed command before its later filesystem action', async () => {
+  const { runCommand } = await import('../scripts/demo/local.mjs');
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'ab-'))), marker = path.join(dir, 'late');
+  try {
+    await assert.rejects(bounded(() => runCommand('bash', ['-c', 'sleep .15; printf late > "$1"', 'fixture', marker]), 15));
+    await new Promise(r => setTimeout(r, 200));
+    await assert.rejects(readFile(marker), {code: 'ENOENT'});
+  } finally { await rm(dir, {recursive: true}); }
+});
+
+test('supervisor survives IPC loss before acceptance and still records recovery', {timeout: 3000}, async () => {
+  const {spawn} = await import('node:child_process');
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'ip-'))), marker = path.join(dir, 'recovery');
+  const module = new URL('../scripts/demo/trigger-watchdog.mjs', import.meta.url).href;
+  const script = `import {supervisorSession} from ${JSON.stringify(module)};import {writeFile} from 'node:fs/promises';await supervisorSession(async o=>{process.send('ready');await new Promise(r=>setTimeout(r,40));o.accepted('owned');await writeFile(${JSON.stringify(marker)},String(o.interrupted()));});if(process.connected)process.disconnect();`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], {stdio: ['ignore', 'ignore', 'ignore', 'ipc']});
+  const done = new Promise(resolve => child.once('exit', resolve));
+  try {
+    await new Promise(resolve => child.once('message', resolve));child.disconnect();
+    assert.equal(await done, 0);assert.equal(await readFile(marker, 'utf8'), 'true');
+  } finally {if(child.exitCode===null && child.signalCode===null)child.kill('SIGKILL');await done;await rm(dir,{recursive:true});}
+});
+
+test('an active old downtime cannot settle an unknown cancellation; later reconciliation adopts one replacement', async () => {
+  let canceled = false, cancelCalls = 0, createCalls = 0, releases = 0;
+  const f = fixture({
+    cancel: async () => { cancelCalls++; throw new Error('lost DELETE response'); },
+    canceled: async () => canceled,
+    protection: async id => id === 'old' ? !canceled : id === 'replacement',
+    monitor: async () => ({status: 'OK'}),
+    create: async () => { createCalls++; throw new Error('lost create response'); },
+    release: async () => { releases++; }
+  });
+  let r = await rehearse(f.a, f.store, f.options);
+  assert.equal(r.phase, 'uncertain'); assert.equal(r.cancelIntent, true); assert.equal(r.protected, false);
+  assert.equal(r.recovered, true); assert.equal(releases, 0); assert.equal(createCalls, 0);
+  assert.ok(f.calls.some(c => c[0] === 'localHealthy'));
+  r = await rehearse(f.a, f.store, {...f.options, recover: true});
+  assert.equal(r.phase, 'uncertain'); assert.equal(cancelCalls, 1); assert.equal(createCalls, 0);
+  canceled = true;
+  r = await rehearse(f.a, f.store, {...f.options, recover: true});
+  assert.equal(r.canceled, true); assert.equal(r.createIntent, true); assert.equal(r.phase, 'uncertain'); assert.equal(createCalls, 1);
+  f.a.reconcileCreate = async () => 'replacement';
+  r = await rehearse(f.a, f.store, {...f.options, recover: true});
+  assert.equal(r.phase, 'complete'); assert.equal(r.releaseConfirmed, true); assert.equal(r.newDowntime, 'replacement');
+  assert.equal(cancelCalls, 1); assert.equal(createCalls, 1); assert.equal(releases, 1);
+  assert.ok(f.calls.some(c => c[0] === 'replace' && c[1] === 'replacement'));
 });

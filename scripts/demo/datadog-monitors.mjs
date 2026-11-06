@@ -1,3 +1,4 @@
+import { operationContext } from './trigger-alert.mjs';
 import { readFile, open, lstat, mkdir, realpath, rename, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
@@ -82,6 +83,10 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
   if (!apiKey || !appKey) throw new Error('Missing Datadog credentials');
   if (!Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000) throw new Error('Invalid request deadline');
   async function call(method, path, body, requestDeadline = deadlineMs) {
+    const operation = operationContext();
+    operation?.signal.throwIfAborted();
+    requestDeadline = Math.min(requestDeadline, operation ? operation.deadline - Date.now() : requestDeadline);
+    if (requestDeadline <= 0) throw new Error('Datadog request outcome unknown');
     const ruleRead = method === 'GET' && path === '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc';
     const groupRead = method === 'GET' && /^\/api\/v1\/monitor\/\d+\?group_states=all$/.test(path);
     if ((!ruleRead && !groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
@@ -93,7 +98,7 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
       const timer = setTimeout(fail, requestDeadline);
       const finish = (error, value) => {
         if (finished) return;
-        finished = true; clearTimeout(timer);
+        finished = true; clearTimeout(timer); operation?.signal.removeEventListener('abort', fail);
         const dispose = stream => {
           if (!stream || typeof stream.destroy !== 'function') return;
           const ignore = () => {};
@@ -106,7 +111,9 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
         if (error) { dispose(response); dispose(req); }
         if (error) reject(new Error(error)); else resolve(value);
       };
+      operation?.signal.addEventListener('abort', fail, { once: true });
       try {
+        operation?.signal.throwIfAborted();
         req = request({ protocol: 'https:', hostname: 'api.us3.datadoghq.com', port: 443, method, path, headers: { 'DD-API-KEY': apiKey, 'DD-APPLICATION-KEY': appKey, 'content-type': 'application/json', accept: 'application/json' } }, incoming => {
           response = incoming;
           if (finished) { response.destroy?.(); return; }

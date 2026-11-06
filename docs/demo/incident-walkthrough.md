@@ -60,14 +60,20 @@ The recorded [Debug result](https://coderabbitdemo.slack.com/archives/C0CEPB2LUR
 
 **WOW:** point back to the Debug timestamp, then the ticket creation time. The investigation already completed before this issue existed. Do not start Debug from the Jira bot to demonstrate this path; that would be a different workflow.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:76ea2ae104be03bfc7c3badad9b728e73127a495031ce5646f2c36dad3fa740d -->
+
 ## Stage 5 — Recover and close with the boundary of proof
 
 | Step | Do | Say | See |
 | --- | --- | --- | --- |
-| 11 · Verify recovery | For the automatic path, inspect trigger `status`, the app/controller, Agent health and the restored checkout suppression. Use explicit `recover --execute` after an interrupted run; unknown outcomes remain fenced. For TEST, leave monitor configuration and mutes intact. | “The demo finishes with the app recovered and notifications back under operator control. A recovery claim needs fresh observations.” | The owned app running, successful fresh checks, verified suppressions and sanitized receipt. For a TEST-only session, no claim of a real fault/recovery. |
+| 11 · Verify recovery | For the automatic path, inspect trigger `status`, the app/controller, Agent health and the restored checkout suppression. Use explicit `recover --execute` after an interrupted run; unknown outcomes remain fenced. For TEST, leave monitor configuration and mutes intact. | “The demo finishes with the app recovered and notifications back under operator control. A recovery claim needs fresh observations.” | The owned app running, successful fresh checks, verified suppressions and sanitized receipt with confirmed reservation release. Check `alertObserved` separately: `no-alert-observed-restored` is cleanup without an Alert, not alert delivery. An expired receipt receives a new bounded recovery attempt, never another fault. For a TEST-only session, no claim of a real fault/recovery. |
 | 12 · Close the story | Show the two Slack outcomes and the [GCP handoff](gcp-team-handoff.md). | “We followed one incident into two independent operator choices. Ticket creation and direct repository investigation are demonstrated. A full code-remediation demo still needs a reproducible source fault and authenticated native Coding Agent handoff. Next, the runtime moves to GCP so the team can use it without my Mac.” | Clear separation of demonstrated behavior, remaining fix-PR work and the next deployment phase. |
 
-## Optional extension — A real fix PR, once ready
+
+
+<!-- /coderabbit-ai-generated:v1 -->## Optional extension — A real fix PR, once ready
 
 This extension is not current live evidence. Before using it, approve a reproducible isolated source fixture and exact ALLOW paths, verify native CodeRabbit Code discovery/handoff authentication, and retain a known faulty base and expected failing assertion. Keep branch, task, commits and PR metadata free of Jira identifiers. Use associated GitHub issue metadata where the repository's PR rules require it.
 
