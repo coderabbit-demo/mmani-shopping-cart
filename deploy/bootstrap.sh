@@ -1271,6 +1271,21 @@ firewall() {
   iptables -C OUTPUT -d 169.254.169.254/32 -m owner ! --uid-owner 0 -j REJECT 2>/dev/null || iptables -I OUTPUT 1 -d 169.254.169.254/32 -m owner ! --uid-owner 0 -j REJECT
   ip6tables -C OUTPUT -d fd20:ce::254/128 -m owner ! --uid-owner 0 -j REJECT 2>/dev/null || ip6tables -I OUTPUT 1 -d fd20:ce::254/128 -m owner ! --uid-owner 0 -j REJECT
 
+  # Host DNS/NTP share the metadata addresses. Keep only these protocol exceptions
+  # before the nonroot API deny, even when upgrading an old first-position reject.
+  local tool address protocol port protocol_port
+  for tool in iptables ip6tables; do
+    address=169.254.169.254/32
+    [ "$tool" != ip6tables ] || address=fd20:ce::254/128
+    for protocol_port in udp:53 tcp:53 udp:123; do
+      protocol=${protocol_port%:*}
+      port=${protocol_port#*:}
+      if "$tool" -C OUTPUT -d "$address" -p "$protocol" --dport "$port" -m owner ! --uid-owner 0 -j ACCEPT 2>/dev/null; then
+        "$tool" -D OUTPUT -d "$address" -p "$protocol" --dport "$port" -m owner ! --uid-owner 0 -j ACCEPT
+      fi
+      "$tool" -I OUTPUT 1 -d "$address" -p "$protocol" --dport "$port" -m owner ! --uid-owner 0 -j ACCEPT
+    done
+  done
 }
 
 install_profile() {
@@ -1532,17 +1547,23 @@ def install(digest,transfer='/tmp/monitoring.tar.gz',release_path='/etc/deskdrop
         subprocess.run(['systemctl','daemon-reload'],check=True,timeout=15)
         print(json.dumps(receipt))
 
+class InstallationLockHeld(ValueError):
+    def __init__(self):
+        super().__init__('Protected installation.lock exists: live or abandoned installer ownership is unknown; preserve pending evidence and confirm exact owned installer, host lifecycle lease and durable intent through protected maintenance before manual recovery')
+
 def manage(c,mode):
     with lock('lifecycle.lock'):
         for kind in ['controller','heartbeat']:
             if owned_container(c,kind):raise ValueError('Stop monitoring service before management operations')
         r=owned_container(c,'installer')
         if r and r['State']['Running']:raise ValueError('Previous installer still running; outcome unknown')
-        if r:stop_owned(c,'installer')
-        # Docker name + host flock exclude a live installer. Empty stale journal lock
-        # from a killed container is now safely recoverable; intent remains untouched.
+        # The journal lock may outlive SIGKILL/reboot. A missing/dead container or
+        # elapsed deadline is not proof that its durable provider intent is reconciled.
         p=STATE+'/installation.lock'
-        if os.path.lexists(p):safe_dir(p,private=True);os.rmdir(p);syncdir(STATE)
+        if os.path.lexists(p):
+            safe_dir(p,private=True)
+            raise InstallationLockHeld()
+        if r:stop_owned(c,'installer')
         try:
             subprocess.run(['/opt/deskdrop/bootstrap.sh','management-refresh'],check=True,timeout=45)
             result=docker('run',*options(c,'installer'),CONTROL,'node',BASE+'/cloud-monitors.mjs',mode,timeout=300)
@@ -1599,6 +1620,7 @@ def main():
     else:raise ValueError('Invalid monitoring operation')
 if __name__=='__main__':
     try:main()
+    except InstallationLockHeld as error:print(str(error),file=sys.stderr);sys.exit(1)
     except Exception:print('Monitoring failed; preserve journal and reconcile exact owned resources',file=sys.stderr);sys.exit(1)
 MONITORING
 }

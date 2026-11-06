@@ -455,6 +455,14 @@ iptables() {
  local operation=$1 chain=$2; shift 2
  if [ "$operation" = -nL ]; then return 0; fi
  if [ "$operation" = -I ]; then shift; rules=("$chain $*" \${rules[@]+"\${rules[@]}"}); return; fi
+ if [ "$operation" = -D ]; then
+  local candidate found=1
+  local -a remaining=()
+  for candidate in \${rules[@]+"\${rules[@]}"}; do
+   if [ "$candidate" = "$chain $*" ] && [ "$found" = 1 ]; then found=0; else remaining+=("$candidate"); fi
+  done
+  rules=(\${remaining[@]+"\${remaining[@]}"}); return "$found"
+ fi
  if [ "$operation" = -C ]; then
   local candidate
   for candidate in \${rules[@]+"\${rules[@]}"}; do [ "$candidate" != "$chain $*" ] || return 0; done
@@ -799,7 +807,7 @@ ip6tables() { printf 'v6 %s\\n' "$*"; [ "$1 $2" != '-C OUTPUT' ]; }
 firewall
 `);
   assert.equal(result.status,0,result.stderr);
-  const rules=result.stdout.split('\n').filter(l=>l.includes('-I OUTPUT'));
+  const rules=result.stdout.split('\n').filter(l=>l.includes('-I OUTPUT')&&l.endsWith('-j REJECT'));
   assert.equal(rules.length,2);
   assert.ok(rules.includes('v4 -I OUTPUT 1 -d 169.254.169.254/32 -m owner ! --uid-owner 0 -j REJECT'));
   assert.ok(rules.includes('v6 -I OUTPUT 1 -d fd20:ce::254/128 -m owner ! --uid-owner 0 -j REJECT'));
@@ -961,5 +969,130 @@ with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
    except BlockingIOError:pass
  finally:child.kill();child.wait(timeout=3)
  with g['lock']('lifecycle.lock'):pass
+`);
+});
+
+const firewallPolicyDriver = String.raw`# CodeRabbit generated offline policy driver; never calls host iptables.
+import json,os,pathlib,shlex,subprocess,sys,tempfile
+
+def adapter(state_path,family,args):
+    state=json.loads(pathlib.Path(state_path).read_text());state['commands'].append([family,*args]);rules=state[family]
+    op,chain,*tail=args
+    if chain=='OUTPUT':
+        body=tail[1:] if op=='-I' else tail
+        allowed=[]
+        address='169.254.169.254/32' if family=='v4' else 'fd20:ce::254/128'
+        reject=['-d',address,'-m','owner','!','--uid-owner','0','-j','REJECT']
+        allowed.append(reject)
+        for protocol,port in [('udp','53'),('tcp','53'),('udp','123')]:
+            allowed.append(['-d',address,'-p',protocol,'--dport',port,'-m','owner','!','--uid-owner','0','-j','ACCEPT'])
+        if op not in ['-C','-D','-I'] or body not in allowed or (op=='-I' and tail[0]!='1'):raise AssertionError('Unexpected OUTPUT mutation: '+repr(args))
+        if op=='-C':code=0 if body in rules else 1
+        elif op=='-D':rules.remove(body);code=0
+        else:rules.insert(0,body);code=0
+    else:
+        # Strict allowlist for the unchanged bridge rules. No unknown mutation is accepted.
+        allowed=[]
+        if family=='v4' and chain=='DOCKER-USER' and op in ['-nL','-N'] and not tail:
+            pass
+        else:
+            if family=='v4' and chain=='FORWARD':allowed.append(['-j','DOCKER-USER'])
+            for bridge,subnet in [('br-deskdrop','172.30.243.0/24'),('br-deskdrop-in','172.30.244.0/24')]:
+                if family=='v4' and chain=='DOCKER-USER':
+                    allowed.extend([['-i',bridge,'!','-d',subnet,'-j','DROP'],['-i',bridge,'-m','conntrack','--ctstate','ESTABLISHED','-j','RETURN']])
+                if family=='v4' and chain=='INPUT':
+                    allowed.extend([['-i',bridge,'-j','DROP'],['-i',bridge,'-m','conntrack','--ctstate','ESTABLISHED','-j','ACCEPT']])
+                if family=='v6' and chain in ['FORWARD','INPUT']:allowed.append(['-i',bridge,'-j','DROP'])
+            body=tail[1:] if op=='-I' else tail
+            if op not in ['-C','-I'] or body not in allowed or (op=='-I' and tail[0]!='1'):raise AssertionError('Unexpected bridge mutation: '+repr(args))
+        code=0
+    pathlib.Path(state_path).write_text(json.dumps(state));return code
+
+def packet(rules,uid,destination,protocol,port):
+    for rule in rules:
+        target=rule[rule.index('-d')+1].split('/')[0]
+        if target!=destination:continue
+        if '--uid-owner' in rule and uid==int(rule[rule.index('--uid-owner')+1]):continue
+        if '-p' in rule and rule[rule.index('-p')+1]!=protocol:continue
+        if '--dport' in rule and int(rule[rule.index('--dport')+1])!=port:continue
+        return rule[rule.index('-j')+1]
+    return 'CONTINUE'
+
+def run(bootstrap):
+    source=pathlib.Path(bootstrap).read_text();function=source[source.index('firewall() {'):source.index('\ninstall_profile() {')]
+    results=[]
+    with tempfile.TemporaryDirectory(prefix='deskdrop-policy-') as directory:
+        state_path=pathlib.Path(directory)/'state.json'
+        unrelated={family:['-d',address,'-p','tcp','--dport','443','-j','REJECT'] for family,address in [('v4','203.0.113.1/32'),('v6','2001:db8::1/128')]}
+        for legacy in [False,True]:
+            state={'commands':[],'v4':[unrelated['v4'].copy()],'v6':[unrelated['v6'].copy()]}
+            for family,address in [('v4','169.254.169.254/32'),('v6','fd20:ce::254/128')]:
+                if legacy:state[family].insert(0,['-d',address,'-m','owner','!','--uid-owner','0','-j','REJECT'])
+            state_path.write_text(json.dumps(state));snapshot=None
+            for iteration in range(3):
+                script='set -euo pipefail\n'+function+'\n'
+                for tool,family in [('iptables','v4'),('ip6tables','v6')]:
+                    script+=tool+'() { '+shlex.join([sys.executable,str(pathlib.Path(__file__).resolve()),'adapter',str(state_path),family])+' "$@"; }\n'
+                subprocess.run(['bash','-c',script+'firewall\n'],check=True,timeout=30,capture_output=True)
+                state=json.loads(state_path.read_text());observations=[]
+                for family,address in [('v4','169.254.169.254'),('v6','fd20:ce::254')]:
+                    rules=state[family];assert rules.count(unrelated[family])==1
+                    for protocol,port in [('udp',53),('tcp',53),('udp',123),('tcp',80),('tcp',443),('udp',80),('tcp',123),('udp',54),('icmp',0)]:
+                        actual=packet(rules,1000,address,protocol,port)
+                        expected='ACCEPT' if (protocol,port) in [('udp',53),('tcp',53),('udp',123)] else 'REJECT'
+                        assert actual==expected,(legacy,iteration,family,protocol,port,actual,expected)
+                        observations.append([family,protocol,port,actual])
+                    for protocol,port in [('tcp',80),('tcp',443)]:
+                        actual=packet(rules,0,address,protocol,port);assert actual=='CONTINUE'
+                        observations.append([family,'root',protocol,port,actual])
+                    assert packet(rules,1000,'203.0.113.1' if family=='v4' else '2001:db8::1','tcp',443)=='REJECT'
+                    assert packet(rules,1000,'198.51.100.1' if family=='v4' else '2001:db8::2','udp',53)=='CONTINUE'
+                    assert len(rules)==5,('duplicate or missing policy',rules)
+                current={k:state[k] for k in ['v4','v6']}
+                if snapshot is not None:assert current==snapshot,'repeat changed ordered policy'
+                snapshot=current
+                results.append({'legacy':legacy,'iteration':iteration,'packets':observations,'rules':current})
+            results.append({'legacy':legacy,'commands':state['commands']})
+    print(json.dumps({'status':'pass','observations':results}))
+if __name__=='__main__':
+    if len(sys.argv)>1 and sys.argv[1]=='adapter':sys.exit(adapter(sys.argv[2],sys.argv[3],sys.argv[4:]))
+    run(sys.argv[1])
+`;
+test('ordered host metadata policy preserves DNS/NTP on fresh, legacy and repeated firewall runs',async()=>withArtifacts(async dir=>{
+  const driver=path.join(dir,'policy.py');await writeFile(driver,firewallPolicyDriver);
+  const result=spawnSync('python3',[driver,new URL('../deploy/bootstrap.sh',import.meta.url).pathname],{encoding:'utf8',timeout:60000,maxBuffer:1000000});
+  assert.equal(result.status,0,result.stderr);const observation=JSON.parse(result.stdout);
+  assert.equal(observation.status,'pass');assert.equal(observation.observations.filter(x=>x.packets).length,6);
+}));
+
+
+test('host management retains an abandoned installation lock and durable intent before any installer action',()=>{
+  monitorFixture(`
+import contextlib
+with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
+ g['STATE']=d
+ @contextlib.contextmanager
+ def lease(name):
+  assert name=='lifecycle.lock'
+  yield
+ g['lock']=lease;g['safe_dir']=lambda p,**kw:None
+ g['owned_container']=lambda c,k:None
+ g['stop_owned']=lambda *a:(_ for _ in ()).throw(AssertionError('installer removed before reconciliation'))
+ g['subprocess'].run=lambda *a,**kw:(_ for _ in ()).throw(AssertionError('management refresh ran'))
+ g['docker']=lambda *a,**kw:(_ for _ in ()).throw(AssertionError('installer launched'))
+ os.mkdir(d+'/installation.lock',0o700)
+ intent=b'{"pending":"unknown-create"}';open(d+'/installation.json','wb').write(intent)
+ for attempt in range(2):
+  try:g['manage']({},'inspect');raise AssertionError('abandoned lock reclaimed')
+  except g['InstallationLockHeld'] as e:assert 'installation.lock' in str(e) and 'durable intent' in str(e)
+  assert os.path.isdir(d+'/installation.lock') and open(d+'/installation.json','rb').read()==intent
+ # Execute the actual CLI exception handler with only main's host operations adapted.
+ import io
+ g['main']=lambda:g['manage']({},'inspect');g['__name__']='__main__'
+ with contextlib.redirect_stderr(io.StringIO()) as output:
+  try:exec(compile(${JSON.stringify(monitoringPython.slice(monitoringPython.indexOf("if __name__=='__main__':")))},'monitoring-cli','exec'),g);raise AssertionError('CLI reported success')
+  except SystemExit as e:assert e.code==1
+ assert 'Protected installation.lock exists' in output.getvalue() and 'durable intent' in output.getvalue()
+ assert os.path.isdir(d+'/installation.lock') and open(d+'/installation.json','rb').read()==intent
 `);
 });

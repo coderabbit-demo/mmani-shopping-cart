@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import os from 'node:os';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, chmod, link, unlink, writeFile, rm } from 'node:fs/promises';
@@ -160,5 +162,36 @@ test('downtime reconciliation ignores volatile and unrelated attributes but reta
   const s=pending();await reconcileProtection(s,api(),async()=>{});assert.equal(s.protection.id,'owned');
   for(const change of [r=>r.attributes.status='canceled',r=>r.attributes.status='ended',r=>r.attributes.status='scheduled',r=>r.attributes.scope='host:other',r=>r.attributes.schedule.end='2027-01-01',r=>r.attributes.monitor_identifier.monitor_tags.pop(),r=>r.attributes.mute_first_recovery_notification=false,r=>r.attributes.notify_end_states=['alert'],r=>r.attributes.notify_end_types=['expired']]){
     const s=pending();await assert.rejects(reconcileProtection(s,api(change),async()=>assert.fail('unsafe change saved')),/Changing/);assert.equal(s.protection.pending,true);
+  }
+});
+
+test('held or abandoned installation lock has a dedicated safe diagnostic and preserves pending evidence',async()=>{
+  const {readFile,lstat}=await import('node:fs/promises');
+  const dir=await mkdtemp(`${os.homedir()}/deskdrop-held-`),journal=new Journal(dir,process.getuid());
+  const moduleURL=new URL('../scripts/demo/cloud-monitors.mjs',import.meta.url).href;
+  let child,closed;
+  try{
+    const pending={...state(),pending:{kind:'create',name:row().name}};await journal.save(pending);
+    child=spawn(process.execPath,['--input-type=module','-e',`
+      import {Journal} from ${JSON.stringify(moduleURL)};
+      const journal=new Journal(${JSON.stringify(dir)},process.getuid());
+      await journal.locked(async()=>{process.send('locked');setInterval(()=>{},1000);await new Promise(()=>{});});
+    `],{stdio:['ignore','ignore','ignore','ipc']});
+    closed=once(child,'close');
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('lock worker readiness timeout')),15000);
+      child.once('message',message=>{clearTimeout(timer);message==='locked'?resolve():reject(new Error('unexpected lock worker message'));});
+      child.once('error',error=>{clearTimeout(timer);reject(error);});
+      child.once('exit',()=>{clearTimeout(timer);reject(new Error('lock worker exited before readiness'));});
+    });
+    const rejectHeld=()=>assert.rejects(journal.locked(async()=>assert.fail('held lock entered')),e=>e.code==='DESKDROP_INSTALLATION_LOCK_HELD'&&/live or abandoned/.test(e.message)&&/lifecycle lease/.test(e.message)&&/durable intent/.test(e.message));
+    await rejectHeld(); // A real live owner, not inferred PID provenance.
+    child.kill('SIGKILL');assert.deepEqual(await closed,[null,'SIGKILL']);
+    for(let i=0;i<2;i++)await rejectHeld(); // SIGKILL leaves the same unknown lock; never auto-reclaim it.
+    assert.deepEqual(await journal.read(),pending);assert.deepEqual(await readFile(`${dir}/installation.json`),Buffer.from(JSON.stringify(pending)));
+    assert.ok((await lstat(`${dir}/installation.lock`)).isDirectory());
+  }finally{
+    if(child){if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await closed;}
+    await rm(dir,{recursive:true,force:true});
   }
 });
