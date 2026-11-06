@@ -1,5 +1,7 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:35ea5d7f320c8e0ff88ac666a7bb3b820fe40ffc78e4e6c7ece2a512ff6434d5 -->
+
 <!-- coderabbit-ai-generated-section:v1:98e7509b1ac57459d309c998c84e0c7f7ddb9fb4280692a534dd367bee5622e7 -->
 
 <!-- coderabbit-ai-generated-section:v1:5039f9e7c35a6eacec1f09917ec1f066983771c3e47324e0c32bf79f355f5e9a -->
@@ -277,6 +279,14 @@ The trigger now integrates monitoring `ccaf5b89ec621a1e1f80ea6df03c11485643169b`
 The existing management credential needs Datadog **monitors_downtime** for downtime create/cancel and **monitors_read** for notification-rule GET. These are documented prerequisites, not authorization to create a new key, expand scopes or obtain additional permission. Missing scope blocks live admission; runtime restoration is still attempted independently.
 
 The `deskdrop-firewall.service` dependency is installed by `deploy/bootstrap.sh install`: it writes the unit, reloads systemd and enables the firewall and app units. Its firewall unit runs `/opt/deskdrop/bootstrap.sh firewall` before Docker and declares `RequiredBy=docker.service`. The sandbox has not run that privileged host installer, so its missing-unit diagnostic was expected sandbox absence, not a missing production source definition. An offline regression now checks generation, enablement and trigger dependencies. Actual installed unit contents and successful boot execution remain separate live gates.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+## Reusable offline trigger verification and activation window
+
+The approved24th path, tests/fixtures/cloud-trigger.mjs, now provides private disposable custody and controlled adapters for the actual exported trigger/recovery APIs. See [the API and independent workflow instructions](gcp-trigger-evidence.md#reusable-verify-fixture-implemented-under-the24-path-amendment). It supplies no credentials, live transport, default root artifacts or precomputed verdict. Native Verify must independently choose operations and assert returns, saved intents/receipts and call records. Real Linux peer/socket/process observations are separate from its synthetic clock/boot/provider responses; actual VM/systemd/reboot/intake remains pending.
+
+The hard November6 2026 07:00Pacific /15:00UTC admission cutoff enforces this delivery window. Any later operator activation requires reviewed renewal; neither the cutoff nor the three-cycle limit was extended. Mahesh reports the07:10UTC work-account/ADC check still returned34/46 permissions, with12 not returned including project.setIamPolicy/IAP. This task did not repeat that credential check. No cloud writes have started; these counts do not establish live readiness or authority to acquire new roles/key scopes.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

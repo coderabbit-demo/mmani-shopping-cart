@@ -1,5 +1,9 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:db97358e3da58cd1a054a37eddf9e17f8e1f9026d3291a1b88c55aca74cbfcff -->
+
+<!-- coderabbit-ai-generated-section:v1:5a6885488adcbaa32762e89036f28336f1b919edd65d5066c356a9e41e6deb1e -->
+
 <!-- coderabbit-ai-generated-section:v1:cf77d85be64e411665f34691697832ddd7b275cabb12f6d932222c7c0036133f -->
 
 <!-- coderabbit-ai-generated-section:v1:afde2061e698e4b63e37d405f619a2bb558ee6125beca8a1169a58012f3c33b5 -->
@@ -88,6 +92,56 @@ Raw comparison against monitoring ccaf5b8 includes three unchanged inherited fou
 Fresh `npm test`:608 passed, exit0 (earlier merged pass606 passed). Final trigger/operator focused run22 passed, exit0; combined affected suite98 passed before the final two operator cases, covered again by the full suite. Fresh typecheck and29 unchanged goldens passed, exit0. Bash/Python syntax and diff checks passed. Prior28 checkout/persistence browser cases and17 Terraform mocks are reused after confirming their source/tests/configuration/packages/locks have no diff from4b85627. This turn did not start a browser/service or execute live systemd/provider operations.
 
 Scope comparison against the combined published parent tree has17 trigger-owned paths, all within the23-path ALLOW list and below30. Raw monitoring-only comparison has20 paths, including the three inherited foundation files above; the unmodified scope script therefore reports those inherited paths outside brief15. No fixture path was added, no review count substituted, and no parent merge/publication gate is claimed complete.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+## Reusable Verify fixture implemented under the24-path amendment
+
+This section supersedes the earlier proposed-only fixture status. `tests/fixtures/cloud-trigger.mjs` now exports `withCloudTriggerFixture(callback, {epoch, boot})` and re-exports the actual production `runTrigger`, `protectionHandoff`, `verifyRouting` functions. It imports production modules without executing their CLI guards. The fixture creates private temporary directories under the current user's home, instantiates actual guarded `TriggerStore`/`Journal` custody there and removes them on normal or exceptional exit. Every factory call starts isolated state. No provider/network/process/production CLI is invoked by the fixture.
+
+The callback receives `actualSourceSha` read from Git separately from `synthetic.source` and other synthetic IDs; `directory`, `context`, `controls`, `clock`, `readBytes(name)`, `calls()` and `receipts()`. `context` supplies the dependencies for `runTrigger({...f.context, mode:'inspect'|'trigger'|'recover'})`. Supported durable byte names are operation.json, lease.json, route.json and installation.json; arbitrary paths, links, unsafe modes and expired custody are refused. Source SHA identifies HEAD; record `git status --short` independently for any working changes.
+
+`controls.snapshot()` returns cloned simulated app/monitor/downtime/rule/health state. `setGroup(id, group)`, `setApp(value)`, `setRules(value)` and `setHealth(value)` let the caller select responses. No Alert or OK transition is supplied automatically. `failNext(service, method, endpoint, 'before'|'after', body)` injects an unavailable or lost response for a supported exact call. `pauseNext(service, method, endpoint, body)` returns a `reached` Promise and `resume()`; await the Promise, not a function. Unknown operations/IDs/bodies are rejected before mutation; endpoints never fall through to a live transport. `clock.read()` and `clock.set({epoch, monotonic, boot})` control only simulated time/boot. Advancing boot does not rewrite the immutable admitted lease.
+
+Native Verify should perform these independent steps, awaiting every started operation before returning from the callback:
+
+```js
+import { withCloudTriggerFixture, runTrigger } from './tests/fixtures/cloud-trigger.mjs';
+await withCloudTriggerFixture(async f => {
+  const readiness = await runTrigger({ ...f.context, mode: 'inspect' });
+  // Independently assert readiness.status and record f.actualSourceSha.
+  const stop = `/v1.52/containers/${f.synthetic.appId}/stop?t=3`;
+  const gate = f.controls.pauseNext('docker', 'POST', stop);
+  const work = runTrigger({ ...f.context, mode: 'trigger' });
+  await gate.reached;
+  // Read operation.json; assert durable stopped intent and unknownRuntime=true.
+  // Inspect snapshot: app stopped; only availability/heartbeat remain protected.
+  f.controls.setGroup(701, { status: 'Alert',
+    last_triggered_ts: Math.ceil(f.clock.read().epoch / 1000),
+    last_resolved_ts: 0, last_nodata_ts: 0 });
+  gate.resume();
+  const first = await work;
+  // Assert app restored but first.status remains reconciliation-required while Alert persists.
+  f.controls.setGroup(701, { status: 'OK', last_triggered_ts: 0,
+    last_resolved_ts: Math.floor(f.clock.read().epoch / 1000), last_nodata_ts: 0 });
+  const recovered = await runTrigger({ ...f.context, mode: 'recover' });
+  // Independently assert recovered, durable complete receipt, broad protection and call intents.
+});
+```
+
+This is a workflow outline, not a built-in verdict. The native verifier must implement the indicated assertions and retain its own sanitized action/observation ledger. `calls()` includes copied durable operation bytes captured before each call; `receipts()` includes saved operation/installation bytes. Decode copied bytes with Buffer.from when needed. Repeat using a lost stop response: assert restoration is attempted but runtime uncertainty remains. The fixture's exception cleanup releases paused adapters, closes custody and rejects subsequent use; callers should still await/catch their operations.
+
+The actual Linux broker/socket/process/concurrency/disconnect/lock-death tests remain separate in tests/cloud-operator.test.mjs and use the production Python APIs. This JS fixture neither substitutes simulated UID for kernel peer credentials nor claims VM/systemd/OS Login execution. Native Verify has not run merely because repository regression tests pass.
+
+The original hard07:00Pacific admission cutoff is unchanged. Later activation needs reviewed renewal. User-reported07:10UTC account/ADC evidence remains34/46 permissions,12 not returned including project.setIamPolicy/IAP; no new check, scope acquisition or cloud write was performed here. Live readiness, screenshots and actual VM/provider gates remain pending.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+### Fixture amendment validation
+
+Final focused trigger/operator suite:27 passed, exit0. Final full npm suite:613 passed, exit0. Preserved all earlier assertions and production code. New cases exercise caller-driven actual APIs and saved intent bytes, isolated simultaneous fixture instances, normal/exception cleanup, escaped/linked/expired custody refusal, unknown methods/endpoints/IDs/body/options rejection, lost-stop uncertainty with restoration and cancellation of a paused adapter. The first focused attempt exposed a test-driver misuse of the reached Promise as a function; correcting the caller produced the passing runs without weakening production guards.
+
+A separate standalone offline workflow driver called the actual APIs and made five independent observations across142 recorded calls, including durable stop intent, checkout-only exposure, retained uncertainty while Alert persisted, explicit OK readback/recovery and custody removal. Its JSON artifact records the actual checkout SHA separately from synthetic source IDs and the working-tree state. This is offline workflow evidence, not a completed native Verify run. Existing real peer/socket/process tests were freshly included in the focused/full suites; their boot/provider injections remain explicitly synthetic. Production runtime/app/locks/pins are unchanged, so previous typecheck/goldens/browser/Terraform checks remain applicable.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

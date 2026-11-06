@@ -1,5 +1,7 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:77aac8173837391077db416ca1315e19033cd2ddc25c8ef5ab229bde504055df -->
+
 <!-- coderabbit-ai-generated-section:v1:ecf7a383a888be46473e6068cf7327441eecb19effa2b2e1e1076a58681c1261 -->
 
 # Brief 15: feat: GCP server-side trigger and operator handoff
@@ -16,7 +18,7 @@ Mahesh approved the bounded GCP package, routine brief/plan/scope/review/merge d
 
 <!-- coderabbit-ai-generated-section:v1:ac3f722f7f9b24508260f75eb826900e190a2383087402c9029cd89f7c03d2db -->
 
-Codex reviewed this task's plan-only response and approves its Python peer-credential broker/client, root-owned enrollment and journals, distinct trusted pinned Node control/recovery container, durable serial admission and independently supervised recovery, with the amendment below. The six additional paths for installer/test coverage and evidence/three actual screenshot slots and the delegated [cost worksheet amendment](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/27#issuecomment-6678233952) are approved: 23 allowed paths total. No new dependency, package or pin.
+Codex reviewed this task's plan-only response and approves its Python peer-credential broker/client, root-owned enrollment and journals, distinct trusted pinned Node control/recovery container, durable serial admission and independently supervised recovery, with the amendment below. The six additional paths for installer/test coverage and evidence/three actual screenshot slots and the delegated [cost worksheet amendment](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/27#issuecomment-6678233952) are approved: 24 allowed paths total. No new dependency, package or pin.
 
 <!-- /coderabbit-ai-generated:v1 -->
 
@@ -51,7 +53,7 @@ Parallel authoring is allowed in this isolated task for new protocol/helper/jour
 
 <!-- coderabbit-ai-generated-section:v1:ddde8ec680b8edb36c50cc8c1ebd8e73369e9ac9bd013389a4f008f28411fa80 -->
 
-## Exact approved scope (23 paths)
+## Exact approved scope (24 paths)
 
 <!-- /coderabbit-ai-generated:v1 -->
 <!-- coderabbit-ai-generated:v1 -->
@@ -71,6 +73,7 @@ ALLOW: deploy/systemd/deskdrop-trigger.service
 ALLOW: deploy/systemd/deskdrop-trigger-recovery.service
 ALLOW: tests/demo-trigger.test.mjs
 ALLOW: tests/cloud-trigger.test.mjs
+ALLOW: tests/fixtures/cloud-trigger.mjs
 ALLOW: tests/cloud-operator.test.mjs
 ALLOW: docs/demo/gcp-team-handoff.md
 ALLOW: docs/demo/incident-walkthrough.md
@@ -107,6 +110,14 @@ Live package limits remain at most three cloud Alert/recovery cycles, at most on
 Published monitoring snapshot `ae0e7cd7724d4b500ab4906a4bd3d5cd65385912` is integrated under the delegated checkpoint. Final merged foundation/monitoring parents are still required before final review/publication. Stage 14 keeps its single broad owner-selector protection and unchanged install API/defaults. The trigger journal persists exact-monitor protections, confirms all three effective matches before canceling broad protection, then opens only checkout. Recovery restores broad protection before retiring temporary protections and updating the stage 14 protection receipt. Unknown writes preserve intent and close admission.
 
 Within the existing allowed cloud monitor file, the trigger adapter adds only GET notification-rule inventory/detail and GET monitor group-state reads, using documented Datadog v2 notification-rule pagination and v1 monitor reads. No monitor updates or notification-rule mutations are added. A separately configured, explicitly enrolled cloud rule/recipient must already exist; complete stable inventory must prove exact owner coverage and Alert-only delivery. Unsupported filters or ambiguous coverage block admission. The install-focused makeCloudApi whitelist remains unchanged. No additional path, package, runtime pin or provider permission is requested.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+## Approved reusable Verify fixture amendment
+
+[GH27 delegated amendment](https://github.com/coderabbit-demo/mmani-shopping-cart/issues/27#issuecomment-6679364214) approves tests/fixtures/cloud-trigger.mjs as the24th path. It supplies fresh private custody, strict controlled provider/Docker responses and explicit synthetic clock/boot identity. Native Verify chooses actual exported API calls and independently checks returns, durable bytes/intents and recorded operations; the fixture returns no precomputed verdict. No credentials, default root artifacts, network, production CLI, new dependencies or relaxed production guards. Real Linux peer/socket/process observations remain distinct from simulated provider/boot state and pending actual VM/systemd/reboot/intake acceptance.
+
+The hard November6 2026 07:00Pacific (15:00UTC) admission cutoff enforces this delivery window. Later operator activation requires a reviewed renewal; do not silently extend it or the three-cycle limit. Mahesh reports a fresh07:10UTC work-account/ADC check returned34/46 permissions, with12 not returned including project.setIamPolicy/IAP; this is user-reported evidence, not a check performed by this task. No cloud writes have started and no live readiness is established.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

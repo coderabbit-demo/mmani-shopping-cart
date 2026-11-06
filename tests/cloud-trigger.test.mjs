@@ -219,3 +219,105 @@ test('trigger suppression reconciliation tolerates volatile provider metadata bu
  f.api.call=async(...args)=>{const r=await call(...args);if(args[1].includes('downtime?'))for(const row of r.data)row.attributes.modified=++tick;return r;};
  await f.handoff.open();assert.equal(f.covering(701).length,0);assert.equal(await f.handoff.close(),true);
 });
+
+import { withCloudTriggerFixture } from './fixtures/cloud-trigger.mjs';
+import { lstat, access, symlink, unlink } from 'node:fs/promises';
+import { checkoutSha } from './fixtures/cloud-release.mjs';
+
+test('reusable fixture independently drives actual trigger APIs and exposes durable intent evidence',async()=>{
+ let directory;
+ await withCloudTriggerFixture(async f=>{
+  directory=f.directory;
+  assert.equal(f.actualSourceSha,await checkoutSha());assert.notEqual(f.actualSourceSha,f.synthetic.source);
+  assert.equal((await lstat(directory)).mode&0o777,0o700);
+  assert.equal((await runTrigger({...f.context,mode:'inspect'})).status,'ready');
+  const stop=`/v1.52/containers/${f.synthetic.appId}/stop?t=3`;
+  const gate=f.controls.pauseNext('docker','POST',stop);
+  const task=runTrigger({...f.context,mode:'trigger'});
+  await gate.reached;
+  const r=JSON.parse(await f.readBytes('operation.json'));
+  assert.equal(r.phase,'stopped');assert.equal(r.unknownRuntime,true);
+  assert.equal(f.controls.snapshot().app.State.Running,false);
+  const live=f.controls.snapshot().downtimes.filter(d=>d.attributes.status==='active');
+  assert.deepEqual(live.map(d=>d.attributes.monitor_identifier.monitor_id).sort(),[700,702]);
+  f.controls.setGroup(701,{status:'Alert',last_triggered_ts:Math.ceil(f.clock.read().epoch/1000),last_resolved_ts:0,last_nodata_ts:0});
+  gate.resume();
+  const result=await task;
+  // The caller controls health readback; an unreconciled Alert must not become a precomputed pass.
+  assert.equal(result.status,'reconciliation-required');assert.equal(result.app,true);
+  f.controls.setGroup(701,{status:'OK',last_triggered_ts:0,last_resolved_ts:Math.floor(f.clock.read().epoch/1000),last_nodata_ts:0});
+  assert.equal((await runTrigger({...f.context,mode:'recover'})).status,'restored');
+  assert.equal(JSON.parse(await f.readBytes('operation.json')).phase,'complete');
+  const writes=f.calls().filter(c=>c.method!=='GET');
+  assert.ok(writes.length>4);
+  for(const call of writes){assert.ok(call.intent);const intent=JSON.parse(Buffer.from(call.intent));assert.equal(intent.run,f.synthetic.lease.run);}
+  assert.ok(f.receipts().some(r=>JSON.parse(Buffer.from(r.bytes)).phase==='observed'));
+ });
+ await assert.rejects(access(directory),{code:'ENOENT'});
+});
+
+test('reusable fixture is fresh, isolated, cleans on throw and refuses escaped or expired custody',async()=>{
+ let first, leaked, second;
+ await assert.rejects(withCloudTriggerFixture(async f=>{
+  first=f.directory;leaked=f;
+  await withCloudTriggerFixture(async g=>{
+   second=g.directory;assert.notEqual(first,second);
+   const app=f.controls.snapshot().app;app.State.Running=false;f.controls.setApp(app);
+   assert.equal(g.controls.snapshot().app.State.Running,true);
+   assert.equal(g.calls().length,0);
+  });
+  await assert.rejects(access(second),{code:'ENOENT'});
+  await assert.rejects(f.readBytes('../lease.json'));
+  const original=f.context.store.directory;f.context.store.directory='/var/lib/deskdrop/trigger';
+  await assert.rejects(f.context.store.load('lease.json'));f.context.store.directory=original;
+  await unlink(original+'/route.json');await symlink(original+'/lease.json',original+'/route.json');
+  await assert.rejects(f.readBytes('route.json'));
+  throw Error('intentional caller failure');
+ }),/intentional caller failure/);
+ await assert.rejects(access(first),{code:'ENOENT'});
+ await assert.rejects(leaked.context.store.load('lease.json'));
+ await assert.rejects(leaked.context.api.call('GET','/api/v1/monitor/701'));
+ assert.throws(()=>leaked.controls.snapshot());
+});
+
+test('controlled adapters reject unknown endpoints, identities, bodies and actions without mutation',async()=>{
+ await assert.rejects(withCloudTriggerFixture(()=>{}, { directory:'/var/lib/deskdrop/trigger' }));
+ await assert.rejects(withCloudTriggerFixture(()=>{}, { credentials:'forbidden' }));
+ await withCloudTriggerFixture(async f=>{
+  const before=f.controls.snapshot();
+  for(const [method,endpoint,body] of [['PUT','/api/v1/monitor/701',{}],['GET','https://api.us3.datadoghq.com/api/v1/monitor/701'],['GET','/api/v1/monitor/123'],['POST','/api/v2/downtime',{data:{type:'downtime',attributes:{scope:'*'}}}],['DELETE','/api/v2/downtime/not-owned'],['GET','/api/v1/monitor/701',{unexpected:true}]])await assert.rejects(f.context.api.call(method,endpoint,body));
+  for(const [method,endpoint] of [['POST','/v1.52/containers/create'],['DELETE',`/v1.52/containers/${f.synthetic.appId}`],['POST',`/v1.52/containers/${'9'.repeat(64)}/start`]])await assert.rejects(f.context.docker(method,endpoint));
+  assert.deepEqual(f.controls.snapshot(),before);assert.equal(f.calls().length,0);
+  assert.throws(()=>f.controls.failNext('shell','GET','anything','before'));
+  assert.throws(()=>f.controls.pauseNext('provider','GET','/api/v1/monitor/123'));
+ });
+});
+
+test('fixture lost stop response retains uncertainty and recovery still starts exact owned app',async()=>{
+ await withCloudTriggerFixture(async f=>{
+  const stop=`/v1.52/containers/${f.synthetic.appId}/stop?t=3`;
+  f.controls.failNext('docker','POST',stop,'after');
+  const result=await runTrigger({...f.context,mode:'trigger'});
+  assert.equal(result.status,'reconciliation-required');assert.equal(result.app,true);assert.equal(result.runtimeCertain,false);
+  const operation=JSON.parse(await f.readBytes('operation.json'));
+  assert.equal(operation.unknownRuntime,true);assert.equal(operation.phase,'uncertain');
+  assert.ok(f.calls().some(c=>c.endpoint===stop&&c.outcome==='unknown-after'));
+  assert.ok(f.calls().some(c=>c.endpoint.endsWith('/start')));
+  f.clock.set({epoch:f.clock.read().epoch-1000,monotonic:10,boot:'synthetic-boot-two'});
+  assert.equal(JSON.parse(await f.readBytes('lease.json')).boot,'synthetic-boot-one');
+  assert.equal(f.clock.read().boot,'synthetic-boot-two');
+ });
+});
+
+test('fixture closes paused adapters on exceptional exit without leaving writable custody',async()=>{
+ let task,directory;
+ await assert.rejects(withCloudTriggerFixture(async f=>{
+  directory=f.directory;
+  const gate=f.controls.pauseNext('docker','POST',`/v1.52/containers/${f.synthetic.appId}/stop?t=3`);
+  task=runTrigger({...f.context,mode:'trigger'});task.catch(()=>{});
+  await gate.reached;
+  throw Error('abandon controlled observation');
+ }),/abandon controlled observation/);
+ await assert.rejects(task,/closed offline trigger fixture/);
+ await assert.rejects(access(directory),{code:'ENOENT'});
+});
