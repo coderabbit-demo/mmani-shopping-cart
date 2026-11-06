@@ -26,8 +26,8 @@ flowchart LR
   Repo --> Code[Native CodeRabbit repository authoring]
   Code --> CLI[One Mac CLI review before publication]
   CLI --> PR[Native fix PR in the same repository]
-  PR -.-> Review[CodeRabbit PR feedback and CI]
-  Review -.-> Verify[Native QA Agent Verify]
+  PR --> Review[CodeRabbit PR feedback and CI]
+  Review --> Verify[Native QA Agent Verify]
 ```
 
 Solid downstream paths were exercised using a Datadog TEST notification and the separately approved source rehearsal, with same-thread plan clarification before native authoring. The dashed Mac monitoring/Agent intake path remains unverified. The PR links provide the current exact-head review and Verify evidence; the recorded rehearsal does not prove a fresh single-click run after the saved instruction change or concurrent/replayed actions. TEST evidence does not prove Agent health, intake or an actual app outage. No Jira edge feeds Debug. The separately implemented MMANI Demo Bridge Socket Mode receiver is paused and is not part of this architecture.

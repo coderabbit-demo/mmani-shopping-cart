@@ -69,7 +69,7 @@ The early [healthy-main Debug result](https://coderabbitdemo.slack.com/archives/
 | 12 · Close the story | Show the two Slack outcomes and the [GCP handoff](gcp-team-handoff.md). | “We followed one incident into two independent operator choices. Ticket creation and direct repository investigation are demonstrated. Native source authoring and PR publication are also recorded in PR #23; its exact-head review and Verify receipts show the verified result. A real runtime alert and recovery remain separate operator evidence. Next, the runtime moves to GCP so the team can use it without my Mac.” | Clear separation of demonstrated behavior, remaining fix-PR work and the next deployment phase. |
 
 
-## Optional extension — A real fix PR, once ready
+## Optional extension — Run a fresh source-fix rehearsal
 
 For a fresh coding presentation, approve a reproducible isolated source fixture and exact ALLOW paths, create and read back fresh fault/fix refs, and retain a known faulty base plus a failing assertion. Keep native work-log, branch, commits and PR metadata free of Jira identifiers. Use the required raw associated GitHub issue URL for PR metadata; it does not create a Jira dependency. Never reset the existing corrected branch or present its old source as a new failure.
 
