@@ -14,12 +14,16 @@ The automatic real-alert trigger is a separate implementation described in [brie
 
 ## Architecture
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1ccd2600932b7c2c726a9592ade5f777e141b74a38ada7a2c796b72f1617ca9e -->
+
 ```mermaid
 flowchart LR
-  App[DeskDrop app on Mac Docker] --> Checks[HTTP and browser check runner]
-  Checks --> Forwarder[Private DogStatsD forwarder]
-  Forwarder --> Agent[Datadog Agent]
-  Agent --> DD[Datadog US3 checkout monitor]
+  App[DeskDrop app on Mac Docker] -. Local monitoring unverified .-> Checks[HTTP and browser check runner]
+  Checks -.-> Forwarder[Private DogStatsD forwarder]
+  Forwarder -.-> Agent[Datadog Agent]
+  Agent -. Agent health and intake unverified .-> DD[Datadog US3 checkout monitor]
   DD --> Hook[Native MMANI webhook automation]
   Hook --> Slack[CodeRabbit Demo / mmani-shopping-cart]
   Slack --> JiraButton[Create Jira Ticket]
@@ -33,8 +37,10 @@ flowchart LR
   Review -.-> Verify[Native QA Agent Verify]
 ```
 
-Solid paths were exercised; the dashed implementation/review path remains to be proved from the native Debug button. No Jira edge feeds Debug. The separately implemented MMANI Demo Bridge Socket Mode receiver is paused and is not part of this architecture.
+Solid downstream paths were exercised using a Datadog TEST notification. The dashed Mac monitoring/Agent intake path remains unverified; the separate dashed implementation/review path also remains to be proved from the native Debug button. TEST evidence does not prove Agent health, intake or an actual app outage. No Jira edge feeds Debug. The separately implemented MMANI Demo Bridge Socket Mode receiver is paused and is not part of this architecture.
 
+
+<!-- /coderabbit-ai-generated:v1 -->
 ## Resource map
 
 | Resource | Current local value |
@@ -129,7 +135,13 @@ The custom Socket Mode bridge remains stopped. No GCP apply, image publication, 
 
 ### Scoped trigger implementation
 
-The five commands above are implemented. Production arming is deliberately disabled because effective Alert-only delivery cannot be verified from the reviewed tag-only rule. There is no override flag or accepted production proof adapter in this build. A later reviewed routing-proof integration and separately approved routing setup are required; repairing runtime health alone will not enable execution. The known Agent/journey/checkout readiness failures also remain operator prerequisites. No live rehearsal or controller upgrade was performed by this feature.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d3574a3d652053cdde11f42a451b1c13d496a8823a14531caaeaeff58eb4c199 -->
+
+The five commands above are implemented. Production preflight validates the existing rule GET for exactly one conditional recipient scope `transition_type:is_alert` targeting `webhook-deskdrop-mmani-local`, alongside the fixed rule identity, five owned tags and every runtime/monitor/suppression guard. Ordinary recipients and fallback recipients must be absent or empty arrays; malformed fields, additional conditions or recipients, bundling, threading and unknown delivery options are rejected. There is no attestation flag or override. The proof is rechecked during verification and recovery. These fields are documented in the [official rule GET schema](https://docs.datadoghq.com/api/latest/monitors/get-a-monitor-notification-rule/). `plan` reports ready only when the complete read-only preflight succeeds; failures return sanitized blockers. The observed live plain-recipient rule still fails this guard, and the known Agent/journey/checkout readiness failures remain operator prerequisites. Any live routing setup requires separate approval. No live rehearsal, routing edit or controller upgrade was performed by this feature.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The detached supervisor owns writes; terminal disconnect and SIGINT/SIGTERM/SIGHUP request recovery. The controller advertises protocol 1 and reserves app controls by protected run identity. An older controller refuses arming. Monitoring remains scheduled, while conflicting manual operations are fenced. Runtime commit/image/container receipts are separate from tooling HEAD. Recovery can start only the exact existing owned app; it cannot rebuild, recreate or repair monitoring.
 
@@ -145,7 +157,13 @@ Attempt bounds are preparation 60 seconds, requests 10 seconds, controls 15 seco
 
 <!-- coderabbit-ai-generated-section:v1:43ec8a801aeeeb110f95ac006fdc6a9b2f8f91b7fc5a134764b9edf2ee1dbdfe -->
 
-Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. An active old downtime is not proof that an unknown cancellation cannot still arrive; the reservation stays fenced until cancellation is definitively reconciled and replacement suppression is confirmed. App recovery observations continue while protection is uncertain. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. Supervisor leases use a private random socket and matching lock tokens, never PID signaling; unknown or legacy stale locks require operator inspection.
+Protected versioned receipts record intent before writes and keep unknown outcomes unresolved. Never delete journals to unblock execution. An active old downtime is not proof that an unknown cancellation cannot still arrive; the reservation stays fenced until cancellation is definitively reconciled and replacement suppression is confirmed. App recovery observations continue while protection is uncertain. A replacement checkout downtime gets a new ID and only its legacy journal entry changes. An unknown create is never repeated automatically, even after an empty search. `recover --execute` reconciles the existing run without injecting another fault. <!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:04ffabe7bfea47f91593afc794fe1ca0816794ac35a546504862024dca362233 -->
+
+Supervisor leases use a private random socket and matching lock tokens, never PID signaling. Claim exclusion binds a short-lived kernel-owned listener at a deterministic loopback port (20000–49999) derived from the canonical directory and current user; it exchanges no credentials or application data. Process death releases this exclusion. A live or unrelated port owner/collision blocks the claim and is left untouched. Unknown legacy claim files require operator inspection, never automatic deletion. Once a dead lease is positively identified, a missing monitor lock is safe to reconcile; foreign, empty or malformed monitor locks still block recovery.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
 

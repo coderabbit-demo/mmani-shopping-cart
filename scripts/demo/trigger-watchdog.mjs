@@ -8,7 +8,20 @@ import { readFile } from 'node:fs/promises';
 export function routeIdentity(rule, owner) {
   const a = rule?.data?.attributes;
   const tags = [...fixedTags, owner];
-  return rule?.data?.id === target.rule && a?.name === 'DeskDrop local demo to CodeRabbit MMANI' && JSON.stringify(a.recipients) === JSON.stringify([target.recipient]) && Object.keys(a.filter ?? {}).join(',') === 'tags' && Array.isArray(a.filter.tags) && a.filter.tags.length === tags.length && tags.every(t => a.filter.tags.includes(t));
+  return rule?.data?.id === target.rule && a?.name === 'DeskDrop local demo to CodeRabbit MMANI' && (JSON.stringify(a.recipients) === JSON.stringify([target.recipient]) || (a.conditional_recipients?.conditions?.length === 1 && JSON.stringify(a.conditional_recipients.conditions[0]?.recipients) === JSON.stringify([target.recipient]))) && Object.keys(a.filter ?? {}).join(',') === 'tags' && Array.isArray(a.filter.tags) && a.filter.tags.length === tags.length && tags.every(t => a.filter.tags.includes(t));
+}
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const emptyOptional = value => value === undefined || (Array.isArray(value) && value.length === 0);
+export function alertOnlyRule(rule, owner) {
+  if (!routeIdentity(rule, owner)) return false;
+  const a = rule.data.attributes, c = a.conditional_recipients;
+  if (rule.data.type !== undefined && rule.data.type !== 'monitor-notification-rule') return false;
+  if (Object.keys(a).some(k => !['name', 'filter', 'recipients', 'conditional_recipients', 'created', 'modified', 'created_at', 'modified_at', 'rule_options'].includes(k))) return false;
+  if (!emptyOptional(a.recipients) || !object(c) || Object.keys(c).some(k => !['conditions', 'fallback_recipients'].includes(k)) || !emptyOptional(c.fallback_recipients)) return false;
+  if (a.rule_options !== undefined && (!object(a.rule_options) || Object.keys(a.rule_options).join(',') !== 'is_threaded' || a.rule_options.is_threaded !== false)) return false;
+  if (!Array.isArray(c.conditions) || c.conditions.length !== 1) return false;
+  const condition = c.conditions[0];
+  return object(condition) && Object.keys(condition).sort().join(',') === 'recipients,scope' && condition.scope === 'transition_type:is_alert' && JSON.stringify(condition.recipients) === JSON.stringify([target.recipient]);
 }
 export function healthyController(s, now = Date.now()) {
   return s?.triggerProtocol === 1 && s.journeyBlocked === false && s.checks?.telemetry === 'sent' && ['availability', 'checkout'].every(n => s.checks[n]?.status === 0 && Number.isSafeInteger(s.checks[n].time) && now >= s.checks[n].time && now - s.checks[n].time <= 60000);
@@ -38,7 +51,7 @@ export async function productionAdapter(readers, recover = false) {
   if (!ownerPattern.test(state.owner ?? '') || state.pending || state.transition || state.tagDowntime || state.monitors?.length !== 3) throw new Error('Monitor reconciliation required');
   const wanted = monitorDefinitions(definitions, state.owner);
   let snapshot = JSON.stringify(state);
-  async function verify(recovery = false, replacement) {
+  async function inspect(recovery = false, replacement) {
     await readers.operation(operationIdentity);
     const current = await readers.read('monitors.json');
     if (JSON.stringify(current) !== snapshot) throw new Error('Monitor journal changed');
@@ -56,7 +69,12 @@ export async function productionAdapter(readers, recover = false) {
         if (matches.length !== 1 || matches[0] !== entry.downtime) throw new Error('Unexpected suppression');
       }
     }
-    if (!routeIdentity(await api.getNotificationRule(), state.owner)) throw new Error('Routing identity changed');
+    const rule = await api.getNotificationRule();
+    if (!routeIdentity(rule, state.owner)) throw new Error('Routing identity changed');
+    return rule;
+  }
+  async function verify(recovery = false, replacement) {
+    if (!alertOnlyRule(await inspect(recovery, replacement), state.owner)) throw new Error('Effective Alert-only delivery unverified');
   }
   let status;
   try { status = await readers.control('status'); } catch (e) { if (!recover) throw e; const receipt = validateReceipt(await readers.read('trigger.json')); status = { commit: receipt.identity.commit }; }
@@ -70,12 +88,11 @@ export async function productionAdapter(readers, recover = false) {
   return {
     identity, oldDowntime: entry?.downtime,
     async baseline() {
-      await verify();
+      const rule = await inspect();
       if (!healthyController(status) || status.appImageId !== ctx.ids.app || !owned.every(x => x.State.Running) || !owned.some(x => x.Config.Labels['com.docker.compose.service'] === 'agent' && x.State.Health?.Status === 'healthy') || !await readers.availability(ctx)) throw new Error('Runtime unhealthy');
       const m = await api.getMonitor(target.checkout);
       if (m.overall_state !== 'OK' || groupState(m).status !== 'OK') throw new Error('Fresh healthy group required');
-      // The reviewed tag-only rule exposes no transition restriction.
-      throw new Error('Effective Alert-only delivery unverified');
+      if (!alertOnlyRule(rule, state.owner)) throw new Error('Effective Alert-only delivery unverified');
     },
     verify,
     reserve: run => readers.control(`trigger:reserve:${run}`),
@@ -114,12 +131,14 @@ export async function productionAdapter(readers, recover = false) {
     async localHealthy() { return healthyController(await readers.control('status')) && await readers.availability(ctx); }
   };
 }
-export async function inspectProduction() {
+export async function inspectProduction(prepare = production) {
   const blockers = [];
-  try { await bounded(async () => { const a = await production(); await a.baseline(); }, bounds.prepare); }
-  catch { blockers.push('Runtime, ownership or suppression readiness not confirmed'); }
-  blockers.push('Effective Alert-only delivery unverified; separate routing verification required');
-  return { status: 'blocked', target, bounds, blockers, events: 'unavailable' };
+  try { await bounded(async () => { const a = await prepare(); await a.baseline(); }, bounds.prepare); }
+  catch (error) {
+    const safe = new Set(['Mac required', 'Wrong Datadog site', 'Invalid monitor journal', 'Monitor reconciliation required', 'Monitor journal changed', 'Monitor target changed', 'Monitor response ID changed', 'Monitor ownership or configuration changed', 'Suppression changed', 'Unexpected suppression', 'Routing identity changed', 'Effective Alert-only delivery unverified', 'Runtime unhealthy', 'Runtime identity inconsistent', 'Controller operation unverified', 'Runtime operation unknown', 'Runtime operation changed', 'Fresh healthy group required', 'Monitor group unknown', 'Outcome unknown', 'Datadog API access denied', 'Datadog API rate limited']);
+    blockers.push(safe.has(error?.message) ? error.message : 'Runtime, ownership or suppression readiness not confirmed');
+  }
+  return { status: blockers.length ? 'blocked' : 'ready', target, bounds, blockers, events: 'unavailable' };
 }
 
 export async function rehearse(a, store, { now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms)), interrupted = () => false, accepted = () => {}, recover = false, preparationDeadline = Date.now() + bounds.prepare } = {}) {

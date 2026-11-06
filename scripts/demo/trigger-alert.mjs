@@ -7,7 +7,7 @@ import { createServer, createConnection } from 'node:net';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { childEnvironment, loadCredentials } from './local.mjs';
 
 export const target = Object.freeze({ site: 'us3.datadoghq.com', checkout: 29524290, availability: 29524154, heartbeat: 29524292, host: 'deskdrop-mmani-local', rule: '8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc', recipient: 'webhook-deskdrop-mmani-local' });
@@ -97,14 +97,29 @@ export async function main(args) {
     launch: async command => {
       if (process.platform !== 'darwin') throw new Error('Trigger requires the Mac');
       await loadCredentials();
-      const child = spawn(process.execPath, [new URL('./trigger-watchdog.mjs', import.meta.url).pathname, command], { detached: true, env: childEnvironment(), stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+      const child = spawnSupervisor(new URL('./trigger-watchdog.mjs', import.meta.url), command);
       return observeSupervisor(child, async () => evidence(validateReceipt(await readState(directory, 'trigger.json'))));
     }
   });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main(process.argv.slice(2)).then(value => { console.log(JSON.stringify(value)); if (value?.unknown && value?.supervisor) process.exitCode = 1; }, () => { console.error('Trigger blocked; inspect owned readiness and protected journals'); process.exitCode = 1; });
 
-export async function supervisorLease(dir, recover, action) {
+export function claimPort(dir) {
+  return 20000 + createHash('sha256').update(`${process.getuid()}:${dir}`).digest().readUInt16BE(0) % 30000;
+}
+export function spawnSupervisor(entry, command) {
+  return spawn(process.execPath, [fileURLToPath(entry), command], { detached: true, env: childEnvironment(), stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+}
+export async function supervisorClaim(dir, action) {
+  await protectedDirectory(dir);
+  try { await lstat(path.join(dir, 'trigger-claim.lock')); throw new Error('Legacy claim requires inspection'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const mutex = createServer(socket => socket.destroy());
+  await new Promise((resolve, reject) => { mutex.once('error', reject); mutex.listen({host: '127.0.0.1', port: claimPort(dir), exclusive: true}, resolve); });
+  try { return await action(); }
+  finally { await new Promise(resolve => mutex.close(resolve)); }
+}
+export async function supervisorLease(dir, recover, action, checkpoint = async () => {}) {
   const token = randomUUID();
   const socketFile = leaseSocket(dir, token);
   await protectedDirectory(dir);
@@ -115,7 +130,8 @@ export async function supervisorLease(dir, recover, action) {
   const lockFile = path.join(dir, 'trigger.lock');
   let own = false;
   try {
-    await exclusive(dir, 'trigger-claim.lock', async () => {
+    await supervisorClaim(dir, async () => {
+      await checkpoint('claim');
       if (recover) {
         let previous;
         try { previous = await readState(dir, 'trigger.lock'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -131,13 +147,18 @@ export async function supervisorLease(dir, recover, action) {
             c.once('error', e => { c.destroy(); resolve(e.code === 'ECONNREFUSED'); });
           });
           if (!dead) throw new Error('Supervisor active or unknown');
-          const monitorLock = await readState(dir, 'monitor.lock');
-          if (monitorLock.token !== previous.token) throw new Error('Monitor lock ownership unknown');
-          await unlink(path.join(dir, 'monitor.lock')); await unlink(lockFile); await unlink(oldSocket);
+          let monitorLock, monitorMissing = false;
+          try { monitorLock = await readState(dir, 'monitor.lock'); } catch (error) { if (error.code !== 'ENOENT') throw error; monitorMissing = true; }
+          if (!monitorMissing) {
+            if (!monitorLock || Object.keys(monitorLock).join(',') !== 'token' || monitorLock.token !== previous.token) throw new Error('Monitor lock ownership unknown');
+            await unlink(path.join(dir, 'monitor.lock'));
+          }
+          await unlink(lockFile); await unlink(oldSocket);
         }
       }
       const fh = await open(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
       try { await fh.writeFile(JSON.stringify({ token })); await fh.sync(); own = true; } finally { await fh.close(); }
+      await checkpoint('trigger');
     });
     const monitor = await open(path.join(dir, 'monitor.lock'), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
     try { await monitor.writeFile(JSON.stringify({ token })); await monitor.sync(); return await action(); }

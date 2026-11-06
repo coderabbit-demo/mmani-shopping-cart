@@ -18,13 +18,19 @@ Run the [setup/readiness checks](local-setup.md#pre-demo-checks), confirm the co
 
 ## Stage 1 — Establish the application and the incident
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:51e338dfb18ee4ba233c11388a32804793449404d42f21107cac190b4f4027c9 -->
+
 | Step | Do | Say | See |
 | --- | --- | --- | --- |
 | 1 · Set the baseline | Open the app. In a fresh synthetic session, show a $68 lamp and $32 organizer, DESK15, and $12 express delivery. If readiness is blocked, show the recorded baseline and label it historical. | “This is DeskDrop, our demo storefront. The expected basket is $100, less $15, plus $12 express: $97. We know what a healthy checkout should do.” | The application and expected totals, or explicitly dated recorded evidence. No customer data. |
 | 2 · Show the ownership boundary | Open monitor 29524290 and its query, then the automation's destination/scope. | “This monitor is restricted to our local demo identity. It routes into CodeRabbit Demo, in this channel, with access to this repository.” | `service:deskdrop`, `env:local-demo`, the demo/host identity, `mmani-shopping-cart` scope and intended Slack channel. |
-| 3 · Start a controlled incident | After separate routing verification, controller upgrade and approved live readiness/window validation, run `bash scripts/demo/trigger-alert.sh plan`, then `run --execute`. Until then, use Datadog **Edit → Test Notifications → Alert → Run Test**, once; close and Cancel. | Automatic: “I’m deliberately stopping only the demo app for a bounded window. Monitoring stays running, and the controller restores the app and suppression.” TEST fallback: “I’m sending a Datadog TEST notification. This proves routing, not an application outage.” | Automatic: the trigger's validated plan, then an observed fresh Alert. Fallback: a Datadog event whose title includes TEST. |
+| 3 · Start a controlled incident | With the implemented conditional-recipient proof guard, after separately approved live routing/controller readiness and window validation, run `bash scripts/demo/trigger-alert.sh plan`, then `run --execute`. Until then, use Datadog **Edit → Test Notifications → Alert → Run Test**, once; close and Cancel. | Automatic: “I’m deliberately stopping only the demo app for a bounded window. Monitoring stays running, and the controller restores the app and suppression.” TEST fallback: “I’m sending a Datadog TEST notification. This proves routing, not an application outage.” | Automatic: a ready plan only after the exact Alert-only conditional rule and every readiness guard pass, then an observed fresh Alert. Today's plain-recipient live rule and unhealthy runtime do not pass. Fallback: a Datadog event whose title includes TEST. |
 | 4 · Follow the same event | Capture the fresh Datadog event/cycle and open the new Slack root, not an older thread. | “This message originated in Datadog and came through the native automation. The event ID identifies this event; the alert-cycle key identifies the incident episode.” | Matching monitor/time/identity, new Slack permalink and actual provider cycle. The navigation window is not an outage-duration measurement. |
 
+
+<!-- /coderabbit-ai-generated:v1 -->
 **SECURITY:** keep credential files, authenticated webhook values, headers and provider setup secrets off screen. The trigger must not call CodeRabbit directly and pretend that proves Datadog delivery.
 
 **DON'T DO THIS:** do not use all-monitor notification enablement, disable suppression globally, change unrelated containers, or inject a fake Slack message to stand in for the Datadog hop. Do not describe a deliberate app stop as a confirmed application-code defect.

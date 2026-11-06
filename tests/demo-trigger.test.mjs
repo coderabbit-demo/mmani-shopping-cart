@@ -226,7 +226,7 @@ test('production validation reads actual definitions, journal, ownership, routin
   }
 });
 test('production replacement preserves other monitor entries and strict journal shape', async()=>{
-  const f=await adapterFixture();const a=await f.make();await a.replace('replacement');
+  const f=await adapterFixture();conditionalRule(f);const a=await f.make();await a.replace('replacement');
   assert.deepEqual(f.journal().monitors[0],f.state.monitors[0]);assert.deepEqual(f.journal().monitors[2],f.state.monitors[2]);
   assert.equal(f.journal().monitors[1].downtime,'replacement');assert.deepEqual(Object.keys(f.journal()),Object.keys(f.state));
 });
@@ -392,4 +392,158 @@ test('an active old downtime cannot settle an unknown cancellation; later reconc
   assert.equal(r.phase, 'complete'); assert.equal(r.releaseConfirmed, true); assert.equal(r.newDowntime, 'replacement');
   assert.equal(cancelCalls, 1); assert.equal(createCalls, 1); assert.equal(releases, 1);
   assert.ok(f.calls.some(c => c[0] === 'replace' && c[1] === 'replacement'));
+});
+
+function conditionalRule(f) {
+  delete f.rule.data.attributes.recipients;
+  f.rule.data.attributes.conditional_recipients = {conditions: [{scope: 'transition_type:is_alert', recipients: [target.recipient]}]};
+}
+test('production baseline accepts the exact healthy Alert-only conditional rule', async () => {
+  const f = await adapterFixture(); conditionalRule(f);
+  await (await f.make()).baseline();
+  assert.ok(f.calls.some(c => c[0] === 'rule'));
+});
+
+test('conditional routing rejects broader or malformed delivery and rechecks recovery', async () => {
+  const cases = [
+    f => { delete f.rule.data.attributes.conditional_recipients; f.rule.data.attributes.recipients = [target.recipient]; },
+    f => f.rule.data.attributes.recipients = [target.recipient],
+    f => f.rule.data.attributes.recipients = null,
+    f => f.rule.data.attributes.conditional_recipients.fallback_recipients = [target.recipient],
+    f => f.rule.data.attributes.conditional_recipients.fallback_recipients = null,
+    f => f.rule.data.attributes.conditional_recipients.conditions.push({scope: 'transition_type:is_recovery', recipients: [target.recipient]}),
+    ...['transition_type:is_recovery', 'transition_type:is_warning', 'env:local-demo', 'transition_type:is_alert OR env:prod', 'is_alert', ''].map(scope => f => f.rule.data.attributes.conditional_recipients.conditions[0].scope = scope),
+    f => f.rule.data.attributes.conditional_recipients.conditions[0].recipients.push('other'),
+    f => f.rule.data.attributes.conditional_recipients.conditions[0].recipients = ['other'],
+    f => f.rule.data.attributes.conditional_recipients.conditions[0].recipients = target.recipient,
+    f => f.rule.data.attributes.conditional_recipients.conditions[0].status = 'Alert',
+    f => f.rule.data.attributes.conditional_recipients.conditions = [],
+    f => f.rule.data.attributes.conditional_recipients.conditions = null,
+    f => f.rule.data.attributes.conditional_recipients = null,
+    f => f.rule.data.attributes.conditional_recipients.conditions = [null],
+    f => f.rule.data.attributes.bundle_config = {duration: 60},
+    f => f.rule.data.attributes.bundle_config = null,
+    f => f.rule.data.attributes.rule_options = {is_threaded: true},
+    f => f.rule.data.attributes.rule_options = {is_threaded: false, dynamic: true},
+    f => f.rule.data.attributes.dynamic_recipients = true,
+    f => f.rule.data.id = 'other',
+    f => f.rule.data.type = 'other',
+    f => f.rule.data.attributes.name = 'other',
+    f => f.rule.data.attributes.filter.tags.pop(),
+    f => f.rule.data.attributes.filter.tags[4] = `local_owner:${'9'.repeat(32)}`,
+    f => f.rule.data.attributes.filter.scope = 'env:local-demo',
+    f => f.rule.data.attributes.filter.tags.push('other'),
+    f => f.rule.data.attributes = null,
+    f => f.rule.data = null,
+    f => f.status.journeyBlocked = true,
+    f => f.status.checks.checkout.time = 0,
+    f => f.monitors[1].overall_state = 'Alert',
+    f => f.monitors[1].state.groups['host:deskdrop-mmani-local'].status = 'Alert',
+    f => f.monitors[1].id = 1,
+    f => f.monitors[1].query = 'other',
+    f => f.monitors[1].tags.pop()
+  ];
+  for (const mutate of cases) {
+    const f = await adapterFixture(); conditionalRule(f); mutate(f);
+    await assert.rejects(async () => (await f.make()).baseline());
+  }
+  const f = await adapterFixture(); conditionalRule(f); const a = await f.make();
+  await a.baseline(); await a.verify(true);
+  f.rule.data.attributes.conditional_recipients.fallback_recipients = [target.recipient];
+  await assert.rejects(a.verify(true), /Alert-only/);
+  await assert.rejects(a.verify(), /Alert-only/);
+  await assert.rejects(a.verify(true, undefined, false), /Alert-only/);
+});
+test('optional empty delivery arrays are deliberate and inspect reports only actual preflight readiness', async () => {
+  const {inspectProduction} = await import('../scripts/demo/trigger-watchdog.mjs');
+  for (const explicit of [false, true]) {
+    const f = await adapterFixture(); conditionalRule(f);
+    if (explicit) {
+      f.rule.data.attributes.recipients = [];
+      f.rule.data.attributes.conditional_recipients.fallback_recipients = [];
+      f.rule.data.attributes.rule_options = {is_threaded: false};
+    }
+    const result = await inspectProduction(f.make);
+    assert.equal(result.status, 'ready'); assert.deepEqual(result.blockers, []);
+  }
+  const legacy = await adapterFixture();
+  const result = await inspectProduction(legacy.make);
+  assert.equal(result.status, 'blocked'); assert.deepEqual(result.blockers, ['Effective Alert-only delivery unverified']);
+  const unhealthy = await adapterFixture(); conditionalRule(unhealthy); unhealthy.status.journeyBlocked = true;
+  assert.deepEqual((await inspectProduction(unhealthy.make)).blockers, ['Runtime unhealthy']);
+  assert.ok(!JSON.stringify(await inspectProduction(async () => {throw new Error('credential-canary');})).includes('credential-canary'));
+});
+test('approved rehearsal executes through the validated production adapter with scoped fixture operations', async () => {
+  const f = await adapterFixture(); conditionalRule(f); const calls = [];
+  f.readers.api.matches = async id => [...f.downtime.values()].filter(d => d.data.attributes.monitor_identifier.monitor_id === id && d.data.attributes.status === 'active').map(d => d.data.id);
+  f.readers.api.cancelDowntime = async id => {calls.push(['cancel', id]); f.downtime.get(id).data.attributes.status = 'canceled';};
+  f.readers.api.createDowntime = async spec => {
+    calls.push(['create', spec.data.attributes.monitor_identifier.monitor_id]);
+    f.downtime.set('replacement', {data: {...structuredClone(spec.data), id: 'replacement', attributes: {...structuredClone(spec.data.attributes), status: 'active'}}});
+    return {data: {id: 'replacement'}};
+  };
+  f.readers.control = async command => {
+    if (command === 'status') return f.status;
+    const [,action,run] = command.split(':'); calls.push([action, run]);
+    const group = f.monitors[1].state.groups['host:deskdrop-mmani-local'];
+    if (action === 'stop') {group.status = 'Alert';group.last_triggered_ts = Math.ceil(Date.now()/1000);}
+    if (action === 'restart') group.status = 'OK';
+    return {status: action};
+  };
+  const initial = structuredClone(f.journal());
+  const a = await f.make(); const r = await rehearse(a, fixture().store);
+  assert.equal(r.phase, 'complete'); assert.equal(r.alertObserved, true); assert.equal(r.releaseConfirmed, true);
+  assert.deepEqual(calls.map(c => c[0]), ['reserve', 'cancel', 'stop', 'create', 'restart', 'release']);
+  assert.equal(calls.find(c => c[0] === 'cancel')[1], initial.monitors[1].downtime);
+  assert.equal(calls.find(c => c[0] === 'create')[1], target.checkout);
+  assert.deepEqual(f.journal().monitors[0], initial.monitors[0]); assert.deepEqual(f.journal().monitors[2], initial.monitors[2]);
+  assert.equal(f.journal().monitors[1].downtime, 'replacement');
+  assert.ok(f.calls.filter(c => c[0] === 'rule').length > 2);
+});
+
+test('claim and pre-monitor crash windows recover without stealing live or ambiguous locks', {timeout: 10000}, async () => {
+  const {spawn} = await import('node:child_process');
+  const {supervisorLease, supervisorClaim, claimPort} = await import('../scripts/demo/trigger-alert.mjs');
+  const url = new URL('../scripts/demo/trigger-alert.mjs', import.meta.url).href;
+  for (const stage of ['claim', 'trigger']) {
+    const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'cw-'))); await chmod(dir, 0o700);
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `import {supervisorLease} from ${JSON.stringify(url)};await supervisorLease(${JSON.stringify(dir)},false,async()=>{},async phase=>{if(phase===${JSON.stringify(stage)}){process.send(phase);await new Promise(()=>{});}});`], {stdio: ['ignore','ignore','ignore','ipc']});
+    const done = new Promise(resolve => child.once('exit', resolve));
+    try {
+      await new Promise(resolve => child.once('message', resolve));
+      await assert.rejects(supervisorLease(dir, true, () => assert.fail('stole active claim')));
+      child.kill('SIGKILL'); await done;
+      if (stage === 'trigger') {
+        await assert.rejects(readState(dir, 'monitor.lock'), {code: 'ENOENT'});
+        for (const contents of ['', '{', 'null', JSON.stringify({token: 'foreign'})]) {
+          await writeFile(path.join(dir, 'monitor.lock'), contents, {mode: 0o600});
+          await assert.rejects(supervisorLease(dir, true, () => assert.fail('accepted ambiguous monitor lock')));
+          assert.equal(await readFile(path.join(dir, 'monitor.lock'), 'utf8'), contents);
+          await (await import('node:fs/promises')).unlink(path.join(dir, 'monitor.lock'));
+        }
+      }
+      let recovered = false; await supervisorLease(dir, true, async () => {recovered = true;}); assert.equal(recovered, true);
+      await supervisorClaim(dir, async () => {await assert.rejects(supervisorClaim(dir, () => assert.fail('overlap')));});
+      const foreign = (await import('node:net')).createServer(socket => socket.destroy());
+      await new Promise(resolve => foreign.listen({host:'127.0.0.1',port:claimPort(dir),exclusive:true},resolve));
+      try {await assert.rejects(supervisorLease(dir,true,()=>assert.fail('stole foreign port')));assert.equal(foreign.listening,true);}
+      finally {await new Promise(resolve=>foreign.close(resolve));}
+      await writeFile(path.join(dir, 'trigger-claim.lock'), '', {mode: 0o600});
+      await assert.rejects(supervisorLease(dir, true, () => assert.fail('accepted unknown legacy claim')));
+      assert.equal(await readFile(path.join(dir, 'trigger-claim.lock'), 'utf8'), '');
+    } finally {if(child.exitCode===null && child.signalCode===null)child.kill('SIGKILL');await done;await rm(dir,{recursive:true});}
+  }
+});
+test('supervisor launch decodes spaces and Unicode paths without leaking inherited credentials', {timeout: 3000}, async () => {
+  const {mkdir} = await import('node:fs/promises'); const {pathToFileURL} = await import('node:url');
+  const {spawnSupervisor} = await import('../scripts/demo/trigger-alert.mjs');
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'sp-'))), nested = path.join(dir, 'checkout space é');
+  await mkdir(nested); const entry = path.join(nested, 'supervisor fixture.mjs');
+  await writeFile(entry, "process.send({argument:process.argv[2],clean:!process.env.DD_API_KEY});process.disconnect();");
+  const saved = process.env.DD_API_KEY; process.env.DD_API_KEY = 'fixture-canary';
+  const child = spawnSupervisor(pathToFileURL(entry), 'recover'); const done = new Promise(resolve => child.once('exit', resolve));
+  try {
+    const result = await new Promise((resolve,reject) => {child.once('message',resolve);child.once('error',reject);});
+    assert.deepEqual(result,{argument:'recover',clean:true}); assert.equal(await done,0);
+  } finally {if(saved===undefined)delete process.env.DD_API_KEY;else process.env.DD_API_KEY=saved;if(child.exitCode===null && child.signalCode===null)child.kill('SIGKILL');await done;await rm(dir,{recursive:true});}
 });

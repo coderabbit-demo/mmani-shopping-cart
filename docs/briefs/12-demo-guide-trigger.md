@@ -118,4 +118,10 @@ CodeRabbit authored the initial implementation at `74d604692b3fc2ec3fb19c3ec6682
 
 Exactly one CLI review completed on the Mac: CodeRabbit 0.9.2, base `80bf508820d1419a3fa0600a8b3c3dd8fc2405a6`, reviewed head `74d604692b3fc2ec3fb19c3ec668299fcc2c7a16`. The cloud attempt returned review-disabled without analysis and did not count. The completed review reported two Minor findings and no Critical/Major findings. Both were validated and fixed in `5e5bb67`: canonical short macOS fixture paths, and explicit supervisor exit/disconnect reporting. No additional CLI review is required for the repair rounds.
 
-The Mac's default-environment affected suite passed all 105 tests; full Mac validation passed all 497 unit tests, typecheck and 29 goldens. Root must still finish exact-head PR/security/CI and native Verify. The Verify library now contains a focused credential-free trigger/recovery journey; its existence is not a passing run. Production arming is deliberately disabled because no effective Alert-only delivery proof is implemented. A later reviewed routing-proof integration and live runtime/controller readiness work are required before a real alert can be attempted; repairing runtime health alone will not enable this build.
+The Mac's default-environment affected suite passed all 105 tests; full Mac validation passed all 497 unit tests, typecheck and 29 goldens. Root must still finish exact-head PR/security/CI and native Verify. The Verify library now contains a focused credential-free trigger/recovery journey; its existence is not a passing run. <!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f5f7a77aada903fa1693b51caef22eab7104f569e7f69399d936805aa6540f38 -->
+
+The production preflight implements strict proof through the fixed notification-rule GET: exactly one conditional recipient for transition_type:is_alert and the reviewed webhook, with no ordinary/fallback delivery, extra conditions, bundling or dynamic delivery. Every runtime/controller/monitor/suppression guard must also pass; there is no operator override. The observed live plain-recipient rule still fails this proof, and live runtime/controller readiness remains unverified. Live routing or runtime work and a real-alert window require separate approval; fixture success is not live acceptance.
+
+<!-- /coderabbit-ai-generated:v1 -->
