@@ -120,7 +120,13 @@ Use injected API functions with synthetic records and a user-owned0700 directory
 <!-- /coderabbit-ai-generated:v1 --> Store real journal transitions and provider-operation observations before/after simulated lost responses. Alter unrelated timestamps/overall state between scans and confirm reconciliation succeeds; alter owned message, thresholds/no-data/include-tags/new-group-delay, selector, status/scope/schedule/suppression settings and confirm refusal with intent retained and no duplicate write. Preserve actual returned rows for inspection. No management key is needed for these exported injected APIs.
 6. For host lease workflow, the existing `tests/demo-baseline.test.mjs` fixtures execute the actual embedded Python with disposable paths and injected command boundaries. They include real kernel-flock contention across processes and recovery after owner death. They also record supervisor startup refusal before journal read when an installer is alive or uncertain. Reuse these focused tests as supporting evidence only; do not claim they demonstrate an actual VM/systemd workflow. A standalone reusable host adapter would require a separately proposed exact test-only path before editing; none is added here.
 
-Conclusive native Verify must explicitly report which steps it actually executes and attach operation/state/exit observations plus browser screenshots. If its runner cannot perform an operation or preserve evidence, report that step blocked; do not substitute a unit PASS line. Actual Ubuntu24.04 Node image/linkage/Docker/systemd/reboot/non-admin access, GCP private access and US3 telemetry remain separately approved live acceptance requirements. Foundation PR28's final test-only source is still pending; its reusable fixture adapter must be inspected at the final supplied SHA before adoption. It is not assumed present in this task.
+Conclusive native Verify must explicitly report which steps it actually executes and attach operation/state/exit observations plus browser screenshots. If its runner cannot perform an operation or preserve evidence, report that step blocked; do not substitute a unit PASS line. Actual Ubuntu24.04 Node image/linkage/Docker/systemd/reboot/non-admin access, GCP private access and US3 telemetry remain separately approved live acceptance requirements. <!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:a23ec7b5734eb2c26c5b2145da9c6eea51875ef54bfea31362e234b3ad2718e3 -->
+
+Foundation PR28 final source `afbde6c9c1d946989918ce5187bae194cc1a0b68` is integrated as a task parent, not claimed merged to main. Its actual `tests/fixtures/cloud-release.mjs` exports `withCloudReleaseFixture`, `checkoutSha`, `tar`, `oci` and `execution`; the linked-worktree metadata handling and test-only custody/provider adapter were inspected. This adapter supports foundation fixture operations, not arbitrary monitoring-install SSH or real Docker/Datadog operations. Production foundation interfaces are unchanged. The complete standalone six-scenario native Verify driver plan is exported as `output/gcp-monitoring/native-verify-plan.md` in this task. It uses real exported APIs with owned disposable sockets/files/processes and direct evidence; genuine VM/provider state is not an offline QA prerequisite. A standalone reusable monitoring host adapter, if required later, is proposed at `tests/fixtures/cloud-monitoring.mjs` for scope approval before editing; no new fixture path is added.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 
 <!-- /coderabbit-ai-generated:v1 -->
@@ -158,7 +164,16 @@ Ubuntu24.04 amd64 must provide the existing foundation's Python3, systemd, Docke
 
 Root Docker can administer the host; it is intentionally outside the app/checker boundary. Presenters must have neither Docker-group membership nor unrestricted sudo. Nonroot host OUTPUT rules deny169.254.169.254 and fd20:ce::254 independently of bridge rules. Root bootstrap metadata access remains available. Later non-admin testing must verify metadata.google.internal and metadata aliases resolve to the protected addresses and that no alternate metadata path exists. Mahesh's current Editor/admin access is not least-privilege presenter evidence.
 
-The separate `deskdrop-datadog-management` Secret Manager resource has a resource-scoped runtime-service-account accessor grant. It has **no Terraform secret value/version**. The separate installer fetches its JSON `apiKey` and `appKey` through the verified VM identity; recurring processes do not fetch or mount it. Current IAM/IAP/storage authority gaps remain live prerequisites; no broader role or alternate identity is authorized.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:88c24eb11bde279767678465e15b76fa454012992f618ace1eb330fba17ea575 -->
+
+The separate `deskdrop-datadog-management` Secret Manager resource has a resource-scoped runtime-service-account accessor grant.
+
+For the separate live gate, verify the existing Datadog application key's actual scopes without acquiring or expanding credentials: downtime create/cancel requires `monitors_downtime`; monitor reads use `monitors_read`, and monitor create/update/delete uses `monitors_write`; notification-rule GET uses `monitors_read`, while notification-rule mutation, if ever separately approved, requires `monitor_config_policy_write`. Do not substitute `monitors_write` for downtime or notification-policy permissions. Current recurring installation retains suppression and does not cancel downtime or mutate notification rules. These are documented required existing-key permissions, not a claim that a key has been inspected, granted, or tested live.
+
+
+<!-- /coderabbit-ai-generated:v1 --> It has **no Terraform secret value/version**. The separate installer fetches its JSON `apiKey` and `appKey` through the verified VM identity; recurring processes do not fetch or mount it. Current IAM/IAP/storage authority gaps remain live prerequisites; no broader role or alternate identity is authorized.
 
 ## Source-bound installation (later approved cloud stage)
 
