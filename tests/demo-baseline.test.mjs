@@ -711,3 +711,200 @@ test('typed cloud release cannot use legacy Terraform plan or deployment bypasse
   await assert.rejects(action('plan', ['release'], run, { artifacts: dir }));
   assert.equal(calls.filter(x => ['terraform', 'gcloud'].includes(x.file)).length, 0);
 }));
+
+const monitoringPython = script.split("<<'MONITORING'\n")[1]?.split('\nMONITORING\n')[0];
+function monitorFixture(code, input='') {
+  assert.ok(monitoringPython);
+  const wrapper = `import os,json,base64,tempfile,stat\ng={'__name__':'fixture'}\nexec(compile(${JSON.stringify(monitoringPython)},'monitoring-host','exec'),g)\n${code}`;
+  const result=spawnSync('python3',['-c',wrapper],{input,encoding:'utf8',timeout:5000,maxBuffer:32768});
+  assert.equal(result.status,0,result.stderr);
+}
+test('compressed monitoring bundle uses foundation tar helpers and verifies exact release/module hashes',async()=>{
+  const {monitoringBundle}=await import('../scripts/demo/baseline.mjs');
+  const b=await monitoringBundle({commit:'a'.repeat(40),appDigest:`sha256:${'b'.repeat(64)}`,checkerDigest:`sha256:${'c'.repeat(64)}`});
+  monitorFixture(`
+v=json.load(__import__('sys').stdin);raw=base64.b64decode(v['raw']);c=v['config'];release=[c['app'],c['checker'],c['source']]
+files,config,m=g['bundle'](raw,v['hash'],release)
+assert set(files)==g['FILES'] and config==c
+for data,digest,rel in [(raw+'x'.encode(),v['hash'],release),(raw,v['hash'],['wrong',*release[1:]])]:
+ try:g['bundle'](data,digest,rel);raise AssertionError('tamper accepted')
+ except ValueError:pass
+`,JSON.stringify({raw:b.bundle.toString('base64'),hash:b.digest,config:JSON.parse(b.files['runtime.json'])}));
+});
+test('monitoring host rejects unsafe links, modes and noncanonical parents',()=>{
+  monitorFixture(`
+with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
+ uid=os.getuid();p=d+'/file';open(p,'w').write('hello');os.chmod(p,0o600)
+ assert g['read'](p,uid)==b'hello'
+ os.link(p,d+'/alias')
+ try:g['read'](p,uid);raise AssertionError('hardlink accepted')
+ except ValueError:pass
+ os.unlink(d+'/alias');os.chmod(p,0o644)
+ try:g['read'](p,uid);raise AssertionError('mode accepted')
+ except ValueError:pass
+ os.unlink(p);os.symlink(d+'/absent',p)
+ try:g['read'](p,uid);raise AssertionError('symlink accepted')
+ except OSError:pass
+ os.mkdir(d+'/actual',0o700);os.symlink(d+'/actual',d+'/link')
+ try:g['safe_dir'](d+'/link',uid,True);raise AssertionError('linked parent accepted')
+ except ValueError:pass
+`);
+});
+test('host uses distinct pinned control runtime, verifies owner before stop and never mounts management into recurring processes',()=>{
+  monitorFixture(`
+c={'owner':'cloud_owner:'+'a'*32,'source':'b'*40,'bundleHash':'c'*64}
+for kind in ['controller','heartbeat','installer','cleanup']:
+ args=g['options'](c,kind)
+ assert '--pull' in args and args[args.index('--pull')+1]=='never'
+ assert '/run/deskdrop-management:/run/deskdrop-management:ro' in args if kind=='installer' else not any('management' in a for a in args)
+ assert '/var/run/docker.sock:/var/run/docker.sock' in args if kind in ('controller','cleanup') else not any('docker.sock' in a for a in args)
+ if kind=='heartbeat':assert g['STATE']+':'+g['STATE']+':ro' in args
+calls=[];running=True;present=True
+r={'Id':'d'*64,'Config':{'Image':g['CONTROL'],'Labels':g['labels'](c,'controller')},'State':{'Running':True}}
+r['HostConfig']={'NetworkMode':'host','ReadonlyRootfs':True,'CapDrop':['ALL'],'SecurityOpt':['no-new-privileges']}
+args=g['options'](c,'controller');r['Mounts']=[]
+for i,v in enumerate(args):
+ if v=='-v':
+  parts=args[i+1].split(':');r['Mounts'].append({'Type':'bind','Source':parts[0],'Destination':parts[1],'RW':len(parts)==2})
+def docker(*args,**kw):
+ global present
+ calls.append(args)
+ if args[:2]==('container','ls'):return 'deskdrop-cloud-controller' if present else ''
+ if args[0]=='inspect':return json.dumps([r])
+ if args[0]=='stop':raise __import__('subprocess').TimeoutExpired('docker',40)
+ if args[0]=='kill':r['State']['Running']=False;return ''
+ if args[0]=='rm':present=False;return ''
+ raise AssertionError(args)
+g['docker']=docker
+g['stop_owned'](c,'controller');assert not present and any(x[0]=='kill' for x in calls)
+present=True;r['Config']['Labels']['deskdrop.cloud_owner']='foreign';calls.clear()
+try:g['stop_owned'](c,'controller');raise AssertionError('foreign accepted')
+except ValueError:pass
+assert all(x[0] in ('container','inspect') for x in calls)
+`);
+});
+test('source-only foundation receipts cannot authorize a monitoring installation',async()=>{
+  const {action}=await import('../scripts/demo/baseline.mjs');const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const os=await import('node:os');
+  const artifacts=await mkdtemp(`${os.tmpdir()}/monitor-receipt-`);let calls=0;
+  try{
+    await writeFile(`${artifacts}/release.json`,JSON.stringify({phase:'foundation',commit:'a'.repeat(40),appDigest:`sha256:${'b'.repeat(64)}`,checkerDigest:`sha256:${'c'.repeat(64)}`}));
+    await assert.rejects(action('monitoring-install',[],async()=>{calls++;assert.fail('no command authorized')},{artifacts}));assert.equal(calls,0);
+  }finally{await rm(artifacts,{recursive:true,force:true});}
+});
+
+test('host-originated IPv4/IPv6 metadata denial is independent of bridge isolation and preserves root bootstrap',()=>{
+  const result=shellFixture(`
+iptables() { printf 'v4 %s\\n' "$*"; [ "$1 $2" != '-C OUTPUT' ]; }
+ip6tables() { printf 'v6 %s\\n' "$*"; [ "$1 $2" != '-C OUTPUT' ]; }
+firewall
+`);
+  assert.equal(result.status,0,result.stderr);
+  const rules=result.stdout.split('\n').filter(l=>l.includes('-I OUTPUT'));
+  assert.equal(rules.length,2);
+  assert.ok(rules.includes('v4 -I OUTPUT 1 -d 169.254.169.254/32 -m owner ! --uid-owner 0 -j REJECT'));
+  assert.ok(rules.includes('v6 -I OUTPUT 1 -d fd20:ce::254/128 -m owner ! --uid-owner 0 -j REJECT'));
+  const metadata=(uid,family)=>rules.some(r=>r.startsWith(family)&&r.includes('! --uid-owner 0')&&uid!==0)?'REJECT':'CONTINUE';
+  for(const family of ['v4','v6']){assert.equal(metadata(1000,family),'REJECT');assert.equal(metadata(0,family),'CONTINUE');}
+});
+test('separate management refresh uses protected management path, with no intake overwrite or secret output',()=>{
+  fixture(`
+calls=[]
+g['sys'].argv=['bootstrap','management-refresh']
+g['prepare_runtime']=lambda p:calls.append(('directory',p))
+g['runtime_identity']=lambda o:'synthetic-token'
+def fetch(o,url,headers):
+ assert url==g['SECRET'].replace('deskdrop-datadog-intake','deskdrop-datadog-management')
+ assert headers=={'Authorization':'Bearer synthetic-token'}
+ return json.dumps({'payload':{'data':base64.b64encode(json.dumps({'apiKey':'A'*32,'appKey':'B'*40}).encode()).decode()}}).encode()
+g['fetch']=fetch
+g['save_secret']=lambda p,s:calls.append(('file',p))
+g['main']()
+assert calls==[('directory','/run/deskdrop-management'),('file','/run/deskdrop-management/management')]
+`);
+});
+
+test('supervisor restarts independently owned processes, invalidates stale health and invokes orphan cleanup on shutdown',()=>{
+  monitorFixture(`
+c={'owner':'cloud_owner:'+'a'*32,'source':'b'*40,'bundleHash':'c'*64}
+g['lock']=lambda *a:__import__('contextlib').nullcontext()
+g['read']=lambda *a:json.dumps({'owner':c['owner'],'verified':True,'pending':None,'monitors':[1,2,3]}).encode()
+created=[];stopped=[];active={};writes=[];handlers={}
+g['atomic']=lambda p,v:writes.append(json.loads(v))
+g['signal'].signal=lambda sig,handler:handlers.update({sig:handler})
+g['time'].sleep=lambda sec:handlers[g['signal'].SIGTERM]()
+g['owned_container']=lambda config,kind:active.get(kind)
+def stop(config,kind):stopped.append(kind);active.pop(kind,None)
+g['stop_owned']=stop
+def docker(*args,**kw):
+ assert args[0]=='run';kind=args[-1];created.append(kind)
+ active[kind]={'State':{'Running':kind!='cleanup'}}
+ return 'd'*64
+g['docker']=docker
+for i in range(2):
+ g['supervise'](c)
+ assert not active and writes[-1]['healthy'] is False
+assert created==['heartbeat','controller','cleanup']*2
+assert stopped.count('cleanup')==2
+`);
+});
+test('host flock excludes concurrent management, survives abrupt owner death and preserves durable state',()=>{
+  monitorFixture(`
+import subprocess,fcntl
+with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
+ g['STATE']=d;uid=os.getuid()
+ with g['lock']('management.lock',uid):
+  try:
+   with g['lock']('management.lock',uid):raise AssertionError('concurrent acquired')
+  except BlockingIOError:pass
+ p=d+'/management.lock'
+ child=subprocess.Popen(['python3','-u','-c','import os,fcntl,time;f=open('+repr(p)+',"r+");fcntl.flock(f,fcntl.LOCK_EX);print("locked",flush=True);time.sleep(30)'],stdout=subprocess.PIPE)
+ try:
+  assert child.stdout.readline()==b'locked\\n'
+  try:
+   with g['lock']('management.lock',uid):raise AssertionError('live lease stolen')
+  except BlockingIOError:pass
+ finally:child.kill();child.wait(timeout=3)
+ with g['lock']('management.lock',uid):pass
+ assert os.path.isfile(p)
+`);
+});
+
+test('actual host installation recovers a lost result without replacing durable ownership or accepting another source',async()=>{
+  const {monitoringBundle}=await import('../scripts/demo/baseline.mjs');
+  const b=await monitoringBundle({commit:'a'.repeat(40),appDigest:`sha256:${'b'.repeat(64)}`,checkerDigest:`sha256:${'c'.repeat(64)}`});
+  monitorFixture(`
+import shutil,contextlib
+v=json.load(__import__('sys').stdin);uid=os.getuid();real_read=g['read'];real_dir=g['safe_dir'];real_lock=g['lock']
+g['read']=lambda p,*a,**kw:real_read(p,uid=uid,**kw)
+g['safe_dir']=lambda p,*a,**kw:real_dir(p,uid=uid,**kw)
+g['lock']=lambda n:real_lock(n,uid)
+with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
+ os.mkdir(d+'/opt',0o700);g['BASE']=d+'/opt/monitoring';g['STATE']=d+'/var/monitoring'
+ transfer=d+'/bundle';release=d+'/release';unit=d+'/unit';raw=base64.b64decode(v['raw'])
+ open(transfer,'wb').write(raw);open(release,'w').write('\\n'.join([v['config']['app'],v['config']['checker'],v['config']['source']])+'\\n');os.chmod(release,0o600)
+ attempts=[]
+ def docker(*args,**kw):
+  attempts.append(args)
+  if len(attempts)==1:raise OSError('lost install response')
+  if args[0]=='pull':return ''
+  if args[:2]==('image','inspect'):return 'amd64|linux'
+  if args[0]=='run':return 'v24.13.0'
+  raise AssertionError(args)
+ g['docker']=docker
+ def run(args,**kw):
+  assert args[0] in ('install','systemctl')
+  if args[0]=='install':shutil.copyfile(args[-2],args[-1]);os.chmod(args[-1],0o644)
+ g['subprocess'].run=run
+ try:g['install'](v['hash'],transfer,release,unit);raise AssertionError('unknown reported success')
+ except OSError:pass
+ state_path=g['STATE']+'/installation.json';before=open(state_path,'rb').read()
+ with contextlib.redirect_stdout(__import__('io').StringIO()) as output:g['install'](v['hash'],transfer,release,unit)
+ receipt=json.loads(output.getvalue());assert receipt['bundleHash']==v['hash'] and receipt['source']==v['config']['source']
+ assert open(state_path,'rb').read()==before and os.stat(state_path).st_mode&0o777==0o600
+ assert os.stat(g['BASE']).st_mode&0o777==0o700
+ open(release,'w').write('wrong release')
+ try:g['install'](v['hash'],transfer,release,unit);raise AssertionError('other release accepted')
+ except ValueError:pass
+ assert open(state_path,'rb').read()==before
+`,JSON.stringify({raw:b.bundle.toString('base64'),hash:b.digest,config:JSON.parse(b.files['runtime.json'])}));
+});

@@ -5,5 +5,6 @@ WORKDIR /checker
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY deploy/checker.mjs ./checker.mjs
+COPY deploy/cloud-checker.mjs ./cloud-checker.mjs
 USER pwuser
 ENTRYPOINT ["node", "checker.mjs"]

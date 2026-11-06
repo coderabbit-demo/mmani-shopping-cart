@@ -59,6 +59,7 @@ services:
       driver: json-file
       options: {max-size: "1m", max-file: "2"}
   agent:
+    network_mode: host
     image: registry.datadoghq.com/agent:7.85.0@sha256:1e45b8442dbcc297a01eb9ef61b7b909650b30e50f3dd6aa3654d89380bf5cc9
     restart: unless-stopped
     environment:

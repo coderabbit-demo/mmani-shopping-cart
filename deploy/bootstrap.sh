@@ -1268,6 +1268,9 @@ firewall() {
     ip6tables -C FORWARD -i "$bridge" -j DROP
     ip6tables -C INPUT -i "$bridge" -j DROP
   done
+  iptables -C OUTPUT -d 169.254.169.254/32 -m owner ! --uid-owner 0 -j REJECT 2>/dev/null || iptables -I OUTPUT 1 -d 169.254.169.254/32 -m owner ! --uid-owner 0 -j REJECT
+  ip6tables -C OUTPUT -d fd20:ce::254/128 -m owner ! --uid-owner 0 -j REJECT 2>/dev/null || ip6tables -I OUTPUT 1 -d fd20:ce::254/128 -m owner ! --uid-owner 0 -j REJECT
+
 }
 
 install_profile() {
@@ -1354,11 +1357,257 @@ UNIT
   systemctl enable deskdrop-firewall.service deskdrop.service
 }
 
+monitoring() {
+  exec -- python3 - "$@" <<'MONITORING'
+import contextlib,fcntl,gzip,hashlib,io,json,os,re,signal,stat,subprocess,sys,tarfile,tempfile,time
+CONTROL='node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607'
+MODULES={'cloud-runtime.mjs','cloud-monitors.mjs','deskdrop-monitoring.service'}
+FILES=MODULES|{'manifest.json','runtime.json'}
+BASE='/opt/deskdrop/monitoring'
+STATE='/var/lib/deskdrop/monitoring'
+ENV={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','DOCKER_CONFIG':'/run/deskdrop'}
+
+def safe_dir(p,uid=0,private=False):
+    if os.path.realpath(p)!=p or not os.path.isabs(p): raise ValueError('Unsafe path')
+    current=p
+    while True:
+        st=os.lstat(current)
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid not in ({uid} if current==p else {0,uid}) or st.st_mode&0o022 or (private and current==p and stat.S_IMODE(st.st_mode)!=0o700): raise ValueError('Unsafe directory')
+        if current=='/': break
+        current=os.path.dirname(current)
+
+def read(p,uid=0,mode=0o600,limit=262144):
+    safe_dir(os.path.dirname(p),uid)
+    fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,'rb') as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=uid or st.st_nlink!=1 or stat.S_IMODE(st.st_mode)!=mode or st.st_size>limit: raise ValueError('Unsafe file')
+        return f.read(limit+1)
+
+def syncdir(p):
+    fd=os.open(p,os.O_RDONLY|os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+def atomic(p,data):
+    safe_dir(os.path.dirname(p),private=True)
+    if os.path.lexists(p): read(p)
+    fd,tmp=tempfile.mkstemp(prefix='.monitoring-',dir=os.path.dirname(p))
+    try:
+        with os.fdopen(fd,'wb') as f: f.write(data);f.flush();os.fsync(f.fileno())
+        os.replace(tmp,p);syncdir(os.path.dirname(p))
+    finally:
+        if os.path.exists(tmp):os.unlink(tmp)
+
+def identity(c):
+    if c.get('project')!='se-demos-project' or c.get('zone')!='us-central1-a' or c.get('architecture')!='linux/amd64' or not re.fullmatch(r'(?!0{40}$)[a-f0-9]{40}',c.get('source','')): raise ValueError('Wrong source identity')
+    for key,repo in [('app','deskdrop'),('checker','checker')]:
+        if not re.fullmatch(r'us-central1-docker\.pkg\.dev/se-demos-project/deskdrop/'+repo+r'@sha256:(?!0{64}$)[a-f0-9]{64}',c.get(key,'')):raise ValueError('Wrong image')
+    if not re.fullmatch(r'[a-f0-9]{64}',c.get('bundleHash','')):raise ValueError('Wrong bundle identity')
+
+def bundle(raw,digest,release):
+    if len(raw)>1048576 or hashlib.sha256(raw).hexdigest()!=digest:raise ValueError('Bundle digest mismatch')
+    # Bound expansion before tar parsing; no filesystem extraction.
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz: plain=gz.read(2097153)
+    if len(plain)>2097152:raise ValueError('Bundle too large')
+    with tarfile.open(fileobj=io.BytesIO(plain),mode='r:') as t:
+        members=t.getmembers()
+        if len(members)!=5 or {m.name for m in members}!=FILES or any(not m.isfile() or m.size>262144 for m in members):raise ValueError('Invalid bundle members')
+        files={m.name:t.extractfile(m).read() for m in members}
+    c=json.loads(files['runtime.json']);m=json.loads(files['manifest.json']);identity(c)
+    if set(c)!={'project','zone','architecture','source','app','checker','bundleHash'} or release!=[c['app'],c['checker'],c['source']] or m.get('commit')!=c['source'] or set(m.get('files',{}))!=MODULES or hashlib.sha256(files['manifest.json']).hexdigest()!=c['bundleHash']:raise ValueError('Wrong release bundle')
+    for n,d in m['files'].items():
+        if hashlib.sha256(files[n]).hexdigest()!=d:raise ValueError('Wrong module hash')
+    return files,c,m
+
+def docker(*args,timeout=15):
+    return subprocess.run(['docker',*args],env=ENV,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,check=True,timeout=timeout).stdout.decode().strip()
+
+def installed():
+    safe_dir(BASE,private=True);safe_dir(STATE,private=True)
+    files={n:read(BASE+'/'+n) for n in FILES}
+    c=json.loads(files['runtime.json']);identity(c);m=json.loads(files['manifest.json'])
+    receipt=json.loads(read(STATE+'/bundle.json'))
+    if not re.fullmatch(r'cloud_owner:[a-f0-9]{32}',c.get('owner','')) or set(m.get('files',{}))!=MODULES or m.get('commit')!=c['source'] or hashlib.sha256(files['manifest.json']).hexdigest()!=c['bundleHash'] or receipt.get('manifestHash')!=c['bundleHash'] or receipt.get('source')!=c['source'] or receipt.get('files')!=m['files']:raise ValueError('Installed source mismatch')
+    if read('/etc/deskdrop/release').decode().splitlines()!=[c['app'],c['checker'],c['source']]:raise ValueError('Installed release mismatch')
+    for n in MODULES:
+        if hashlib.sha256(files[n]).hexdigest()!=m['files'][n]:raise ValueError('Installed module changed')
+    return c
+
+@contextlib.contextmanager
+def lock(name,uid=0):
+    safe_dir(STATE,uid,private=True)
+    p=STATE+'/'+name
+    fd=os.open(p,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    try:
+        st=os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=uid or st.st_nlink!=1 or stat.S_IMODE(st.st_mode)!=0o600:raise ValueError('Unsafe lock')
+        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB);yield
+    finally:os.close(fd)
+
+def labels(c,kind):
+    return {'managed_by':'deskdrop-gcp-controller','deskdrop.cloud_owner':c['owner'],'deskdrop.source':c['source'],'deskdrop.bundle':c['bundleHash'],'deskdrop.kind':kind}
+
+def owned_container(c,kind):
+    name='deskdrop-cloud-'+kind
+    rows=docker('container','ls','--all','--format','{{.Names}}').splitlines()
+    if name not in rows:return None
+    records=json.loads(docker('inspect',name))
+    if len(records)!=1:raise ValueError('Ambiguous control container')
+    r=records[0]
+    if r.get('Config',{}).get('Image')!=CONTROL or r['Config'].get('Labels')!=labels(c,kind) or not re.fullmatch(r'[a-f0-9]{64}',r.get('Id','')):raise ValueError('Unowned control container')
+    h=r.get('HostConfig',{})
+    if h.get('NetworkMode')!='host' or h.get('ReadonlyRootfs') is not True or h.get('Privileged') or h.get('CapAdd') or h.get('CapDrop')!=['ALL'] or not any(x in h.get('SecurityOpt',[]) for x in ['no-new-privileges','no-new-privileges:true']):raise ValueError('Control policy mismatch')
+    args=options(c,kind);wanted={}
+    for i,v in enumerate(args):
+        if v=='-v':
+            parts=args[i+1].split(':');wanted[parts[1]]=(parts[0],len(parts)==2)
+    mounts=r.get('Mounts',[])
+    if len(mounts)!=len(wanted) or any(m.get('Type')!='bind' or wanted.get(m.get('Destination'))!=(m.get('Source'),m.get('RW')) for m in mounts):raise ValueError('Control mount mismatch')
+    return r
+
+def stop_owned(c,kind):
+    r=owned_container(c,kind)
+    if not r:return
+    if r['State']['Running']:
+        try:docker('stop','--time','35',r['Id'],timeout=40)
+        except (subprocess.SubprocessError,OSError):pass
+    r=owned_container(c,kind)
+    if r and r['State']['Running']:
+        docker('kill',r['Id']);r=owned_container(c,kind)
+    if r and r['State']['Running']:raise ValueError('Control cleanup unconfirmed')
+    if r:docker('rm',r['Id'])
+    if owned_container(c,kind):raise ValueError('Control removal unconfirmed')
+
+def options(c,kind):
+    args=['--pull','never','--name','deskdrop-cloud-'+kind,'--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.25']
+    for k,v in labels(c,kind).items():args+=['--label',k+'='+v]
+    args+=['-v',BASE+':'+BASE+':ro','-v',STATE+':'+STATE+(':ro' if kind=='heartbeat' else '')]
+    if kind in ('controller','cleanup'):args+=['-v','/var/run/docker.sock:/var/run/docker.sock','-v','/opt/deskdrop/checker-seccomp.json:/opt/deskdrop/checker-seccomp.json:ro']
+    if kind=='installer':args+=['-v','/run/deskdrop-management:/run/deskdrop-management:ro']
+    return args
+
+def install(digest,transfer='/tmp/monitoring.tar.gz',release_path='/etc/deskdrop/release',unit='/etc/systemd/system/deskdrop-monitoring.service'):
+    if not re.fullmatch(r'[a-f0-9]{64}',digest):raise ValueError('Invalid bundle digest')
+    fd=os.open(transfer,os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,'rb') as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):raise ValueError('Invalid transfer file')
+        raw=f.read(1048577)
+    files,c,m=bundle(raw,digest,read(release_path).decode().splitlines())
+    for p in [os.path.dirname(STATE),STATE]:
+        safe_dir(os.path.dirname(p))
+        try:os.mkdir(p,0o700)
+        except FileExistsError:pass
+        safe_dir(p,private=True)
+    with lock('bundle.lock'):
+        try:state=json.loads(read(STATE+'/installation.json'))
+        except FileNotFoundError:
+            state={'schema':1,'owner':'cloud_owner:'+os.urandom(16).hex(),'monitors':[],'pending':None}
+            atomic(STATE+'/installation.json',json.dumps(state).encode())
+        if state.get('schema')!=1 or not re.fullmatch(r'cloud_owner:[a-f0-9]{32}',state.get('owner','')):raise ValueError('Invalid existing journal')
+        c['owner']=state['owner'];files['runtime.json']=json.dumps(c).encode()
+        receipt={'status':'monitoring-bundle-installed','source':c['source'],'bundleHash':digest,'manifestHash':c['bundleHash'],'files':m['files']}
+        # Retry of an identical transfer is safe, including a lost SSH response.
+        if os.path.lexists(BASE):
+            safe_dir(BASE,private=True)
+            if set(os.listdir(BASE))!=FILES or any(read(BASE+'/'+n)!=data for n,data in files.items()):raise ValueError('Existing release requires explicit migration; preserve state')
+        else:
+            safe_dir(os.path.dirname(BASE),private=True)
+            staging=tempfile.mkdtemp(prefix='.monitoring-',dir=os.path.dirname(BASE))
+            try:
+                for n,data in files.items():atomic(staging+'/'+n,data)
+                os.rename(staging,BASE);syncdir(os.path.dirname(BASE))
+            finally:
+                if os.path.exists(staging):
+                    for n in os.listdir(staging):os.unlink(staging+'/'+n)
+                    os.rmdir(staging)
+        if os.path.lexists(STATE+'/bundle.json') and json.loads(read(STATE+'/bundle.json'))!=receipt:raise ValueError('Existing bundle receipt mismatch')
+        atomic(STATE+'/bundle.json',json.dumps(receipt).encode())
+        docker('pull','--platform','linux/amd64',CONTROL,timeout=120)
+        if docker('image','inspect','--format','{{.Architecture}}|{{.Os}}',CONTROL)!='amd64|linux':raise ValueError('Wrong control architecture')
+        if docker('run','--rm','--pull','never','--network','none','--read-only',CONTROL,'node','--version')!='v24.13.0':raise ValueError('Wrong control runtime')
+        safe_dir(os.path.dirname(unit))
+        if os.path.lexists(unit) and read(unit,mode=0o644)!=files['deskdrop-monitoring.service']:raise ValueError('Existing unit is not this bundle; preserve it')
+        subprocess.run(['install','-m','0644',BASE+'/deskdrop-monitoring.service',unit],check=True,timeout=10)
+        subprocess.run(['systemctl','daemon-reload'],check=True,timeout=15)
+        print(json.dumps(receipt))
+
+def manage(c,mode):
+    with lock('management.lock'):
+        for kind in ['controller','heartbeat']:
+            if owned_container(c,kind):raise ValueError('Stop monitoring service before management operations')
+        r=owned_container(c,'installer')
+        if r and r['State']['Running']:raise ValueError('Previous installer still running; outcome unknown')
+        if r:stop_owned(c,'installer')
+        # Docker name + host flock exclude a live installer. Empty stale journal lock
+        # from a killed container is now safely recoverable; intent remains untouched.
+        p=STATE+'/installation.lock'
+        if os.path.lexists(p):safe_dir(p,private=True);os.rmdir(p);syncdir(STATE)
+        try:
+            subprocess.run(['/opt/deskdrop/bootstrap.sh','management-refresh'],check=True,timeout=45)
+            result=docker('run',*options(c,'installer'),CONTROL,'node',BASE+'/cloud-monitors.mjs',mode,timeout=300)
+            print(result)
+        finally:
+            # A timed-out client can leave its container alive. Retain it for explicit
+            # reconciliation, but remove the host secret path (no retry write).
+            try:os.unlink('/run/deskdrop-management/management')
+            except FileNotFoundError:pass
+        stop_owned(c,'installer')
+
+def supervise(c):
+    with lock('supervisor.lock'):
+        state=json.loads(read(STATE+'/installation.json'))
+        if state.get('owner')!=c['owner'] or state.get('verified') is not True or state.get('pending') or len(state.get('monitors',[]))!=3:raise ValueError('Protected installation required')
+        stopping=False
+        def stop(*args):
+            nonlocal stopping
+            stopping=True
+        signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+        try:
+            for kind in ['controller','heartbeat']:stop_owned(c,kind)
+            # Invalidate health before launching the independently supervised heartbeat.
+            atomic(STATE+'/health.json',json.dumps({'healthy':False,'updated':0,'owner':c['owner'],'source':c['source']}).encode())
+            for kind in ['heartbeat','controller']:
+                docker('run','-d',*options(c,kind),CONTROL,'node',BASE+'/cloud-runtime.mjs',kind)
+            while not stopping:
+                for kind in ['controller','heartbeat']:
+                    r=owned_container(c,kind)
+                    if not r or not r['State']['Running']:raise ValueError('Monitoring process exited')
+                time.sleep(1)
+        finally:
+            for kind in ['controller','heartbeat']:stop_owned(c,kind)
+            # A killed controller may have left a browser container. Reuse the same
+            # source-bound cleanup adapter before declaring the service stopped.
+            r=owned_container(c,'cleanup')
+            if r and r['State']['Running']:raise ValueError('Cleanup already running')
+            if r:stop_owned(c,'cleanup')
+            docker('run',*options(c,'cleanup'),CONTROL,'node',BASE+'/cloud-runtime.mjs','cleanup',timeout=60)
+            stop_owned(c,'cleanup')
+
+def main():
+    if os.getuid()!=0:raise ValueError('Root required')
+    mode=sys.argv[1]
+    if mode=='monitoring-install':install(sys.argv[2]);return
+    c=installed()
+    subprocess.run(['/opt/deskdrop/bootstrap.sh','verify'],check=True,timeout=30)
+    if mode=='monitoring-start':
+        subprocess.run(['/opt/deskdrop/bootstrap.sh','verify-images',c['app'],c['checker'],c['source']],check=True,timeout=45)
+        supervise(c)
+    elif mode in ('monitoring-protect','monitoring-inspect','monitoring-delete'):manage(c,{'monitoring-protect':'install','monitoring-inspect':'inspect','monitoring-delete':'delete'}[mode])
+    else:raise ValueError('Invalid monitoring operation')
+if __name__=='__main__':
+    try:main()
+    except Exception:print('Monitoring failed; preserve journal and reconcile exact owned resources',file=sys.stderr);sys.exit(1)
+MONITORING
+}
+
 case "$mode" in
+  monitoring-install) [ "$#" -eq 2 ] || exit 2; runtime_command verify; monitoring "$@"; exit ;;
+  monitoring-start|monitoring-protect|monitoring-inspect|monitoring-delete) [ "$#" -eq 1 ] || exit 2; monitoring "$@"; exit ;;
   install) [ "$#" -eq 1 ] || exit 2; "${BASH_SOURCE[0]}" verify; install_packages; exit ;;
   firewall) [ "$#" -eq 1 ] || exit 2; firewall; runtime_command verify; runtime_command prepare-runtime; exit ;;
   prepare-runtime) [ "$#" -eq 1 ] || exit 2 ;;
-  secret-refresh) [ "$#" -eq 1 ] || exit 2 ;;
+  secret-refresh|management-refresh) [ "$#" -eq 1 ] || exit 2 ;;
   verify) [ "$#" -eq 1 ] || exit 2 ;;
   start|restart|check)
     if [ "$mode" = start ]; then
@@ -1541,6 +1790,16 @@ def main():
         return
     if sys.argv[1] == 'prepare-runtime':
         prepare_runtime()
+        return
+    if sys.argv[1] == 'management-refresh':
+        prepare_runtime('/run/deskdrop-management')
+        token = runtime_identity(opener)
+        response = json.loads(fetch(opener, SECRET.replace('deskdrop-datadog-intake', 'deskdrop-datadog-management'), {'Authorization': 'Bearer ' + token}))
+        secret = base64.b64decode(response['payload']['data'], validate=True)
+        values = json.loads(secret)
+        if set(values) != {'apiKey', 'appKey'} or not re.fullmatch(r'[A-Za-z0-9]{32}', values['apiKey']) or not re.fullmatch(r'[A-Za-z0-9]{40}', values['appKey']):
+            raise ValueError('invalid management secret')
+        save_secret('/run/deskdrop-management/management', secret)
         return
     if sys.argv[1] == 'secret-refresh':
         prepare_runtime()

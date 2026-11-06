@@ -1,0 +1,16 @@
+[Unit]
+Description=DeskDrop cloud controller and independent heartbeat
+Requires=docker.service deskdrop.service deskdrop-firewall.service
+After=docker.service deskdrop.service deskdrop-firewall.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+[Service]
+Type=simple
+ExecStart=/opt/deskdrop/bootstrap.sh monitoring-start
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=120
+KillMode=mixed
+UMask=0077
+[Install]
+WantedBy=multi-user.target
