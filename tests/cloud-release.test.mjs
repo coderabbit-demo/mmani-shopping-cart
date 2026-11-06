@@ -1,85 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, chmod, symlink, realpath } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, readFile, writeFile, rm, chmod, symlink, realpath, readdir, stat, link } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { compress, decompress, hash, verifyOci, sourceIdentity, objectIdentity, validateBuild, validatePublication, validateFoundation, capability, identities, prepareRequest, worker, cloudAction, registry, validateExecution } from '../scripts/demo/cloud-release.mjs';
-const repository = fileURLToPath(new URL('..', import.meta.url));
-const commit = 'a'.repeat(40), previous = 'b'.repeat(40), id = '11111111-2222-3333-4444-555555555555';
-const toolchain = JSON.parse(await readFile(path.join(repository, 'deploy/cloudbuild/toolchain.json')));
+import { withCloudReleaseFixture as fixture, tar, oci, execution, commit, previous, id, toolchain } from './fixtures/cloud-release.mjs';
 const put = (dir, name, value) => writeFile(path.join(dir, name), Buffer.isBuffer(value) ? value : JSON.stringify(value), { mode: 0o600 });
 const clone = value => structuredClone(value);
-function tar(entries) {
-  const blocks = [];
-  for (const [name, bytes] of Object.entries(entries)) {
-    const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(JSON.stringify(bytes));
-    const header = Buffer.alloc(512);
-    header.write(name); header.write('0000600\0', 100); header.write('0000000\0', 108); header.write('0000000\0', 116);
-    header.write(b.length.toString(8).padStart(11, '0') + '\0', 124); header.write('00000000000\0', 136);
-    header.fill(32, 148, 156); header[156] = 48; header.write('ustar\0', 257); header.write('00', 263);
-    header.write([...header].reduce((a, b) => a + b, 0).toString(8).padStart(6, '0') + '\0 ', 148);
-    blocks.push(header, b, Buffer.alloc((512 - b.length % 512) % 512));
-  }
-  return Buffer.concat([...blocks, Buffer.alloc(1024)]);
-}
-function oci(arch = 'amd64', source = commit) {
-  const layer = Buffer.from('synthetic layer'), config = Buffer.from(JSON.stringify({ architecture: arch, os: 'linux', config: { Labels: { 'org.opencontainers.image.revision': source } } }));
-  const descriptor = b => ({ digest: `sha256:${hash(b)}`, size: b.length });
-  const manifest = Buffer.from(JSON.stringify({ schemaVersion: 2, config: descriptor(config), layers: [descriptor(layer)] }));
-  const entries = { 'oci-layout': { imageLayoutVersion: '1.0.0' }, 'index.json': { schemaVersion: 2, manifests: [descriptor(manifest)] }, [`blobs/sha256/${hash(manifest)}`]: manifest, [`blobs/sha256/${hash(config)}`]: config, [`blobs/sha256/${hash(layer)}`]: layer };
-  return { bytes: tar(entries), entries };
-}
-function execution(request, phase = 'build') { return { ...clone(request), id, status: 'SUCCESS', projectId: 'se-demos-project', serviceAccount: identities[phase], sourceProvenance: { resolvedStorageSource: request.source.storageSource } }; }
-async function fixture(fn) {
-  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'deskdrop-cloud-'))); await chmod(dir, 0o700);
-  const root = path.join(dir, 'checkout'), receipts = path.join(dir, 'receipts');
-  await mkdir(receipts, { mode: 0o700 });
-  for (const folder of ['deploy/cloudbuild', 'scripts/demo', 'infra/terraform/.terraform']) await mkdir(path.join(root, folder), { recursive: true });
-  for (const file of ['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/publish.yaml', 'deploy/cloudbuild/toolchain.json', 'scripts/demo/cloud-release.mjs']) await writeFile(path.join(root, file), await readFile(path.join(repository, file)));
-  const sourceBytes = compress(Buffer.from('synthetic committed archive'));
-  const source = { repository: 'https://github.com/coderabbit-demo/mmani-shopping-cart.git', commit, archive: { bucket: 'se-demos-project-deskdrop-source', name: `${commit}/source.tar.gz`, generation: '3', sha256: hash(sourceBytes) } };
-  await put(receipts, 'source.json', source); await put(receipts, 'source.tar.gz', sourceBytes); await put(receipts, 'source-verified.json', { source, files: Object.fromEntries(await Promise.all(['deploy/cloudbuild/build.yaml', 'deploy/cloudbuild/publish.yaml', 'deploy/cloudbuild/toolchain.json', 'scripts/demo/cloud-release.mjs'].map(async name => [name, hash(await readFile(path.join(root, name)))]))) });
-  const backend = Buffer.from(JSON.stringify({ backend: { type: 'gcs', config: { bucket: 'se-demos-project-deskdrop-tfstate', prefix: 'deskdrop/demo' } } }));
-  await writeFile(path.join(root, 'infra/terraform/.terraform/terraform.tfstate'), backend);
-  const lock = Buffer.from('pinned lock'); await writeFile(path.join(root, 'infra/terraform/.terraform.lock.hcl'), lock);
-  const input = Buffer.from(JSON.stringify({ project_id: 'se-demos-project', region: 'us-central1', zone: 'us-central1-a', environment: 'demo', phase: 'foundation' }));
-  const planBytes = Buffer.from('approved saved plan');
-  const foundation = { phase: 'foundation', commit, planHash: hash(planBytes), inputHash: hash(input), backendDigest: hash(backend), lockHash: hash(lock) };
-  await put(receipts, 'foundation-applied.json', foundation); await put(receipts, 'foundation-plan.json', { ...foundation, which: 'foundation' }); await put(receipts, 'foundation.tfplan', planBytes); await put(receipts, 'foundation.tfvars.json', input);
-  for (const phase of ['build', 'publish']) await put(receipts, `${phase}-capability.json`, { schema: 1, phase, toolchainHash: hash(Buffer.from(JSON.stringify(toolchain))), configHash: hash(await readFile(path.join(root, `deploy/cloudbuild/${phase}.yaml`))), executionId: id, serviceAccount: identities[phase], architecture: 'linux/amd64', builder: toolchain.builder, passed: true, observed: toolchain.requiredCapabilities[phase] });
-  const image = oci(), observed = verifyOci(image.bytes, commit);
-  const images = Object.fromEntries(['app', 'checker'].map(name => [name, { ...observed, artifact: { bucket: 'se-demos-project-deskdrop-artifacts', name: `${commit}/${id}/${name}.oci.tar`, generation: '5', sha256: hash(image.bytes) } }]));
-  for (const name of ['app', 'checker']) { await put(receipts, `${name}.oci.tar`, image.bytes); await put(receipts, `${name}-object.json`, images[name].artifact); }
-  await put(receipts, 'worker-receipt.json', { commit, architecture: 'linux/amd64', images: { app: observed, checker: observed } });
-  const calls = [];
-  const run = async (file, args, options) => {
-    calls.push({ file, args, options });
-    assert.equal(file, 'gcloud'); assert.equal(options.timeout, args[0] === 'storage' ? 120000 : 15000);
-    if (args[0] === 'storage') return args[2].includes('/source.tar.gz#') ? sourceBytes : image.bytes;
-    assert.deepEqual(args.slice(0, 4), ['artifacts', 'docker', 'images', 'describe']);
-    assert.equal(args[5], '--project=se-demos-project'); assert.equal(args[6], '--format=json');
-    assert.match(args[4], /^us-central1-docker\.pkg\.dev\/se-demos-project\/deskdrop\/(deskdrop|checker)@sha256:[a-f0-9]{64}$/);
-    return JSON.stringify({ image_summary: { digest: observed.manifest, fully_qualified_digest: args[4] } });
-  };
-  async function build() {
-    const request = await prepareRequest('build', receipts, root);
-    await put(receipts, 'build-request.json', request); await put(receipts, 'build-execution.json', execution(request));
-    return cloudAction('record-build', receipts, run, root);
-  }
-  async function publish() {
-    const b = await build();
-    const approval = { phase: 'publication', approved: true, owner: 'pilot', buildHash: hash(Buffer.from(JSON.stringify(b))), images: Object.fromEntries(['app', 'checker'].map(n => [n, `${registry}/${n === 'app' ? 'deskdrop' : n}@${observed.manifest}`])), initialRelease: true, noPriorReleaseConfirmed: true };
-    await put(receipts, 'cloud-publication-approval.json', approval);
-    const bundle = compress(tar({ 'scripts/demo/cloud-release.mjs': await readFile(path.join(root, 'scripts/demo/cloud-release.mjs')), 'app.oci.tar': image.bytes, 'checker.oci.tar': image.bytes, 'publication-input.json': { commit, images: { app: observed, checker: observed } } }));
-    const object = { bucket: 'se-demos-project-deskdrop-artifacts', name: `${commit}/publication/bundle.tar.gz`, generation: '9', sha256: hash(bundle) };
-    await put(receipts, 'publication-source.tar.gz', bundle); await put(receipts, 'publication-source.json', object); await put(receipts, 'publication-source-verified.json', object);
-    const request = await prepareRequest('publish', receipts, root);
-    await put(receipts, 'publish-request.json', request); await put(receipts, 'publish-execution.json', execution(request, 'publish'));
-    return { b, approval, request };
-  }
-  try { await fn({ dir: receipts, root, source, foundation, image, observed, images, run, calls, build, publish }); } finally { await rm(dir, { recursive: true, force: true }); }
-}
 test('OCI bytes bind manifest/config/layers, source and amd64; reject corrupt blobs, paths and descriptors', () => {
   const { bytes, entries } = oci(); assert.ok(verifyOci(bytes, commit).manifest.startsWith('sha256:'));
   for (const bad of [oci('arm64').bytes, oci('amd64', previous).bytes, tar({ ...entries, '../escape': Buffer.from('bad') }), bytes.subarray(0, 100), tar({ ...entries, [`blobs/sha256/${hash(Buffer.from('synthetic layer'))}`]: Buffer.from('tampered') })]) assert.throws(() => verifyOci(bad, commit));
@@ -360,3 +286,166 @@ test('publication readback binds actual gzip bytes and generation before parsing
   await put(dir, 'publication-source-verified.json', { ...object, sha256: hash(raw) });
   await assert.rejects(prepareRequest('publish', dir, root), 'renamed uncompressed tar must fail even with matching hashes');
 }));
+
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+
+test('offline fixture starts empty with separate checkout/source identities and cleans up on success and failure', async () => {
+  let owned, stale;
+  await fixture(async f => {
+    owned = path.dirname(f.dir); stale = f;
+    assert.deepEqual(await readdir(f.dir), []);
+    assert.equal(await realpath(owned), owned);
+    assert.equal((await stat(owned)).mode & 0o777, 0o700);
+    assert.equal((await stat(f.dir)).mode & 0o777, 0o700);
+    assert.match(f.actualCheckoutSha, /^[a-f0-9]{40}$/);
+    assert.notEqual(f.actualCheckoutSha, f.synthetic.commit);
+    assert.equal(f.synthetic.executionId, id);
+    assert.equal(f.synthetic.mode, 'empty');
+    await assert.rejects(prepareRequest('build', f.dir, f.root));
+    assert.equal(f.calls.length, 0);
+  }, { mode: 'empty' });
+  await assert.rejects(stat(owned), { code: 'ENOENT' });
+  await assert.rejects(stale.write('late.json', {}));
+  await assert.rejects(stale.run('git', ['rev-parse', 'HEAD']));
+  assert.throws(() => stale.provider.setGit());
+  await assert.rejects(fixture(async f => { owned = path.dirname(f.dir); throw new Error('independent QA failure'); }, { mode: 'empty' }), /independent QA failure/);
+  await assert.rejects(stat(owned), { code: 'ENOENT' });
+});
+
+test('offline runner rejects unknown commands, altered arguments/options and escaped or linked writes before mutation', async () => fixture(async f => {
+  const { run, dir, write, provider, calls, statePath } = f;
+  const outside = path.join(path.dirname(dir), 'untouched.json');
+  await writeFile(outside, 'original', { mode: 0o600 });
+  for (const [file, args, opts] of [
+    ['curl', ['https://example.test']], ['docker', ['info']], ['gcloud', ['compute', 'instances', 'delete', 'deskdrop-demo']],
+    ['git', ['rev-parse', 'HEAD', '--extra']], ['git', ['rev-parse', 'HEAD'], { timeout: 1 }],
+    ['terraform', ['-chdir=infra/terraform', 'plan', '-input=false', `-var-file=${dir}/foundation.tfvars.json`, `-out=${outside}`], { timeout: 600000 }],
+    ['terraform', ['-chdir=infra/bootstrap', 'apply', '-input=false', `-state=${outside}`, `${dir}/bootstrap.tfplan`], { timeout: 1800000 }],
+    ['gcloud', ['storage', 'cat', `gs://se-demos-project-deskdrop-source/${commit}/../escape#3`], { binary: true, timeout: 120000, maxOutput: 50080796 }],
+    ['gcloud', ['artifacts', 'docker', 'images', 'describe', `${registry.replace('docker.pkg', 'dockerXpkg')}/deskdrop@${f.observed.manifest}`, '--project=se-demos-project', '--format=json'], { timeout: 15000, maxOutput: 16384 }],
+    ['gcloud', ['compute', 'ssh', 'deskdrop-demo', '--project=other', '--zone=us-central1-a', '--tunnel-through-iap', '--command=anything'], { timeout: 600000 }]
+  ]) await assert.rejects(run(file, args, opts));
+  assert.ok(calls.every(c => c.outcome === 'rejected'));
+  for (const name of ['../untouched.json', outside, 'sub/file', '..']) await assert.rejects(write(name, {}));
+  await symlink(outside, path.join(dir, 'linked.json'));
+  await assert.rejects(write('linked.json', { changed: true }));
+  await link(outside, path.join(dir, 'hardlinked.json'));
+  await assert.rejects(write('hardlinked.json', { changed: true }));
+  await symlink(outside, path.join(dir, 'foundation.tfplan'));
+  await assert.rejects(run('terraform', ['-chdir=infra/terraform', 'plan', '-input=false', `-var-file=${dir}/foundation.tfvars.json`, `-out=${dir}/foundation.tfplan`], { timeout: 600000 }));
+  assert.equal(await readFile(outside, 'utf8'), 'original');
+  await assert.rejects(readFile(statePath), { code: 'ENOENT' });
+  assert.throws(() => provider.failNext('unrestricted'));
+  assert.throws(() => provider.putObject(`gs://other/${commit}/source.tar.gz#3`, Buffer.from('x')));
+  assert.throws(() => provider.setImage('other:latest', {}));
+  provider.failNext('git.head', 'one bounded fault');
+  await assert.rejects(run('git', ['rev-parse', 'HEAD', 'extra']));
+  await assert.rejects(run('git', ['rev-parse', 'HEAD']), /one bounded fault/);
+  assert.equal(await run('git', ['rev-parse', 'HEAD']), commit);
+}, { mode: 'empty' }));
+
+test('offline inventory and faults affect actual production readback without inventing publication receipts', async () => fixture(async f => {
+  const { dir, root, publish, run, provider, observed, calls } = f;
+  await publish();
+  provider.failNext('registry.describe', 'synthetic unavailable');
+  await assert.rejects(cloudAction('publication-status', dir, run, root), /synthetic unavailable/);
+  assert.equal(calls.at(-1).outcome, 'fault');
+  assert.equal((await cloudAction('publication-status', dir, run, root)).status, 'confirmed');
+  const ref = `${registry}/checker@${observed.manifest}`;
+  provider.removeImage(ref);
+  await assert.rejects(cloudAction('record-publication', dir, run, root), /Synthetic registry image absent/);
+  await assert.rejects(readFile(path.join(dir, 'publication.json')), { code: 'ENOENT' });
+  provider.setImage(ref, { digest: `sha256:${'e'.repeat(64)}`, fully_qualified_digest: ref });
+  await assert.rejects(cloudAction('record-publication', dir, run, root));
+  provider.setImage(ref, { digest: observed.manifest, fully_qualified_digest: ref });
+  assert.equal((await cloudAction('record-publication', dir, run, root)).images.checker, ref);
+  const a = f.images.app.artifact, key = `gs://${a.bucket}/${a.name}#${a.generation}`;
+  provider.putObject(key, Buffer.from('substitution'));
+  const before = calls.length;
+  assert.equal((await cloudAction('verify', dir, run, root)).phase, 'release');
+  assert.equal(calls.length, before, 'filesystem-only verify does not consult changed provider inventory');
+  await rm(path.join(dir, 'cloud-build.json'));
+  await assert.rejects(cloudAction('record-build', dir, run, root));
+  await assert.rejects(readFile(path.join(dir, 'cloud-build.json')), { code: 'ENOENT' });
+  provider.removeObject(key);
+  await assert.rejects(run('gcloud', ['storage', 'cat', key], { binary: true, timeout: 120000, maxOutput: 2 * 1024 ** 3 }), /Synthetic object absent/);
+}));
+
+test('empty offline lifecycle uses production foundation/build/publication/release APIs and never invokes nested default subprocess runner', async t => {
+  let defaultCalls = 0;
+  const interception = t.mock.method(childProcess, 'spawn', () => { defaultCalls++; throw new Error('Default provider invocation forbidden'); });
+  syncBuiltinESMExports();
+  try {
+    await fixture(async f => {
+      const { dir, root, run, provider, calls, write, baselineContext: ctx } = f;
+      await write('bootstrap.tfvars.json', { project_id: 'se-demos-project', bucket_name: 'se-demos-project-deskdrop-tfstate', state_operator: 'user:offline@example.invalid' });
+      await write('bootstrap-state.json', { statePath: f.statePath });
+      for (const which of ['bootstrap', 'foundation']) {
+        if (which === 'foundation') await write('foundation.tfvars.json', { project_id: 'se-demos-project', region: 'us-central1', zone: 'us-central1-a', environment: 'demo', phase: 'foundation' });
+        const plan = await baseline('plan', [which], run, ctx);
+        assert.equal(plan.status, 'planned');
+        const before = calls.filter(c => c.kind === 'terraform.apply').length;
+        await assert.rejects(baseline('apply', [which], run, ctx));
+        assert.equal(calls.filter(c => c.kind === 'terraform.apply').length, before);
+        await write(`${which}-approval.json`, { planHash: plan.planHash, permissionsChecked: true, stateCustodyConfirmed: true, costApproved: true, owner: 'offline-fixture-only', teardown: 'discard synthetic fixture' });
+        if (which === 'foundation') {
+          provider.failNext('terraform.apply');
+          await assert.rejects(baseline('apply', [which], run, ctx));
+          await assert.rejects(readFile(path.join(dir, 'foundation-applied.json')), { code: 'ENOENT' });
+        }
+        assert.equal((await baseline('apply', [which], run, ctx)).status, 'applied');
+        const receipt = JSON.parse(await readFile(path.join(dir, `${which}-applied.json`)));
+        assert.equal(receipt.planHash, hash(await readFile(path.join(dir, `${which}.tfplan`))));
+      }
+      assert.match(await readFile(f.statePath, 'utf8'), /synthetic state/);
+      await assert.rejects(baseline('deploy', [], run, ctx));
+      await cloudAction('source-archive', dir, run, root);
+      await write('source.json', f.source);
+      await cloudAction('verify-source', dir, run, root);
+      await assert.rejects(prepareRequest('build', dir, root), 'missing simulated worker capability still blocks');
+      await f.seedCapabilities(); await f.stageBuildArtifacts();
+      const request = await prepareRequest('build', dir, root);
+      await write('build-request.json', request); await write('build-execution.json', execution(request));
+      const b = await cloudAction('record-build', dir, run, root);
+      await assert.rejects(cloudAction('bundle', dir, run, root), 'publication needs separate synthetic approval');
+      const refs = Object.fromEntries(['app', 'checker'].map(n => [n, `${registry}/${n === 'app' ? 'deskdrop' : n}@${f.observed.manifest}`]));
+      await write('cloud-publication-approval.json', { phase: 'publication', approved: true, owner: 'offline-fixture-only', buildHash: hash(Buffer.from(JSON.stringify(b))), images: refs, initialRelease: true, noPriorReleaseConfirmed: true });
+      const bundle = await cloudAction('bundle', dir, run, root);
+      const object = { bucket: 'se-demos-project-deskdrop-artifacts', name: `${commit}/publication/bundle.tar.gz`, generation: '9', sha256: bundle.sha256 };
+      await write('publication-source.json', object);
+      const uri = `gs://${object.bucket}/${object.name}#${object.generation}`;
+      provider.putObject(uri, Buffer.from('corrupt gzip'));
+      await assert.rejects(cloudAction('verify-publication-source', dir, run, root));
+      provider.putObject(uri, await readFile(path.join(dir, 'publication-source.tar.gz')));
+      await cloudAction('verify-publication-source', dir, run, root);
+      const publication = await prepareRequest('publish', dir, root);
+      await write('publish-request.json', publication); await write('publish-execution.json', execution(publication, 'publish'));
+      await cloudAction('record-publication', dir, run, root);
+      const release = await cloudAction('release', dir, run, root);
+      await write('release.tfvars.json', { project_id: 'se-demos-project', region: 'us-central1', zone: 'us-central1-a', environment: 'demo', phase: 'release', cloud_release: true, image_digest: refs.app });
+      const plan = await baseline('plan', ['release'], run, ctx);
+      assert.equal(plan.evidenceHash, release.evidenceHash);
+      await assert.rejects(baseline('apply', ['release'], run, ctx));
+      await write('release-approval.json', { planHash: plan.planHash, permissionsChecked: true, stateCustodyConfirmed: true, costApproved: true, owner: 'offline-fixture-only', teardown: 'discard synthetic fixture' });
+      await baseline('apply', ['release'], run, ctx);
+      await assert.rejects(baseline('host-install', [], run, ctx));
+      await write('deploy-approval.json', { commit, appDigest: release.appDigest, checkerDigest: release.checkerDigest, planHash: plan.planHash, secretProvisioned: true, vmReady: true, iapAuthorized: true, costApproved: true, owner: 'offline-fixture-only' });
+      for (const [operation, status] of [['host-install', 'host-installed'], ['deploy', 'deployed']]) {
+        await assert.rejects(baseline(operation, [], run, ctx), /Unsupported offline fixture/);
+        const pending = calls.at(-1);
+        assert.equal(pending.file, 'gcloud');
+        assert.deepEqual(pending.args.slice(0, 6), ['compute', 'ssh', 'deskdrop-demo', '--project=se-demos-project', '--zone=us-central1-a', '--tunnel-through-iap']);
+        assert.match(pending.args[6], /sha256sum -c -/);
+        provider.setRemote(pending.args[6].slice('--command='.length), pending.options.timeout);
+        assert.equal((await baseline(operation, [], run, ctx)).status, status);
+      }
+      assert.equal(JSON.parse(await readFile(path.join(dir, 'deployment.json'))).commit, commit);
+      assert.ok(calls.some(c => c.kind === 'terraform.plan') && calls.some(c => c.kind === 'compute.ssh'));
+      assert.ok(calls.every(c => ['git', 'terraform', 'gcloud'].includes(c.file)));
+      assert.equal(defaultCalls, 0, 'all nested release verification must remain filesystem-only');
+      await assert.rejects(baseline('tunnel'), /Default provider invocation forbidden/);
+      assert.equal(defaultCalls, 1, 'interception detects an actual default-runner attempt without executing it');
+    }, { mode: 'empty' });
+  } finally { interception.mock.restore(); syncBuiltinESMExports(); }
+});

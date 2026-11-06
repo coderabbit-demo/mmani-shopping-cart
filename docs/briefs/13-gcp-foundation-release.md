@@ -59,7 +59,11 @@ Use the current Docker CLI with an explicitly pinned docker-container BuildKit d
 
 <!-- /coderabbit-ai-generated:v1 -->
 
-## Exact approved file scope (21 paths)
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:fba904fca29887f83e5302b5d62999e89b8fdc357a0d3b5071d5acbaa3405b31 -->
+
+## Exact approved file scope (22 paths)
 
 ```text
 ALLOW: docs/briefs/13-gcp-foundation-release.md
@@ -79,6 +83,7 @@ ALLOW: scripts/demo/baseline.mjs
 ALLOW: scripts/demo/cloud-release.mjs
 ALLOW: tests/demo-baseline.test.mjs
 ALLOW: tests/cloud-release.test.mjs
+ALLOW: tests/fixtures/cloud-release.mjs
 ALLOW: docs/demo/gcp-baseline.md
 ALLOW: docs/demo/gcp-costs.md
 ALLOW: docs/demo/gcp-team-handoff.md
@@ -87,7 +92,74 @@ ALLOW: deploy/runtime-versions.json
 
 No app/lib/component source, root manifests/lockfiles, goldens, existing host package pins, provider locks, unrelated workflow or paused bridge edits. Keep the whole main-targeting PR under 30 paths. Report any necessary amendment before editing it; Codex may review routine cloud-only amendments under the delegated bounds.
 
-## Required observable tests and validation
+## Offline native Verify contract (PR28 follow-up)
+
+Approved amendment: https://github.com/coderabbit-demo/mmani-shopping-cart/pull/28#issuecomment-6678461109 . The fixture extraction adds only `tests/fixtures/cloud-release.mjs`; the existing test file and this brief remain allowed. The whole PR is expected to contain 20 changed paths, below 30. No production, Terraform, CI, dependency, storefront or golden change is authorized by this amendment.
+
+Native Verify may independently exercise the exported production APIs with the test-only provider. Importing the fixture registers no tests and executes no commands. `withCloudReleaseFixture(callback, { mode: 'empty' })` supplies a canonical, owned, private, fresh temporary directory and removes only that directory in `finally`, including when the callback fails. It never writes the default production artifact/state directories. `mode: 'seeded'` (the default) preserves existing release-unit setup; it pre-seeds foundation/source/capability evidence and therefore cannot establish foundation lifecycle coverage. Use empty mode for that scenario.
+
+The callback supplies `artifacts`/`dir`, `cloudRoot`/`root`, `baselineContext`, `statePath`, `actualCheckoutSha`, `synthetic`, `write`, `run`, `provider`, and `calls`. Record `actualCheckoutSha` as the implementation under test. `synthetic.commit` and `synthetic.executionId` identify synthetic source/job data only. Synthetic approvals, state, capability observations, OCI contents and registry readbacks are never genuine bootstrap approval, worker capability, publication or GCP evidence.
+
+### Supported invocation and independent observations
+
+Run a Node ESM driver from the repository root, importing the modules below; do not invoke the production command-line entrypoints or omit the injected `run`/context. Verify writes its driver outside the checkout or uses `node --input-type=module`. Node's optional permission mode without `--allow-child-process` can provide an additional subprocess prohibition for that driver; the adapter itself contains no subprocess/socket/network execution.
+
+```js
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { withCloudReleaseFixture } from './tests/fixtures/cloud-release.mjs';
+import { action as baseline } from './scripts/demo/baseline.mjs';
+import { cloudAction, prepareRequest } from './scripts/demo/cloud-release.mjs';
+
+await withCloudReleaseFixture(async f => {
+  const { write, run, baselineContext: ctx, provider, calls } = f;
+  console.log({ testedCheckout: f.actualCheckoutSha, synthetic: f.synthetic });
+  await write('bootstrap-state.json', { statePath: f.statePath });
+  await write('bootstrap.tfvars.json', {
+    project_id: 'se-demos-project',
+    bucket_name: 'se-demos-project-deskdrop-tfstate',
+    state_operator: 'user:offline@example.invalid'
+  });
+  const plan = await baseline('plan', ['bootstrap'], run, ctx);
+  await assert.rejects(baseline('apply', ['bootstrap'], run, ctx));
+  await write('bootstrap-approval.json', {
+    planHash: plan.planHash, permissionsChecked: true,
+    stateCustodyConfirmed: true, costApproved: true,
+    owner: 'offline-fixture-only', teardown: 'discard synthetic fixture'
+  });
+  provider.failNext('terraform.apply', 'independent synthetic denial');
+  await assert.rejects(baseline('apply', ['bootstrap'], run, ctx));
+  const result = await baseline('apply', ['bootstrap'], run, ctx);
+  assert.equal(result.status, 'applied');
+  const receipt = JSON.parse(await readFile(`${f.artifacts}/bootstrap-applied.json`));
+  assert.equal(receipt.planHash, plan.planHash);
+  assert.ok(calls.some(c => c.kind === 'terraform.apply' && c.outcome === 'fault'));
+}, { mode: 'empty' });
+```
+
+Continue in the same callback for foundation: write the fixed foundation tfvars (project/region/zone/environment/phase), call `baseline('plan', ['foundation'], run, ctx)`, independently test denial without approval, then explicitly write a fixture-only approval bound to the returned plan and call apply. Inspect the receipts and actual synthetic saved-plan/input bytes; the provider does not generate application approval or phase verdicts.
+
+For release coverage, use the actual `cloudAction('source-archive', ...)` and `verify-source` with `f.source` as synthetic source metadata. `f.seedCapabilities()` and `f.stageBuildArtifacts()` explicitly stage synthetic worker inputs; first observe rejection without them. Prepare requests with `prepareRequest('build', f.artifacts, f.cloudRoot)`, write the returned request and an explicitly synthetic `execution(request)` result (exported by the fixture), then call `cloudAction('record-build', ...)`. Independently supply the separate synthetic publication approval; call the production `bundle`, `verify-publication-source`, `prepareRequest('publish', ...)`, `record-publication`, and `release` operations. Finally invoke baseline release plan/apply/host-install/deploy with the same context. The legacy `build`/`publish` convenience helpers remain for existing seeded unit cases; independent Verify should choose its own actions, mutations and approvals rather than treating those helpers as a verdict.
+
+### Provider controls and boundaries
+
+- `provider.putObject('gs://.../object#generation', Buffer)` / `removeObject(uri)` control exact synthetic source/artifact object inventory. Register the actual production bundle bytes read from the owned directory before publication-source verification. No upload or external request occurs.
+- `provider.setImage(fullDigestOrCommitTagRef, { digest, fully_qualified_digest })` / `removeImage(ref)` control exact owned-registry readbacks. Test missing checker, wrong digest and recovery independently.
+- `provider.setGit({ head, status, archive })` changes synthetic Git responses; `archive` is a Buffer. Test dirty/different source identities before restoring them.
+- `provider.failNext(kind, message)` injects one fault after supported-command validation. Kinds: `git.head`, `git.status`, `git.archive`, `storage.cat`, `registry.describe`, `terraform.plan`, `terraform.apply`, `compute.scp`, `compute.ssh`.
+- `provider.setRemote(commandText, timeout, output)` registers an exact synthetic SSH response for 600000/1800000ms operations. SSH rejects until explicitly registered. Inspect its captured fixed project/zone/VM/IAP arguments and expected hash-bound command text before registering a response; never auto-approve arbitrary captured commands. The text is never executed. SCP supports only the existing fixed bootstrap/compose transfer arguments.
+- `write(filename, value)` supports a single receipt filename inside the owned artifact directory. Canonical custody rejects traversal, symlinks and hardlinks. Direct filesystem mutations chosen by Verify must likewise stay inside its owned fixture tree.
+- `calls` records attempted file/args/options plus `kind` (when supported) and `outcome` (`returned`, `fault`, `rejected`). Unknown programs, arguments, options, escaped paths and unregistered remote commands fail before simulated mutation. No real command fallback exists. Inventory controls do not mirror production receipt/approval/hash/phase validation.
+
+Observe valid ordering and rejected tampering of source/generation, OCI, principal, approval, plan/input/backend/lock/applied receipts, plus partial/unknown publication and cleanup. Examine production return values, generated receipts and captured calls directly; unit-test output is supplemental evidence. Snapshot relevant evidence within the callback before automatic cleanup. Do not record storage or credential dumps.
+
+The nested baseline release verifier currently calls `cloudAction('verify', ...)` with its default runner, but that action performs filesystem-only validation. The regression intercepts the real default subprocess boundary, proves interception works, and requires zero default-runner calls throughout the injected release lifecycle. Production changes would need a separate amendment if this ceases to hold. The distinct owned-builder shell test still executes the actual POSIX script against its disposable fake Docker executable and retains every cleanup assertion.
+
+An offline Verify pass establishes exported orchestration/API behavior only. Actual Terraform resource/private-network assertions remain their own CI category. Real worker/OCI/native publication compatibility, IAP, private-cloud isolation, reboot persistence and intake acceptance remain separately authorized live categories. No real cloud credentials or production approvals are required or permitted for this offline plan, and a local pass cannot replace those pending requirements.
+
+
+
+<!-- /coderabbit-ai-generated:v1 -->## Required observable tests and validation
 
 - Foundation can be planned without a release, but cannot publish, install or deploy. Existing valid baseline releases continue to work; fake/zero/null release identity and wrong-phase receipts are rejected before mutation.
 - Reject tampered source archives/generations, config/toolchain/OCI blobs, plan/input/backend/lock/applied receipts, source labels, identities, registry or architecture. Preserve all existing assertions and meaningful regression RED/GREEN for changes to existing behavior; do not manufacture RED by importing absent new modules.
