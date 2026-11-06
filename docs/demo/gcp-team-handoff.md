@@ -355,12 +355,29 @@ These are blockers to establish through existing authorized administration, not 
 
 
 <!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:362569d38706a45518c1b57b528508d49b237504f064b80d2dfb37b266a17d22 -->
+
 
 ## Broker availability during supervised work
 
 The public status/trigger/recover protocol is unchanged. The supervisor holds a separate protected `worker.lock` while invoking exact-owned controllers; broker and supervisor hold `execution.lock` only for short journal/admission transactions. Existing management exclusion and supervisor lease remain. An active inspection retains the prior readiness proof only within its existing five-second freshness bound; failed/unsafe inspection closes admission. A concurrent admitted lease is never replaced by an inspection result.
 
 `recover` returning `joined` means the request has been durably saved before the response. A transient journal-lock conflict returns `busy`, which does not acknowledge recovery; read status and retry the same recovery request. The broker only enqueues. The active controller reads the durable request during Alert observation; supervised recovery rereads the lease before updating phase and preserves the flag. Native Verify should hold a controlled worker open while independently issuing status/admission/recovery, inspect the saved lease before releasing it, and verify one admission, no lost recovery flag and final owned-child cleanup. The Linux kernel-peer workflow must actually run on Linux; its one non-Linux applicability skip is not peer-authentication evidence. Other operator tests remain enabled on all supported test hosts.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Bounded inspection cadence and monitor maintenance
+
+The recovery service polls durable admission/recovery state every one second. Successful idle full inspections are scheduled30seconds after completion. Unsuccessful inspections or uncertain recovery use15,30,then60second waits, capped at60; the next attempt still performs exact-app restoration regardless of provider confirmation. A newly admitted run or first durable recoverRequested transition wakes a scheduled wait at the next poll. Repeated joined requests do not reset backoff. Existing active workers finish within their bounds; active Alert observation reads the recovery flag between its bounded provider polls. Workers never overlap. Startup immediately reconciles old reservations before fault admission.
+
+Admission now requires a successful full inspection cached for at most120seconds, exact installed-source validation and independently read monitoring health matching owner/source, healthy=true and age at most65seconds. This replaces the earlier five-second-only admission proof; the old five-second readiness helper remains an internal just-completed-cycle check. Failure, corruption, boot/source mismatch, clock rollback, expired proof or stale/unhealthy monitoring closes admission. Healthy slow inspections can reuse the still-valid cached proof; expiry during an unusually long inspection closes admission until successful completion. Enqueueing does not authorize a fault: the trigger worker revalidates source, target, health, routing and suppression through its full existing preflight before stopping the app. No cache refresh is synthesized from polling. The hard cutoff and three-cycle budget remain independent requirements.
+
+For separately authorized monitor management, first stop only the public broker (`systemctl stop deskdrop-trigger.service`) to close new admission. Keep `deskdrop-trigger-recovery.service` enabled and running. If a lease is active/uncertain or protection/app/source/health cannot be independently confirmed, leave recovery running and defer maintenance. Never stop the sole recovery owner to obtain a lock. Once no active lease and full protection/healthy exact app are proven, coordinate a protected maintainer session: acquire the existing trigger-maintenance.lock, reread the durable lease under execution.lock, and abort/release if active or uncertain. Stop the recurring monitoring service to release its lifecycle.lock, then perform the existing guarded management workflow under maintenance then lifecycle exclusion. Do not nest an external lifecycle flock around a wrapper that reacquires it; the approved wrapper takes both gates itself. Release any inspection-session gates before invoking it; broker remains stopped and the wrapper must win both locks before doing work. Independent recovery stays enabled and may retry rather than overlap. Preserve all journals and surviving installation locks; no blind removal or PID-based reclaim is permitted. If state degrades, release maintainer gates and restore monitoring so recovery can proceed. Restart recurring monitoring, verify protection/source/health and no active reservation, then restart the broker only within the approved activation window. Later activation still requires reviewed renewal.
+
+Native Verify should exercise Schedule.step with an injected clock and real disposable custody, hold a controlled inspection in a separate process, admit once while proof is valid, persist recovery before releasing a held worker, and inspect flags/calls/cleanup. Observe repeated failed recovery attempts separated by bounded waits, plus source/health/expiry refusal. These are controlled offline observations; real systemd/provider maintenance remains a separate live gate.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

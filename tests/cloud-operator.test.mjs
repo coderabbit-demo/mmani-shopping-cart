@@ -320,3 +320,115 @@ print('parent installer blocks provider actions without blocking restoration wor
 `;
  const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/restoration worker/);
 });
+
+test('supervisor cadence uses real custody and processes with prompt durable wake and bounded proof/backoff',()=>{
+ const code=String.raw`
+import importlib.machinery,importlib.util,pathlib,tempfile,os,shutil,multiprocessing,contextlib,json
+loader=importlib.machinery.SourceFileLoader('operator_module','deploy/deskdrop-operator');spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
+multiprocessing.set_start_method('fork')
+root=pathlib.Path(tempfile.mkdtemp(dir=pathlib.Path.home()/'.cache'));root.chmod(0o700);c=m.Custody(root,os.getuid())
+clock=[1000];m.time.time=lambda:clock[0]
+config={'owner':'synthetic-owner','source':'a'*40};m.installed=lambda:config
+health={'healthy':True,'owner':config['owner'],'source':config['source'],'updated':1000000};m.protected_read=lambda p:json.dumps(health)
+h=m.Host(c,config,'boot');calls=[]
+h.invoke=lambda mode:(calls.append(mode) or {'status':'ready'})
+s=m.Schedule(h,lambda:clock[0]);guard=contextlib.nullcontext
+try:
+ assert s.step(guard);assert calls==['inspect']
+ for i in range(1,30):
+  clock[0]=1000+i;assert not s.step(guard)
+ assert calls==['inspect'] and h.admission_ready()
+ clock[0]=1030;assert s.step(guard);assert calls==['inspect','inspect']
+ # Slow healthy inspection runs in an actual owned process while admission stays usable.
+ entered=multiprocessing.Event();release=multiprocessing.Event();seen=multiprocessing.Event()
+ def worker():
+  worker=m.Host(c,config,'boot')
+  def invoke(mode):
+   assert mode=='inspect';entered.set();assert release.wait(4);return {'status':'ready'}
+  worker.invoke=invoke;worker.cycle(True)
+ p=multiprocessing.Process(target=worker);p.start()
+ try:
+  assert entered.wait(3);clock[0]=1040;health['updated']=1040000
+  assert not h.ready() and h.admission_ready()
+  broker=m.Broker(c,h.admission_ready,'boot',lambda:clock[0],authenticate=lambda c,u:'synthetic',reserve=h.reserve_cycle)
+  admitted=broker.request(b'{"action":"trigger"}',os.getuid());assert admitted['status']=='accepted'
+  assert broker.request(b'{"action":"trigger"}',os.getuid())['status']=='busy'
+  release.set();p.join(3);assert p.exitcode==0
+  assert m.lease(c)['run']==admitted['run'] and m.lease(c)['phase']=='admitted'
+ finally:
+  release.set()
+  if p.is_alive():p.kill()
+  p.join(3)
+ # Admission wakes the scheduler before its next idle deadline, and an active
+ # worker observes the recovery flag written by a separate caller.
+ entered.clear();release.clear()
+ def running():
+  def invoke(mode):
+   calls.append(mode)
+   if mode=='trigger':
+    entered.set();assert release.wait(4);assert m.lease(c)['recoverRequested'];seen.set()
+   return {'status':'reconciliation-required'}
+  h.invoke=invoke
+  assert s.step(guard)
+ p=multiprocessing.Process(target=running);p.start()
+ try:
+  assert entered.wait(3)
+  assert broker.request(b'{"action":"recover"}',os.getuid())['status']=='joined'
+  assert m.lease(c)['recoverRequested']
+  release.set();p.join(3);assert p.exitcode==0 and seen.is_set()
+  assert m.lease(c)['phase']=='uncertain' and m.lease(c)['recoverRequested']
+ finally:
+  release.set()
+  if p.is_alive():p.kill()
+  p.join(3)
+ # Repeated uncertainty still attempts restoration, but never every second.
+ calls.clear();h.invoke=lambda mode:(calls.append(mode) or {'status':'reconciliation-required'})
+ assert s.step(guard);assert calls==['recover']
+ for delay in [15,30,60,60]:
+  prior=len(calls);deadline=s.next
+  clock[0]=deadline-1;assert not s.step(guard);assert len(calls)==prior
+  clock[0]=deadline;assert s.step(guard);assert len(calls)==prior+1 and calls[-1]=='recover'
+  assert s.next-clock[0]<=60
+ # A first explicit recovery request interrupts backoff; repeated joined calls do not storm.
+ r=m.lease(c);r['recoverRequested']=False;c.save(r);s.observed=(r['run'],False)
+ assert broker.request(b'{"action":"recover"}',os.getuid())['status']=='joined'
+ assert s.step(guard);prior=len(calls)
+ assert broker.request(b'{"action":"recover"}',os.getuid())['status']=='joined'
+ assert not s.step(guard) and len(calls)==prior
+ r['phase']='complete';c.save(r);h.mark(True);health['updated']=int(clock[0]*1000)
+ assert h.admission_ready()
+ clock[0]+=121;health['updated']=int(clock[0]*1000);assert not h.admission_ready()
+ h.mark(True);health['updated']-=65001;assert not h.admission_ready()
+ health['updated']=int(clock[0]*1000);health['healthy']=False;assert not h.admission_ready()
+ health['healthy']=True;m.installed=lambda:{};assert not h.admission_ready()
+ assert c.read('runs.json')['reserved']==1
+ print('cadence/slow-proof/process/wake/backoff/restoration/stale/source passed')
+finally:shutil.rmtree(root)
+`;
+ const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:15000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/passed/);
+});
+
+test('actual recovery service polls without launching an idle controller storm',()=>{
+ const code=String.raw`import sys,subprocess,pathlib,tempfile,os,shutil,contextlib,time
+clock=[1000];time.time=lambda:clock[0];time.monotonic=lambda:clock[0]
+g={'__name__':'fixture'}
+source=pathlib.Path('deploy/deskdrop-operator').read_text()
+exec(compile(source,'operator','exec'),g)
+root=pathlib.Path(tempfile.mkdtemp(dir=pathlib.Path.home()/'.cache'));root.chmod(0o700)
+c=g['Custody'](root,os.getuid());calls=[]
+g['Custody']=lambda:c;g['installed']=lambda:{};g['os'].getuid=lambda:0;g['management_lock']=contextlib.nullcontext;g['signal'].signal=lambda *a:None
+g['Host'].invoke=lambda self,mode:(calls.append(mode) or {'status':'ready'})
+class Done(BaseException):pass
+def sleep(seconds):
+ clock[0]+=seconds
+ if clock[0]>=1010:raise Done()
+g['time'].sleep=sleep
+try:
+ try:g['service_main']('recovery')
+ except Done:pass
+ print({'inspections_in_ten_idle_seconds':len(calls),'calls':calls})
+ assert calls==['inspect'], 'idle secret/controller storm'
+finally:shutil.rmtree(root)
+`;
+ const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);
+});

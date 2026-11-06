@@ -403,6 +403,19 @@ class Host:
         r = self.custody.read('ready.json')
         return r == {'boot': self.boot, 'ready': True, 'updated': r.get('updated')} and type(r['updated']) is int and 0 <= time.time() - r['updated'] <= 5
 
+    def admission_ready(self):
+        # Cached full inspection is only admission to a freshly revalidated worker.
+        try:
+            count = self.custody.read('runs.json')
+        except FileNotFoundError:
+            count = {'reserved': 0}
+        if set(count) != {'reserved'} or type(count['reserved']) is not int or not 0 <= count['reserved'] < 3: return False
+        r = self.custody.read('ready.json')
+        if r != {'boot': self.boot, 'ready': True, 'updated': r.get('updated')} or type(r['updated']) is not int or not 0 <= time.time() - r['updated'] <= 120: return False
+        if installed() != self.config: return False
+        health = json.loads(protected_read('/var/lib/deskdrop/monitoring/health.json'))
+        return health.get('healthy') is True and health.get('owner') == self.config['owner'] and health.get('source') == self.config['source'] and type(health.get('updated')) is int and 0 <= time.time() * 1000 - health['updated'] <= 65000
+
     def mark(self, ready):
         self.custody.save({'boot': self.boot, 'ready': ready, 'updated': int(time.time())}, 'ready.json')
 
@@ -445,6 +458,40 @@ class Host:
                 self.mark(result.get('status') == 'ready' and (not current or current['phase'] == 'complete'))
 
 
+class Schedule:
+    def __init__(self, host, clock=time.monotonic):
+        self.host, self.clock = host, clock
+        self.next = 0
+        self.failures = 0
+        self.observed = None
+        self.first = True
+
+    def step(self, guard):
+        try: record = lease(self.host.custody)
+        except FileNotFoundError: record = None
+        token = (record['run'], record['recoverRequested']) if record and record['phase'] != 'complete' else None
+        wake = token is not None and token != self.observed
+        if not self.first and not wake and self.clock() < self.next: return False
+        self.observed = token
+        try:
+            with guard(): self.host.cycle(allow_trigger=not self.first)
+            try: after = lease(self.host.custody)
+            except FileNotFoundError: after = None
+            failed = bool(after and after['phase'] != 'complete') or not self.host.ready()
+        except Exception:
+            self.host.mark(False)
+            failed = True
+        self.first = False
+        if failed:
+            self.failures = min(self.failures + 1, 3)
+            delay = min(60, 15 * 2 ** (self.failures - 1))
+        else:
+            self.failures = 0
+            delay = 30
+        self.next = self.clock() + delay
+        return True
+
+
 @contextlib.contextmanager
 def management_lock(directory='/var/lib/deskdrop/monitoring', uid=0):
     Custody(directory, uid).safe()
@@ -483,9 +530,9 @@ def service_main(mode):
             custody.save({'rule': evidence['rule'], 'recipient': evidence['recipient']}, 'route.json')
         return
     if mode == 'broker':
-        Broker(custody, host.ready, boot, authenticate=live_authorize, reserve=host.reserve_cycle).serve(); return
+        Broker(custody, host.admission_ready, boot, authenticate=live_authorize, reserve=host.reserve_cycle).serve(); return
     with custody.locked('supervisor.lock'):
-        first = True
+        schedule = Schedule(host)
         stopping = False
         def stop(*args):
             nonlocal stopping
@@ -496,11 +543,10 @@ def service_main(mode):
         while not stopping:
             try:
                 # Exclude monitor management while recurring supervision keeps its lifecycle lease.
-                with management_lock(): host.cycle(allow_trigger=not first)
+                schedule.step(management_lock)
             except Exception:
                 try: host.mark(False)
                 except Exception: pass
-            first = False
             if not stopping:
                 try: time.sleep(1)
                 except InterruptedError: pass

@@ -219,6 +219,10 @@ No Mac test run is claimed here. For the six-test operator file, the expected no
 
 <!-- coderabbit-ai-generated-section:v1:3002ecf3910c30be9e338c2089d9b9fc90b82c1cbfd51a9bfd0dc86be618b8bf -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:741ac9af3fc4a3cee4c425525bf137816639373e74aa5963bd2723f31301f626 -->
+
 
 ## Monitoring correction25ed integration
 
@@ -230,6 +234,26 @@ The appended baseline-test conflict retained both parent policy/lock tests and t
 <!-- /coderabbit-ai-generated:v1 -->
 
 Fresh Linux validation: five-file focused node --test run exited0 with110 passed, zero skipped/failed; npm test exited0 with618 passed, zero skipped/failed. After strengthening only the merged injected lock-order assertion, the targeted host-management abandoned-lock test exited0 with1 passed. The full run tested the prior membership assertion; the independent targeted run covers its stricter final replacement. Original parent/trigger assertions remain. bash -n deploy/bootstrap.sh, operator Python AST parse, git diff --check and scope-gate against25ed7f7 passed. The standalone exported-API offline workflow exited0 with five observations and142 calls. Earlier typecheck,29goldens,28shopper browser and17Terraform mock passes are reused for unchanged app/TS/infra/test/config/lock/runtime inputs. No native Verify or live firewall/provider/reboot claim is made; real Linux peer/socket tests ran without a platform skip. Mac's single Linux-only applicability skip remains for its own runner to report. Root publication and final native/live gates remain pending.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:a583dbae9840e26ee13e07d44cd386cf5fabbe5ec8547281927a6bc6fe800a83 -->
+
+
+## PR30 cadence and walkthrough correction
+
+Root validated one Major cadence finding and one Minor walkthrough finding onbddda6f. Actual baseline service_main with controlled time/commands and disposable custody performed10 inspections in10 idle seconds (assertion RED, exit1); the same driver on corrected source performed1 (GREEN, exit0). The service schedules idle inspection30seconds after success and unsuccessful recovery15/30/60seconds after completion, bounded at60. Durable admitted runs or first recovery requests wake scheduled waits on one-second polling; existing active workers retain their bounds and read recovery requests during Alert observation. Independent recovery remains enabled.
+
+The documented admission strategy uses a120second maximum full-inspection cache plus current exact-source validation and owner/source-matched healthy monitoring evidence no older than65seconds. It never renews proof merely by polling and always runs the existing full trigger preflight before faulting. Slow healthy inspection, expiry, unhealthy/source mismatch, active-worker durable flag and bounded retry behavior are observed through real owned processes/custody with controlled clocks/adapters. These are offline observations, not VM/provider or native Verify acceptance.
+
+The walkthrough now correctly describes joined only for an active reservation and no-active-run after completion; status has installation/admission/phase/run only. Runtime/source/health/suppression proof requires independent protected/provider readbacks. The protected maintenance procedure closes broker admission, requires a complete lease and healthy/protected exact app, coordinates maintenance/lifecycle gates, and keeps independent recovery enabled. Active/uncertain state defers maintenance. The cutoff, permissions, live gates and prior assertions remain.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+Fresh Linux checks: node --test tests/cloud-operator.test.mjs tests/cloud-trigger.test.mjs tests/demo-baseline.test.mjs exited0 with82 passed; npm test exited0 with620 passed, zero failures/skips. The real Linux peer test remains enabled. New tests include actual service-loop wiring, separate slow-inspection/active-worker processes, durable flag preservation, no overlapping admissions, retry attempts/backoff, cached-proof expiry/current-health/source denial and joined child cleanup. Python syntax and git diff --check passed. The independent JS fixture workflow passed five observations/142 calls; no public JS fixture contract changed. Prior typecheck/29goldens/28shopper browser/17Terraform mocks reused for unchanged relevant source/test/config/lock/runtime inputs. Mac counts are not claimed; its Linux-only applicability skip is unchanged. Root's earlier firewall timeout under concurrent PDF rendering is an external result; no runtime safety bounds or assertions were changed to address it. Native QA must retarget the final source. Provider/live/publication gates remain pending.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
