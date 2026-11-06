@@ -269,19 +269,33 @@ test('nested production operation deadline cannot extend its parent or mutate la
   }, 10));
   await new Promise(resolve => setTimeout(resolve, 45)); assert.equal(lateWrite, false);
 });
-test('observer resolves pre-accept exit and IPC loss without killing a continuing supervisor', async () => {
+test('observer resolves pre-accept exit and IPC loss without killing a continuing supervisor', {timeout: 3000}, async t => {
   const { spawn } = await import('node:child_process');
   const { observeSupervisor } = await import('../scripts/demo/trigger-alert.mjs');
   const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'ob-')));
-  try {
-    const early = spawn(process.execPath, ['-e', 'process.exit(9)'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
-    assert.ok(['exited', 'connection-lost'].includes((await observeSupervisor(early, async () => ({ unknown: true }), 1000)).supervisor));
-    const file = path.join(dir, 'recovered');
-    const child = spawn(process.execPath, ['-e', `process.send({status:'accepted'});process.disconnect();setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(file)},'protected'),50);`], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
-    const done = new Promise(resolve => child.once('exit', resolve));
-    assert.equal((await observeSupervisor(child, async () => ({ unknown: true }), 1000)).supervisor, 'connection-lost');
-    await done; assert.equal(await readFile(file, 'utf8'), 'protected');
-  } finally { await rm(dir, {recursive: true}); }
+  const children = [];
+  t.after(async () => {
+    try {
+      for (const child of children) {
+        if (child.pid && child.exitCode === null && child.signalCode === null) {
+          child.ref();
+          const exited = new Promise(resolve => child.once('exit', resolve));
+          child.kill('SIGKILL');
+          await exited;
+        }
+      }
+    } finally { await rm(dir, {recursive: true}); }
+  });
+  const early = spawn(process.execPath, ['-e', 'process.exit(9)'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  children.push(early);
+  assert.ok(['exited', 'connection-lost'].includes((await observeSupervisor(early, async () => ({ unknown: true }), 1000)).supervisor));
+  const file = path.join(dir, 'recovered');
+  const child = spawn(process.execPath, ['-e', `process.send({status:'accepted'});process.disconnect();setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(file)},'protected'),50);`], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  children.push(child);
+  const done = new Promise(resolve => child.once('exit', resolve));
+  assert.equal((await observeSupervisor(child, async () => ({ unknown: true }), 1000)).supervisor, 'connection-lost');
+  child.ref();
+  await done; assert.equal(await readFile(file, 'utf8'), 'protected');
 });
 
 test('recovery retains fault identity while recording the current tooling source separately', async () => {
