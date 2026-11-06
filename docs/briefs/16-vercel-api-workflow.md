@@ -42,7 +42,15 @@ The first real protected200 must join to searchable logs in Personal US3 before 
 
 ## Isolated transport implementation contract
 
-The isolated approval supersedes the historical Marketplace/drain and no-network instructions: runtime uses only dedicated project-sensitive WORKFLOW_DD_API_KEY and fixed US3 HTTPS. No credential value or provider operation is part of source implementation. The privately created key is not enrolled; Remote Config/PAR defaults await separate narrowing approval.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:60d1004d6d34bf6934e3649323d03fc290de548943dd3199a45433a4b69d3217 -->
+
+The isolated approval supersedes the historical Marketplace/drain and no-network instructions: runtime uses only dedicated project-sensitive WORKFLOW_DD_API_KEY and fixed US3 HTTPS. Require a dedicated demo-only key with approved restricted capabilities, enrolled privately as sensitive Preview-only project configuration. No credential value or provider operation is part of source implementation.
+
+Provider status, November 6, 2026 (harness-reported): the user approved disabling Remote Config/PAR on Personal US3 key `6b285b10-cca4-462c-95c7-7a2ac2299d14`; both are disabled and independently UI-verified. The key was privately enrolled as sensitive WORKFLOW_DD_API_KEY, Preview only, variable ID `2SDRoqAfxQyEGiAZ`. No value was supplied to source authoring. There are no application-actor or bypass credentials, deployments or live API requests. Automatic approval review blocked the live probe pending explicit live authorization; a concrete authorization package is being prepared. Protected-200 and indexed-intake acceptance remains incomplete.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Health retains auth, input/source validation and sanitized stdout. It awaits one bounded submission before source-matching 200. Expected configuration or transport failure returns generic 503; genuine unexpected application exceptions retain generic 500. Denied/invalid requests never send and this task emits no quote_failed. Only intake 200/202 acknowledges submission, not indexing. The two-second whole-attempt deadline includes response cleanup even if fetch ignores abort. Unknown event/source attributes and fixed service/site overrides fail closed.
 

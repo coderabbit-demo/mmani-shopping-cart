@@ -421,8 +421,10 @@ test('health timeout remains 503 when transport ignores abort and legacy keys ca
   assert.equal(calls, 1);
   assert.equal(logs.length, 1);
   assert.doesNotMatch(logs[0], /quote_failed|health_failed/);
+  let legacyCalls = 0;
   const missing = createHandler({ environment: () => ({ ...env, WORKFLOW_DD_API_KEY: undefined,
     DD_API_KEY: 'c'.repeat(32), DD_APP_KEY: 'd'.repeat(32) }), write: () => {},
-    fetch: () => { assert.fail('legacy key must never authorize send'); } });
+    fetch: () => { legacyCalls++; assert.fail('legacy key must never authorize send'); } });
   await error(await missing(request()), 503);
+  assert.equal(legacyCalls, 0);
 });

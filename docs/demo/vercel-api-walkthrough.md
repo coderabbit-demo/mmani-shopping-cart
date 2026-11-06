@@ -6,7 +6,17 @@
 
 Only `coderabbitai/coderabbit-automation-demo` uses this stateless Node 24 API. The approved demo-only Personal US3 organization receives one direct HTTPS log submission per authorized, valid health request. The production Vercel Datadog installation serving coderabbit-bot remains untouched. No Marketplace attachment, drain, proxy, generic DD_API_KEY, application key or management credential is used by the function.
 
-The function reads only project-sensitive WORKFLOW_DD_API_KEY for ingestion. The privately created dedicated key has not been enrolled or transferred to this source task. Its Remote Config/PAR defaults await separate narrowing approval. Do not put any key value in source, local environment files, exported Postman environments or screenshots. Provider setup and actual requests belong to the separately authorized harness workflow.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:30a00c9b5a77400c7ed11ef889431066df7b8c870a13ff2b664a288ef875e74b -->
+
+The function reads only project-sensitive WORKFLOW_DD_API_KEY for ingestion. Require a dedicated demo-only key with approved restricted capabilities and private sensitive Preview-only enrollment. Do not put any key value in source, local environment files, exported Postman environments or screenshots. Provider administration and live requests require their own authorization.
+
+## Provider status — November 6, 2026
+
+The harness reports user approval and independent UI verification that Remote Config and PAR are disabled on dedicated Personal US3 key `6b285b10-cca4-462c-95c7-7a2ac2299d14`. It was privately enrolled as Vercel sensitive WORKFLOW_DD_API_KEY, Preview only, variable ID `2SDRoqAfxQyEGiAZ`. No key value was supplied to this source task. No application-actor or bypass credentials, deployments or live API requests exist. Automatic approval review blocked the live probe pending explicit live authorization; a concrete authorization package is being prepared. These reported provider facts do not satisfy the protected-200/indexed-intake gate.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Health 200 means the authenticated request had valid server-derived Preview source identity and intake acknowledged its bounded log with HTTP 200 or 202. It does not prove indexing, a deployment readback, a distributed rate limit, cloud isolation or complete live acceptance. Source-only tests use synthetic credentials and injected fetch; they make no Datadog/Vercel call.
 
