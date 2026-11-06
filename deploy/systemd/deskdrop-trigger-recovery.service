@@ -1,0 +1,14 @@
+[Unit]
+Description=DeskDrop independent durable trigger recovery
+Requires=docker.service deskdrop-firewall.service
+After=docker.service deskdrop-firewall.service deskdrop.service deskdrop-monitoring.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I -B /opt/deskdrop/trigger/deskdrop-operator --recovery
+Restart=always
+RestartSec=3
+TimeoutStopSec=400
+KillMode=mixed
+UMask=0077
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:770f33584b3eab997e224cb2e9cd5718e68327bf89fd96acd910ebada8b82d68 -->
+
 # DeskDrop incident demo: Do / Say / See
 
 Use this as the presentation script, one stage at a time. **Do** contains the exact operator action or link; **Say** is the spoken talk track; **See** is the audience-visible evidence. Slow down at **WOW**, point out **SECURITY** when it matters, and follow the **DON'T DO THIS** callouts. Allow 12–15 minutes for the local incident story, plus questions and agent latency.
@@ -91,3 +95,20 @@ The recorded PR #23 rehearsal demonstrates this flow with same-thread clarificat
 - Runtime not healthy: use the explicitly labelled TEST/recorded route rather than opening a real-fault notification window.
 
 Retain episode links and existing artifacts. Reset synthetic shopper state with a fresh context or `/demo`; keep credentials, ownership journals and previous receipts. Leave any fix PR unmerged unless separately authorized.
+
+## GCP operator walkthrough — pending separately approved live acceptance
+
+This is the stage15 command handoff, not evidence that cloud deployment, intake or native actions succeeded. Use the [operator setup](gcp-team-handoff.md#stage-15-preliminary-operator-installation-and-handoff) only after final source and live gates.
+
+| Do | Say | See |
+| --- | --- | --- |
+| Record actual source/image/plan and installed bundle receipts; verify a fresh synthetic $97 baseline with Terracotta Arc lamp and Natural oak organizer, receipt and both history items. | “This identifies the source and environment under test.” | Real source/runtime receipts and observed checkout; sandbox observations are labelled sandbox. |
+| Run `/usr/local/bin/deskdrop-operator status` over existing private access. | “The root service owns admission and recovery.” | Named installation and current durable run/phase; closed or uncertain state blocks a new fault. |
+| After explicit live approval and within the three-cycle package, run `/usr/local/bin/deskdrop-operator trigger` once. | “Accepted means durable admission, not a proved Alert.” | Exact run, a fresh checkout-only Alert within180seconds, effective protection of the other two monitors and independent recovery. No live trigger has been run by this coding task. |
+| Run `/usr/local/bin/deskdrop-operator recover` and read status, even after reconnecting. | “Recovery survives client death and always attempts the owned app, even if provider confirmation fails.” | One joined recovery, exact app/source health and effective suppression; uncertainty remains visible until reconciliation. |
+| Independently select native Jira **or** native Debug when separately authorized. | “Jira records this episode. Debug investigates actual source without a Jira prerequisite.” | At most one synthetic Bug and one isolated unmerged native fix PR total. Intentional app-stop alone is not a product defect or justification for a fix PR. |
+
+Capture only actual high-resolution status, recovery and native-action observations, with timestamp, source and matching event/receipt provenance in the evidence document. The three reserved cloud screenshot slots remain absent until those observations exist; no placeholders or sandbox substitutions. Videos are not required. Existing private infrastructure/reboot/telemetry/publication scenarios, PR23's unmerged fixture and the paused bridge remain unchanged.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

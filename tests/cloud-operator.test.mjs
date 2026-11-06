@@ -120,3 +120,75 @@ test('public helper rejects service modes, shell and extra arguments', () => {
     assert.equal(result.stdout, '');
   }
 });
+
+test('root supervisor modes authenticate OS Login, fence stale worker and always invoke recovery after lost worker',()=>{
+ const code=String.raw`
+import importlib.machinery,importlib.util,pathlib,tempfile,os,json,shutil
+loader=importlib.machinery.SourceFileLoader('operator_module','deploy/deskdrop-operator');spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
+username='synthetic'; uid=1234
+profile={'loginProfiles':[{'name':'mahesh@coderabbit.ai','posixAccounts':[{'username':username,'uid':str(uid),'operatingSystemType':'LINUX'}]}]}
+assert m.oslogin_mapping(username,uid,lambda p:profile)=='mahesh@coderabbit.ai'
+for value in [{'loginProfiles':[]},{'loginProfiles':[{'name':'wrong','posixAccounts':[]}]},{'loginProfiles':[{'name':'mahesh@coderabbit.ai','posixAccounts':[{'username':username,'uid':'999'}]}]}]:
+ try:m.oslogin_mapping(username,uid,lambda p:value);raise AssertionError('mapping accepted')
+ except PermissionError:pass
+root=pathlib.Path(tempfile.mkdtemp(prefix='trigger-host-',dir=pathlib.Path.home()/'.cache'));root.chmod(0o700)
+c=m.Custody(root,os.getuid());calls=[]
+try:
+ h=m.Host(c,{},'new-boot');h.invoke=lambda mode:(calls.append(mode) or {'status':'ready'})
+ r={'schema':1,'installation':m.INSTALLATION,'run':'11111111-1111-4111-8111-111111111111','actor':'synthetic','boot':'old-boot','started':1000,'deadline':1360,'phase':'admitted','recoverRequested':False}
+ c.save(r);h.cycle(allow_trigger=True)
+ assert calls==['recover'],calls
+ assert m.lease(c)['phase']=='uncertain';assert c.read('ready.json')['ready'] is False
+ calls.clear()
+ def invoke(mode):
+  calls.append(mode)
+  return {'status':'restored','run':r['run']} if mode=='recover' else {'status':'ready'}
+ h.invoke=invoke;h.cycle();assert calls==['recover','inspect'];assert m.lease(c)['phase']=='complete';assert h.ready()
+ c.save({'boot':'old-boot','ready':True,'updated':int(m.time.time())},'ready.json');assert not h.ready()
+ for i in range(3):h.reserve_cycle()
+ try:h.reserve_cycle();raise AssertionError('fourth admission')
+ except ValueError:pass
+ assert c.read('runs.json')['reserved']==3
+ # Unknown worker outcome is independently followed by recovery, even with caller absent.
+ m.time.time=lambda:1000
+ r.update(boot='new-boot',phase='admitted');c.save(r);calls.clear()
+ def killed(mode):
+  calls.append(mode)
+  if mode=='trigger':raise TimeoutError()
+  return {'status':'restored','run':r['run']} if mode=='recover' else {'status':'ready'}
+ h.invoke=killed;h.cycle(allow_trigger=True);assert calls==['trigger','recover','inspect'];assert m.lease(c)['phase']=='complete'
+ print('OS Login/boot/cycle limit/killed worker recovery passed')
+finally:shutil.rmtree(root)
+`;
+ const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/passed/);
+});
+
+test('killed actual supervisor retains reservation and replacement recovers before fresh admission',()=>{
+ const code=String.raw`
+import importlib.machinery,importlib.util,pathlib,tempfile,os,json,shutil,multiprocessing,time
+loader=importlib.machinery.SourceFileLoader('operator_module','deploy/deskdrop-operator');spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
+multiprocessing.set_start_method('fork');root=pathlib.Path(tempfile.mkdtemp(prefix='trigger-death-',dir=pathlib.Path.home()/'.cache'));root.chmod(0o700);c=m.Custody(root,os.getuid())
+r={'schema':1,'installation':m.INSTALLATION,'run':'11111111-1111-4111-8111-111111111111','actor':'synthetic','boot':'boot-one','started':1000,'deadline':1360,'phase':'admitted','recoverRequested':False};c.save(r)
+entered=multiprocessing.Event();m.time.time=lambda:1000
+other=multiprocessing.Process(target=time.sleep,args=(30,));other.start()
+def supervisor():
+ h=m.Host(c,{},'boot-one')
+ def invoke(mode):
+  assert mode=='trigger';entered.set();time.sleep(30)
+ h.invoke=invoke;h.cycle(allow_trigger=True)
+p=multiprocessing.Process(target=supervisor);p.start()
+try:
+ assert entered.wait(3);p.kill();p.join(3);assert p.exitcode<0
+ assert m.lease(c)['phase']=='recovering' and not c.read('ready.json')['ready']
+ calls=[];h=m.Host(c,{},'boot-two')
+ h.invoke=lambda mode:(calls.append(mode) or ({'status':'restored','run':r['run']} if mode=='recover' else {'status':'ready'}))
+ h.cycle(allow_trigger=True)
+ assert calls==['recover','inspect'] and m.lease(c)['phase']=='complete' and h.ready()
+ assert other.is_alive()
+ print('killed supervisor/new boot/exclusive recovery/unrelated child passed')
+finally:
+ if p.is_alive():p.kill();p.join(3)
+ other.terminate();other.join(3);shutil.rmtree(root)
+`;
+ const r=spawnSync('python3',['-B','-c',code],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/passed/);
+});

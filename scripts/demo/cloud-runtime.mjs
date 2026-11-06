@@ -122,17 +122,24 @@ export function verifyChild(record, config, check, seccomp) {
   if (seccomp !== undefined && (JSON.stringify(record.Config.Entrypoint) !== JSON.stringify(['node','/checker/cloud-checker.mjs']) || JSON.stringify(record.Config.Cmd) !== JSON.stringify([check]) || JSON.stringify(JSON.parse(h.SecurityOpt.find(s => s.startsWith('seccomp=')).slice(8))) !== JSON.stringify(JSON.parse(seccomp)))) throw new Error('Child policy mismatch');
   return record.Id;
 }
-export async function verifyTarget(config, call) {
+export async function inspectTarget(config, call) {
+  validateRuntime(config);
   const rows = await call('GET', '/v1.52/containers/json?all=true');
   if (!Array.isArray(rows)) throw new Error('Invalid container inventory');
   const apps = rows.filter(r => r.Labels?.['com.docker.compose.project'] === 'deskdrop' && r.Labels?.['com.docker.compose.service'] === 'app');
   if (apps.length !== 1 || !/^[a-f0-9]{64}$/.test(apps[0].Id)) throw new Error('App identity unknown');
   const app = await call('GET', `/v1.52/containers/${apps[0].Id}/json`);
-  if (app.Config?.Image !== config.app || app.Config.User !== '1000:1000' || app.Config.Labels?.['org.opencontainers.image.revision'] !== config.source || !app.State?.Running || app.HostConfig?.Privileged || !Array.isArray(app.Mounts) || app.Mounts.length || Object.keys(app.NetworkSettings?.Networks ?? {}).join() !== 'deskdrop_isolated') throw new Error('App identity mismatch');
+  if (app.Config?.Image !== config.app || app.Config.User !== '1000:1000' || app.Config.Labels?.['org.opencontainers.image.revision'] !== config.source || typeof app.State?.Running !== 'boolean' || app.HostConfig?.Privileged || !Array.isArray(app.Mounts) || app.Mounts.length || Object.keys(app.NetworkSettings?.Networks ?? {}).join() !== 'deskdrop_isolated') throw new Error('App identity mismatch');
   const network = app.NetworkSettings.Networks.deskdrop_isolated.NetworkID;
   if (!/^[a-f0-9]{64}$/.test(network)) throw new Error('Invalid isolated network');
   const n = await call('GET', `/v1.52/networks/${network}`);
   if (n.Name !== 'deskdrop_isolated' || n.Internal !== true || n.EnableIPv6 !== false || n.Options?.['com.docker.network.bridge.name'] !== 'br-deskdrop') throw new Error('App network isolation mismatch');
+  return app;
+}
+export async function verifyTarget(config, call) {
+  const app = await inspectTarget(config, call);
+  if (!app.State.Running) throw new Error('App identity mismatch');
+  return app;
 }
 export function jobs(config, call, seccomp, { now = () => performance.now(), sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
   validateRuntime(config);
@@ -164,7 +171,8 @@ export function jobs(config, call, seccomp, { now = () => performance.now(), sle
     checkerSpec(config, check, seccomp);
     const deadline = now() + 25000;
     const request = (m,p,b) => { const left = Math.ceil(deadline - now()); if (left <= 0) throw new Error('Journey deadline'); return call(m,p,b,Math.min(left,5000)); };
-    await verifyTarget(config, request);
+    const app = await inspectTarget(config, request);
+    if (!app.State.Running) return false;
     if (await find(check, request)) throw new Error('Previous child must be reconciled');
     let passed = false, failure;
     try {

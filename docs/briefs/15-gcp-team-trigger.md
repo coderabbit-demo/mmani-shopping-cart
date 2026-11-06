@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ecf7a383a888be46473e6068cf7327441eecb19effa2b2e1e1076a58681c1261 -->
+
 # Brief 15: feat: GCP server-side trigger and operator handoff
 
 Engineering acceptance: https://github.com/coderabbit-demo/mmani-shopping-cart/issues/27
@@ -97,3 +101,12 @@ Exactly one COMPLETED CodeRabbit CLI REVIEW for this new task before PR publicat
 Update setup/process/Do–Say–See guides with exact verified commands, private access/enrollment, healthy $97 baseline, trigger/fresh incident, independent Jira or Debug paths, recovery/status, stop/rollback, cost/retention and all blockers. Follow the standard Do–Say–See methodology already used by the demo runbook, with real high-resolution source/event/receipt screenshot provenance. Publish no video. Root will refresh the existing Work Drive PDFs after observed verification; do not upload or send messages from the coding task.
 
 Live package limits remain at most three cloud Alert/recovery cycles, at most one synthetic incident Bug and one isolated unmerged fix PR total, no new shopper fixture authoring or faulty fixture deployment. No cloud/browser/native provider action is authorized inside this coding task. Mahesh-only pilot is distinct from team/denied-presenter acceptance; document deferred group/tester and missing existing authority honestly. Stop new fault admissions by November6, 7AM Pacific and prioritize recovery/effective suppression.
+
+## Preliminary interface integration (2026-11-06)
+
+Published monitoring snapshot `ae0e7cd7724d4b500ab4906a4bd3d5cd65385912` is integrated under the delegated checkpoint. Final merged foundation/monitoring parents are still required before final review/publication. Stage 14 keeps its single broad owner-selector protection and unchanged install API/defaults. The trigger journal persists exact-monitor protections, confirms all three effective matches before canceling broad protection, then opens only checkout. Recovery restores broad protection before retiring temporary protections and updating the stage 14 protection receipt. Unknown writes preserve intent and close admission.
+
+Within the existing allowed cloud monitor file, the trigger adapter adds only GET notification-rule inventory/detail and GET monitor group-state reads, using documented Datadog v2 notification-rule pagination and v1 monitor reads. No monitor updates or notification-rule mutations are added. A separately configured, explicitly enrolled cloud rule/recipient must already exist; complete stable inventory must prove exact owner coverage and Alert-only delivery. Unsupported filters or ambiguous coverage block admission. The install-focused makeCloudApi whitelist remains unchanged. No additional path, package, runtime pin or provider permission is requested.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

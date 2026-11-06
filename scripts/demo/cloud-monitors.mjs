@@ -177,11 +177,14 @@ export async function removeOwned(state, api, save) {
   }
   return state;
 }
-export async function makeCloudApi(credentials, request) {
+export async function makeCloudApi(credentials, request) { return cloudApi(credentials, request, false); }
+export async function makeTriggerApi(credentials, request) { return cloudApi(credentials, request, true); }
+async function cloudApi(credentials, request, trigger) {
   if (!request) request = (await import('node:https')).request;
   if (typeof credentials?.apiKey !== 'string' || typeof credentials?.appKey !== 'string' || !/^[a-zA-Z0-9]{32}$/.test(credentials.apiKey) || !/^[a-zA-Z0-9]{40}$/.test(credentials.appKey)) throw new Error('Invalid management credentials');
   const call = (method, endpoint, body) => {
-    if (!['GET', 'POST', 'DELETE'].includes(method) || !/^\/api\/(?:v1\/monitor(?:\/\d+|\?page=\d+&page_size=100)?|v2\/downtime(?:\/[A-Za-z0-9-]+|\?page%5Boffset%5D=\d+&page%5Blimit%5D=100)?|v2\/monitor\/\d+\/downtime_matches\?page%5Boffset%5D=0&page%5Blimit%5D=100)$/.test(endpoint)) throw new Error('Invalid management operation');
+    const triggerRead = trigger && method === 'GET' && /^\/api\/(?:v1\/monitor\/[1-9][0-9]*\?group_states=all|v2\/monitor\/notification_rule(?:\/[A-Za-z0-9-]{1,128}|\?page=(?:[0-9]|10)&per_page=100&sort=name%3Aasc))$/.test(endpoint);
+    if (!triggerRead && (!['GET', 'POST', 'DELETE'].includes(method) || !/^\/api\/(?:v1\/monitor(?:\/\d+|\?page=\d+&page_size=100)?|v2\/downtime(?:\/[A-Za-z0-9-]+|\?page%5Boffset%5D=\d+&page%5Blimit%5D=100)?|v2\/monitor\/\d+\/downtime_matches\?page%5Boffset%5D=0&page%5Blimit%5D=100)$/.test(endpoint))) throw new Error('Invalid management operation');
     return new Promise((resolve, reject) => {
       let req, done = false, size = 0, chunks = [];
       const finish = (error, value) => { if (done) return; done = true; clearTimeout(timer); req?.destroy(); if (error) reject(new Error('Cloud provider outcome unknown')); else resolve(value); };

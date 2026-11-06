@@ -1,5 +1,7 @@
 <!-- coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated-section:v1:5039f9e7c35a6eacec1f09917ec1f066983771c3e47324e0c32bf79f355f5e9a -->
+
 <!-- coderabbit-ai-generated-section:v1:f2babfc9d896baf352e4346e12fa5e3a05214cc0d8e379dcd1e5197b7741829d -->
 
 # Next phase: a shared GCP incident demo
@@ -201,6 +203,34 @@ For native sandbox QA, start `bash /home/vercel-sandbox/runtime/repository-start
 
 
 <!-- /coderabbit-ai-generated:v1 -->
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+## Stage 15 preliminary operator installation and handoff
+
+This source integrates published monitoring `ae0e7cd7724d4b500ab4906a4bd3d5cd65385912`. Final merged foundation and monitoring source, review/security/CI and native QA gates remain required before publication. No live resources were created. The $44.19 illustrative allocation and $100 operational allowance in [the cost worksheet](gcp-costs.md) are unchanged; neither is actual spend or permission readiness.
+
+After separately approved release/deployment and stage14 monitoring installation on the **same final source**, the actual authoring command is `node scripts/demo/baseline.mjs trigger-install`. It checks the existing release, deployment approval, host hashes and monitoring-install receipt before source-bound transfer. Root installation validates the archive digest, member names, source, all module/unit hashes and installed monitoring bytes. It refuses a different existing bundle; do not delete state or silently replace a release. The installer does not create a routing rule or grant access.
+
+An authorized root maintainer stages `/etc/deskdrop/trigger-enrollment.json` (regular, root-owned, mode0600; protected parents). Its exact fields are `uid` (actual integer OS Login UID), `username` (actual NSS name), `rule` (actual approved cloud notification-rule ID) and `recipient` (actual approved cloud recipient handle). No example identity or rule ID is supplied. Run `/usr/bin/python3 -I -B /opt/deskdrop/trigger/deskdrop-operator --enroll`. It validates the actual metadata OS Login mapping for mahesh@coderabbit.ai and NSS identity, then persists private enrollment/routing. This needs existing administrator authority; presenters do not get sudo, Docker access, credentials or metadata access. Missing IAM/IAP authority is a blocker, not permission to add roles. Team enrollment and denied non-admin acceptance remain deferred.
+
+With routing, effective protection and runtime health independently verified, the authorized maintainer enables boot recovery and the broker with `systemctl enable --now deskdrop-trigger-recovery.service deskdrop-trigger.service`. Do not enable before final source/permission/live approval. These are protected maintainer operations, not presenter helper arguments. Node runs only in the existing pinned trusted image; no host Node or Docker CLI inside that image is assumed. Management credentials are refreshed into a private runtime mount for lifecycle/recovery only. Storefront and checker mounts/pins remain unchanged.
+
+The installed public interface is exactly:
+
+```sh
+/usr/local/bin/deskdrop-operator status
+/usr/local/bin/deskdrop-operator trigger
+/usr/local/bin/deskdrop-operator recover
+```
+
+Use these inside the private VM via existing authorized OS Login/IAP access. No target/path/identity/environment/command arguments are accepted. A client disconnect does not cancel a durable admission. Busy/recovery replies refer to the existing run. A caller timeout means an unknown acknowledgment: read status, never launch another speculative fault. The root recovery service owns the worker independently of the Mac, browser or broker. It starts admission closed on boot, fences its exact owned stale container, and reconciles the journal before opening admission. The November6 2026 15:00UTC admission cutoff is retained; it is not silently extended. Recovery continues after cutoff.
+
+The broad stage14 downtime initially protects all three monitors. A trigger persists and confirms three temporary exact-monitor protections before canceling broad protection, then cancels only checkout's temporary protection. Availability and heartbeat remain suppressed and recurring checks continue. The existing install-focused API stays unchanged; the trigger adds read-only rule inventory/detail and monitor-group reads. It never updates a monitor or notification rule. All matching rules must prove the enrolled Alert-only route; unsupported filters, changing pagination or extra effective downtimes close admission.
+
+Recovery always attempts the exact owned app start after bounded protection work, including provider readback failure. It restores a broad guard and retires temporary protections before updating the stage14 protection ID. Unknown writes remain in the journal and are not blindly replayed. A missing unknown POST cannot be retried. An uncertain Docker stop retains its runtime uncertainty even if the app is subsequently running. New admissions require effective suppression, exact app/source, fresh monitoring health and complete reservation reconciliation. The root counter reserves at most three cycles, including admissions whose caller died.
+
+For shutdown, an authorized maintainer stops the broker first, then `systemctl stop deskdrop-trigger-recovery.service`; allow its recovery/cleanup bound. Do not stop recovery to conceal uncertainty or delete its journal. To resume, start recovery then broker; reboot recovery is enabled through systemd. All real systemd/reboot/host isolation and cloud intake results remain pending. See [trigger evidence](gcp-trigger-evidence.md) for source/offline versus live provenance.
 
 
 <!-- /coderabbit-ai-generated:v1 -->

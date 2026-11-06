@@ -1,0 +1,19 @@
+[Unit]
+Description=DeskDrop authenticated fixed-installation operator broker
+After=deskdrop-trigger-recovery.service
+Requires=deskdrop-trigger-recovery.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I -B /opt/deskdrop/trigger/deskdrop-operator --broker
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=deskdrop-trigger
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/deskdrop/trigger /run/deskdrop-trigger
+RestrictAddressFamilies=AF_UNIX AF_INET
+[Install]
+WantedBy=multi-user.target

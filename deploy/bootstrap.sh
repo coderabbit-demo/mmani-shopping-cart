@@ -1584,10 +1584,61 @@ def supervise(c):
             docker('run',*options(c,'cleanup'),CONTROL,'node',BASE+'/cloud-runtime.mjs','cleanup',timeout=60)
             stop_owned(c,'cleanup')
 
+def trigger_install(digest):
+    c=installed()
+    if not re.fullmatch(r'[a-f0-9]{64}',digest):raise ValueError('Invalid trigger digest')
+    fd=os.open('/tmp/trigger.tar.gz',os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,'rb') as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):raise ValueError('Invalid transfer')
+        raw=f.read(1048577)
+    if len(raw)>1048576 or hashlib.sha256(raw).hexdigest()!=digest:raise ValueError('Trigger digest mismatch')
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:plain=gz.read(2097153)
+    if len(plain)>2097152:raise ValueError('Trigger expansion limit')
+    modules={'cloud-trigger.mjs','cloud-runtime.mjs','cloud-monitors.mjs','deskdrop-operator','deskdrop-trigger.service','deskdrop-trigger-recovery.service'}
+    with tarfile.open(fileobj=io.BytesIO(plain),mode='r:') as t:
+        members=t.getmembers()
+        if len(members)!=7 or {m.name for m in members}!=modules|{'manifest.json'} or any(not m.isfile() or m.size>262144 for m in members):raise ValueError('Invalid trigger members')
+        files={m.name:t.extractfile(m).read() for m in members}
+    m=json.loads(files['manifest.json'])
+    if set(m)!={'source','monitoring','files','host'} or m['source']!=c['source'] or m['monitoring']!=c['bundleHash'] or set(m['files'])!=modules or set(m['host'])!={'bootstrap.sh','compose.yaml'}:raise ValueError('Trigger identity mismatch')
+    for n,d in m['files'].items():
+        if hashlib.sha256(files[n]).hexdigest()!=d:raise ValueError('Trigger module mismatch')
+    for n,d in m['host'].items():
+        if hashlib.sha256(read('/opt/deskdrop/'+n,mode=0o700 if n=='bootstrap.sh' else 0o600)).hexdigest()!=d:raise ValueError('Host identity mismatch')
+    for n in ['cloud-runtime.mjs','cloud-monitors.mjs']:
+        if files[n]!=read(BASE+'/'+n):raise ValueError('Monitoring module mismatch')
+    target='/opt/deskdrop/trigger';state='/var/lib/deskdrop/trigger'
+    with lock('management.lock'):
+        if os.path.lexists(target):
+            safe_dir(target,private=True)
+            if set(os.listdir(target))!=set(files) or any(read(target+'/'+n)!=v for n,v in files.items()):raise ValueError('Explicit trigger migration required; preserve state')
+        else:
+            staging=tempfile.mkdtemp(prefix='.trigger-',dir='/opt/deskdrop')
+            try:
+                for n,v in files.items():atomic(staging+'/'+n,v)
+                os.rename(staging,target);syncdir('/opt/deskdrop')
+            finally:
+                if os.path.exists(staging):
+                    for n in os.listdir(staging):os.unlink(staging+'/'+n)
+                    os.rmdir(staging)
+        try:os.mkdir(state,0o700)
+        except FileExistsError:pass
+        safe_dir(state,private=True)
+        for n in ['deskdrop-trigger.service','deskdrop-trigger-recovery.service']:
+            destination='/etc/systemd/system/'+n;safe_dir(os.path.dirname(destination))
+            if os.path.lexists(destination) and read(destination,mode=0o644)!=files[n]:raise ValueError('Existing unit differs; preserve it')
+            subprocess.run(['/usr/bin/install','-m','0644',target+'/'+n,destination],check=True,timeout=10)
+        helper='/usr/local/bin/deskdrop-operator';safe_dir(os.path.dirname(helper))
+        if os.path.lexists(helper) and read(helper,mode=0o755)!=files['deskdrop-operator']:raise ValueError('Existing operator differs')
+        subprocess.run(['/usr/bin/install','-m','0755',target+'/deskdrop-operator',helper],check=True,timeout=10)
+        subprocess.run(['/usr/bin/systemctl','daemon-reload'],check=True,timeout=15)
+        print(json.dumps({'status':'trigger-bundle-installed','source':c['source'],'digest':digest,'manifestHash':hashlib.sha256(files['manifest.json']).hexdigest()}))
+
 def main():
     if os.getuid()!=0:raise ValueError('Root required')
     mode=sys.argv[1]
     if mode=='monitoring-install':install(sys.argv[2]);return
+    if mode=='trigger-install':trigger_install(sys.argv[2]);return
     c=installed()
     subprocess.run(['/opt/deskdrop/bootstrap.sh','verify'],check=True,timeout=30)
     if mode=='monitoring-start':
@@ -1602,7 +1653,7 @@ MONITORING
 }
 
 case "$mode" in
-  monitoring-install) [ "$#" -eq 2 ] || exit 2; runtime_command verify; monitoring "$@"; exit ;;
+  trigger-install|monitoring-install) [ "$#" -eq 2 ] || exit 2; runtime_command verify; monitoring "$@"; exit ;;
   monitoring-start|monitoring-protect|monitoring-inspect|monitoring-delete) [ "$#" -eq 1 ] || exit 2; monitoring "$@"; exit ;;
   install) [ "$#" -eq 1 ] || exit 2; "${BASH_SOURCE[0]}" verify; install_packages; exit ;;
   firewall) [ "$#" -eq 1 ] || exit 2; firewall; runtime_command verify; runtime_command prepare-runtime; exit ;;

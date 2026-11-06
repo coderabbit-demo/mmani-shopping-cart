@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:0b24fa2793c834b1a098346646635ef66028772b0fdb506ba868363cc119551f -->
+
 # Datadog to Slack Automation - MMANI
 
 For presenter preparation and usage, see [setup and architecture](../demo/local-setup.md), the [Do / Say / See walkthrough](../demo/incident-walkthrough.md), and the [GCP team handoff](../demo/gcp-team-handoff.md). This page retains the provider-level evidence and limits.
@@ -119,3 +123,12 @@ At 11:56 AM Pacific on November 5, readback showed availability OK, checkout Ale
 Within the Jira path, do not create a second Bug for a known episode. Within the Debug path, reuse matching repository work independently, without consulting tickets. The single matching Bug query verifies the observed result, not concurrent-click serialization or replay handling; those were not tested. Do not retry an ambiguous artifact write, infer an alert cycle from a timestamp, or substitute a manually launched task for native handoff evidence. PR17's earlier harness-managed fix and QA are historical manual-fallback evidence. PRs16 and19's merged implementations and offline QA do not establish native end-to-end remediation.
 
 No Docker fault, image publication, cloud deployment or source merge is part of the recorded native button tests. The only shared-scope content change was the separately approved duplicate-MCP exclusion described above. For the paused custom bridge, see [its status](../demo/slack-bridge.md).
+
+## GCP stage15 source boundary
+
+The cloud trigger now has a separate root-owned operator protocol and protected recovery design; see [the handoff](../demo/gcp-team-handoff.md#stage-15-preliminary-operator-installation-and-handoff). Source and offline fixture tests do not establish live cloud deployment, actual routing/intake or native button acceptance. No automation, channel, rule, webhook, credentials or provider settings were changed by this implementation. The cloud route must already be separately authorized and enrolled; the trigger reads full stable rule coverage and refuses unproved Alert-only delivery. Local monitor IDs, existing assertions and historical native evidence above remain unchanged.
+
+Native Jira and Debug remain independent in either order. Debug investigates the actual repository/application without Jira references or prerequisites. No product defect or fix PR may be invented for the intentional app-stop rehearsal. Keep cloud screenshots, private access/denied-presenter, reboot, telemetry and publication gates pending until real authorized observations exist. The paused bridge remains paused and PR23 remains unmerged.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

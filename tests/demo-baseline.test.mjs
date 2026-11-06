@@ -908,3 +908,47 @@ with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
  assert open(state_path,'rb').read()==before
 `,JSON.stringify({raw:b.bundle.toString('base64'),hash:b.digest,config:JSON.parse(b.files['runtime.json'])}));
 });
+
+test('trigger installer binds all helpers/units to monitoring source and preserves state on repeat or corrupt transfer',async()=>{
+  const {triggerBundle,monitoringBundle}=await import('../scripts/demo/baseline.mjs');
+  const rel={commit:'a'.repeat(40),appDigest:`sha256:${'b'.repeat(64)}`,checkerDigest:`sha256:${'c'.repeat(64)}`};
+  const b=await triggerBundle(rel),parent=await monitoringBundle(rel);
+  assert.deepEqual(Object.keys(b.hashes).sort(),['cloud-monitors.mjs','cloud-runtime.mjs','cloud-trigger.mjs','deskdrop-operator','deskdrop-trigger-recovery.service','deskdrop-trigger.service']);
+  const manifest=JSON.parse(b.files['manifest.json']);assert.equal(manifest.source,rel.commit);
+  assert.equal(manifest.monitoring,createHash('sha256').update(parent.files['manifest.json']).digest('hex'));
+  const code=`
+import shutil,contextlib,io
+v=json.load(__import__('sys').stdin);uid=os.getuid()
+with tempfile.TemporaryDirectory(dir=os.path.expanduser('~')) as d:
+ source=${JSON.stringify(monitoringPython)}
+ for a,b in [('/opt/deskdrop',d+'/opt'),('/var/lib/deskdrop',d+'/var'),('/etc/systemd/system',d+'/units'),('/usr/local/bin',d+'/bin'),('/tmp/trigger.tar.gz',d+'/transfer')]:source=source.replace(a,b)
+ g={'__name__':'fixture'};exec(compile(source,'host-trigger-fixture','exec'),g)
+ for p in [d+'/opt',d+'/opt/monitoring',d+'/var',d+'/var/monitoring',d+'/units',d+'/bin']:os.mkdir(p,0o700)
+ for name,data in v['parent'].items():
+  open(d+'/opt/monitoring/'+name,'wb').write(base64.b64decode(data));os.chmod(d+'/opt/monitoring/'+name,0o600)
+ for name,data in v['host'].items():
+  open(d+'/opt/'+name,'wb').write(base64.b64decode(data));os.chmod(d+'/opt/'+name,0o700 if name=='bootstrap.sh' else 0o600)
+ config=json.loads(base64.b64decode(v['parent']['runtime.json']));g['installed']=lambda:config
+ real_read,real_dir,real_lock=g['read'],g['safe_dir'],g['lock']
+ g['read']=lambda p,*a,**kw:real_read(p,uid=uid,**kw)
+ g['safe_dir']=lambda p,*a,**kw:real_dir(p,uid=uid,**kw)
+ g['lock']=lambda name:real_lock(name,uid)
+ commands=[]
+ def run(args,**kw):
+  commands.append(args)
+  if args[0]=='/usr/bin/install':shutil.copyfile(args[-2],args[-1]);os.chmod(args[-1],int(args[2],8))
+  else:assert args==['/usr/bin/systemctl','daemon-reload']
+ g['subprocess'].run=run
+ raw=base64.b64decode(v['raw']);open(d+'/transfer','wb').write(raw)
+ with contextlib.redirect_stdout(io.StringIO()) as output:g['trigger_install'](v['digest'])
+ assert json.loads(output.getvalue())['status']=='trigger-bundle-installed'
+ state=d+'/var/trigger/lease.json';open(state,'w').write('uncertain-preserved');os.chmod(state,0o600)
+ with contextlib.redirect_stdout(io.StringIO()):g['trigger_install'](v['digest'])
+ assert open(state).read()=='uncertain-preserved'
+ before=len(commands);open(d+'/transfer','wb').write(raw+b'corrupt')
+ try:g['trigger_install'](v['digest']);raise AssertionError('corrupt transfer accepted')
+ except ValueError:pass
+ assert len(commands)==before and open(state).read()=='uncertain-preserved'
+`;
+  monitorFixture(code,JSON.stringify({raw:b.bundle.toString('base64'),digest:b.digest,parent:Object.fromEntries(Object.entries(parent.files).map(([k,v])=>[k,v.toString('base64')])),host:{'bootstrap.sh':Buffer.from(script).toString('base64'),'compose.yaml':Buffer.from(await readFile(new URL('../deploy/compose.yaml',import.meta.url))).toString('base64')}}));
+});

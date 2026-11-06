@@ -143,9 +143,20 @@ export async function monitoringBundle(rel) {
   const bundle = compress(archive(files)), digest = hash(bundle);
   return { files, hashes, bundle, digest };
 }
+export async function triggerBundle(rel) {
+  const monitoring = await monitoringBundle(rel);
+  const { archive, compress } = await import('./cloud-release.mjs');
+  const paths = { 'cloud-trigger.mjs': 'scripts/demo/cloud-trigger.mjs', 'cloud-runtime.mjs': 'scripts/demo/cloud-runtime.mjs', 'cloud-monitors.mjs': 'scripts/demo/cloud-monitors.mjs', 'deskdrop-operator': 'deploy/deskdrop-operator', 'deskdrop-trigger.service': 'deploy/systemd/deskdrop-trigger.service', 'deskdrop-trigger-recovery.service': 'deploy/systemd/deskdrop-trigger-recovery.service' };
+  const files = {}, hashes = {};
+  for (const [name, source] of Object.entries(paths)) { files[name] = await readFile(path.join(root, source)); hashes[name] = hash(files[name]); }
+  const host = { 'bootstrap.sh': await fileHash(path.join(root, 'deploy/bootstrap.sh')), 'compose.yaml': await fileHash(path.join(root, 'deploy/compose.yaml')) };
+  files['manifest.json'] = Buffer.from(JSON.stringify({ source: rel.commit, monitoring: hash(monitoring.files['manifest.json']), files: hashes, host }));
+  const bundle = compress(archive(files));
+  return { files, hashes, bundle, digest: hash(bundle) };
+}
 export async function action(name, args = [], run = command, context = {}) {
   const artifacts = context.artifacts ?? defaultArtifacts;
-  if (name === 'help') return { commands: ['help', 'build', 'publish', 'plan', 'apply', 'host-install', 'deploy', 'monitoring-install', 'tunnel', 'smoke'] };
+  if (name === 'help') return { commands: ['help', 'build', 'publish', 'plan', 'apply', 'host-install', 'deploy', 'monitoring-install', 'trigger-install', 'tunnel', 'smoke'] };
   if (name === 'build' && args.length === 0) {
     const commit = await head(run);
     const archive = await run('git', ['archive', '--format=tar', commit], { binary: true, maxOutput: 50000000 });
@@ -288,6 +299,26 @@ export async function action(name, args = [], run = command, context = {}) {
     if (receipt.status !== 'monitoring-bundle-installed' || receipt.source !== rel.commit || receipt.bundleHash !== digest || receipt.manifestHash !== hash(files['manifest.json']) || JSON.stringify(receipt.files) !== JSON.stringify(hashes)) fail();
     await save('monitoring-install.json', { ...receipt, host }, artifacts);
     return { status: 'monitoring-bundle-installed', commit: rel.commit };
+  }
+  if (name === 'trigger-install' && args.length === 0) {
+    const rel = validateRelease(await json('release.json', artifacts));
+    if (rel.phase !== 'release' || await head(run) !== rel.commit) fail();
+    await deployPrerequisites(artifacts, rel, context.cloudRoot, context.backendFile);
+    const parent = await json('monitoring-install.json', artifacts), monitoring = await monitoringBundle(rel);
+    if (parent.source !== rel.commit || parent.bundleHash !== monitoring.digest || parent.manifestHash !== hash(monitoring.files['manifest.json'])) fail();
+    const host = await json('host-install.json', artifacts);
+    if (host.commit !== rel.commit || host.bootstrap !== await fileHash(path.join(root, 'deploy/bootstrap.sh')) || host.compose !== await fileHash(path.join(root, 'deploy/compose.yaml'))) fail();
+    const { files, bundle, digest } = await triggerBundle(rel);
+    await absent(path.join(artifacts, 'trigger-install.json'));
+    const bundlePath = path.join(artifacts, 'trigger.tar.gz');
+    if (await exists('trigger.tar.gz', artifacts)) { if (await fileHash(bundlePath) !== digest) fail(); }
+    else await writeFile(bundlePath, bundle, { mode: 0o600, flag: 'wx' });
+    await run('gcloud', ['compute', 'scp', bundlePath, 'deskdrop-demo:/tmp/trigger.tar.gz', '--project=se-demos-project', '--zone=us-central1-a', '--tunnel-through-iap']);
+    const output = await remote(run, `sudo /usr/bin/timeout --kill-after=10s 180s /opt/deskdrop/bootstrap.sh trigger-install ${digest}`, 200000);
+    const receipt = JSON.parse(output.trim().split('\n').at(-1));
+    if (receipt.status !== 'trigger-bundle-installed' || receipt.source !== rel.commit || receipt.digest !== digest || receipt.manifestHash !== hash(files['manifest.json'])) fail();
+    await save('trigger-install.json', receipt, artifacts);
+    return receipt;
   }
   if (name === 'smoke' && args.length === 0) {
     const rel = validateRelease(await json('release.json', artifacts)); if (await head(run) !== rel.commit) fail();
