@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, journey } from '../deploy/checker.mjs';
+import { validateLocal as validate, journeyLocal as journey } from '../deploy/checker.mjs';
 
-const good = { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:${'b'.repeat(64)}` };
+const good = { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40), image: `sha256:${'b'.repeat(64)}` };
 test('checker accepts only explicit private endpoint, commit and immutable owned image', () => {
   assert.deepEqual(validate(good), good);
   for (const value of [undefined, '', 'http://app:3000', 'http://127.0.0.1:3000', 'http://app:3000@evil.test', 'https://app:3000']) assert.throws(() => validate({ ...good, url: value }));
   assert.throws(() => validate({ ...good, source: 'abc' }));
-  assert.throws(() => validate({ ...good, image: good.image.replace(/@sha256:.*/, ':latest') }));
+  assert.throws(() => validate({ ...good, image: 'deskdrop:latest' }));
 });
 test('checker closes browser and context after a navigation failure', async () => {
   let browserClosed = false, contextClosed = false;
@@ -67,14 +67,10 @@ test('private browser endpoint uses the explicit reserved alias and rejects the 
   assert.throws(() => validate({ ...endpoint, url: 'http://app:3000' }));
 });
 
-test('local identity is explicit and does not relax GCP validation', async () => {
-  const { validateLocal } = await import('../deploy/checker.mjs');
-  const local = { url: good.url, source: good.source, image: `sha256:${'c'.repeat(64)}` };
-  assert.deepEqual(validateLocal(local), local);
-  assert.throws(() => validate(local));
-  assert.throws(() => validateLocal(good));
-  assert.throws(() => validateLocal({ ...local, url: 'http://127.0.0.1:3177' }));
-  assert.throws(() => validateLocal({ ...local, image: 'deskdrop:latest' }));
+test('local identity rejects nonlocal image references', () => {
+  assert.throws(() => validate({ ...good, image: `registry.invalid/deskdrop@${good.image}` }));
+  assert.throws(() => validate({ ...good, url: 'http://127.0.0.1:3177' }));
+  assert.throws(() => validate({ ...good, image: 'deskdrop:latest' }));
 });
 
 test('local journey reports only bounded observations for checkout and receipt or history failures', async () => {
@@ -132,28 +128,22 @@ test('journeys validate before loading defaults and retain injected browser and 
     }`);
     const checker = new URL('../deploy/checker.mjs', import.meta.url).href;
     const program = `import assert from 'node:assert/strict';
-      import { journey, journeyLocal } from ${JSON.stringify(checker)};
+      import { journeyLocal } from ${JSON.stringify(checker)};
       const base = { url: 'http://deskdrop.test:3000', source: 'a'.repeat(40) };
-      const cloud = { ...base, image: 'us-central1-docker.pkg.dev/se-demos-project/deskdrop/deskdrop@sha256:' + 'b'.repeat(64) };
       const local = { ...base, image: 'sha256:' + 'c'.repeat(64) };
-      await assert.rejects(journey({ ...cloud, image: local.image }));
-      await assert.rejects(journeyLocal({ ...local, image: cloud.image }));
+      await assert.rejects(journeyLocal({ ...local, image: 'registry.invalid/deskdrop@' + local.image }));
       assert.equal(globalThis.fixtureLoads, undefined);
       const injected = { launch: async () => { throw new Error('injected browser used'); } };
       const assertion = () => {};
-      await assert.rejects(journey(cloud, injected, assertion), /injected browser used/);
       await assert.rejects(journeyLocal(local, injected, assertion), /injected browser used/);
       assert.equal(globalThis.fixtureLoads, undefined);
-      await assert.rejects(journey(cloud, undefined, assertion), /default browser used/);
       await assert.rejects(journeyLocal(local, undefined, assertion), /default browser used/);
       assert.equal(globalThis.fixtureLoads, 1);
-      await assert.rejects(journey(cloud, injected), /injected browser used/);
       await assert.rejects(journeyLocal(local, injected), /injected browser used/);
       const locator = { getByRole: () => locator, getByLabel: () => locator, getByTestId: () => locator,
         click: async () => {}, fill: async () => {}, check: async () => {} };
       const page = { ...locator, setDefaultTimeout() {}, goto: async () => {} };
       const browser = { launch: async () => ({ newContext: async () => ({ newPage: async () => page, close: async () => {} }), close: async () => {} }) };
-      await assert.rejects(journey(cloud, browser), /default assertion used/);
       await assert.rejects(journeyLocal(local, browser), /default assertion used/);`;
     await promisify(execFile)(process.execPath, ['--no-warnings', '--experimental-loader', loader, '--input-type=module', '-e', program], { timeout: 8000 });
   } finally { await rm(dir, { recursive: true, force: true }); }

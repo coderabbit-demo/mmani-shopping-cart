@@ -38,8 +38,6 @@ function validateKeys(_url, headers) {
 }
 
 function json(text) { return JSON.parse(text); }
-function eventLines(text) { return text.trim().split(/\r?\n/).filter(Boolean).map(json); }
-function hasBlockingEvent(events) { return events.some((x) => x?.type === 'error' || x?.type === 'action_required'); }
 function result(status, action) { return { status, action }; }
 
 export async function preflight({ run = command, http = validateKeys, env = process.env, nodeVersion = process.versions.node } = {}) {
@@ -57,7 +55,7 @@ export async function preflight({ run = command, http = validateKeys, env = proc
     const parts = nodeVersion.split('.').map(Number);
     return parts[0] > 22 || (parts[0] === 22 && parts[1] >= 6) ? { ...pass(), version: parts.slice(0, 3).join('.') } : fail('Use Node 22.6 or later.');
   });
-  for (const [name, args] of Object.entries({ npm: ['--version'], bash: ['--version'], git: ['--version'], gh: ['--version'], gcloud: ['--version'], terraform: ['--version'], coderabbit: ['--version'], docker: ['--version'] })) {
+  for (const [name, args] of Object.entries({ npm: ['--version'], bash: ['--version'], git: ['--version'], gh: ['--version'], docker: ['--version'] })) {
     await check(`tool_${name}`, `Install or repair ${name}.`, async () => {
       const version = (await call(name, ...args)).match(/\bv?(\d+\.\d+(?:\.\d+)?)\b/)?.[1];
       if (!version) return fail(`Check ${name} version output.`);
@@ -76,47 +74,6 @@ export async function preflight({ run = command, http = validateKeys, env = proc
     if (checks.github_auth.status !== 'pass') return blocked('Establish GitHub authentication before checking repository access.');
     const details = json(await call('gh', 'repo', 'view', repo, '--json', 'nameWithOwner,viewerPermission'));
     return details.nameWithOwner?.toLowerCase() === repo && ['READ', 'TRIAGE', 'WRITE', 'MAINTAIN', 'ADMIN'].includes(details.viewerPermission) ? pass() : fail('Check GitHub repository access.');
-  });
-  await check('gcloud_target', 'Check the selected gcloud account and project.', async () => {
-    const account = (await call('gcloud', 'config', 'get-value', 'account')).trim();
-    const project = (await call('gcloud', 'config', 'get-value', 'project')).trim();
-    if (!account || account === '(unset)') return blocked('Select an authenticated gcloud account manually.');
-    return project === 'se-demos-project' ? pass() : fail('Select the intended project manually.');
-  });
-  for (const [name, args] of Object.entries({ gcloud_token: ['auth', 'print-access-token', '--quiet'], adc_token: ['auth', 'application-default', 'print-access-token', '--quiet'] })) {
-    await check(name, 'Refresh authentication manually and retry.', async () => (await call('gcloud', ...args)).trim() ? pass() : fail('Token refresh returned no token.'));
-  }
-  await check('coderabbit_auth', 'Check CodeRabbit authentication.', async () => {
-    const auth = eventLines(await call('coderabbit', 'auth', 'status', '--agent'));
-    return !hasBlockingEvent(auth) && auth.some((x) => x.authenticated === true) ? pass() : fail('Authenticate CodeRabbit manually.');
-  });
-  await check('coderabbit_org', 'Check the selected CodeRabbit organization.', async () => {
-    const events = eventLines(await call('coderabbit', 'auth', 'org', '--agent'));
-    if (hasBlockingEvent(events)) return blocked('Confirm the active CodeRabbit organization manually.');
-    const currentEvents = events.filter((x) => x && typeof x === 'object' && (x.type === 'org_list' || Object.hasOwn(x, 'currentOrg')));
-    if (currentEvents.length) {
-      const event = currentEvents[0];
-      const current = event.currentOrg;
-      if (currentEvents.length !== 1 || event.type !== 'org_list' || event.phase !== 'auth' ||
-          !current || typeof current !== 'object' || Array.isArray(current) ||
-          typeof current.name !== 'string' || !current.name.trim() || current.name !== current.name.trim() ||
-          !Array.isArray(event.organizations) || !event.organizations.every((x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x.name === 'string' && x.name.trim() && x.name === x.name.trim())) return blocked('Confirm the active CodeRabbit organization manually.');
-      const matches = event.organizations.filter((x) => x && typeof x === 'object' && x.name === current.name);
-      const selected = event.organizations.filter((x) => x && typeof x === 'object' && (x.selected === true || x.isSelected === true || x.active === true));
-      if (matches.length !== 1 || selected.length > 1 || (selected.length === 1 && selected[0].name !== current.name)) return blocked('Confirm the active CodeRabbit organization manually.');
-      return current.name === 'coderabbit-demo' ? pass() : fail('Select coderabbit-demo manually.');
-    }
-    const orgs = events.flatMap((x) => Array.isArray(x.organizations) ? x.organizations : []);
-    const selected = orgs.filter((x) => x.selected === true || x.isSelected === true || x.active === true);
-    if (selected.length !== 1) return blocked('Confirm the active CodeRabbit organization manually.');
-    return [selected[0].slug, selected[0].name].includes('coderabbit-demo') ? pass() : fail('Select coderabbit-demo manually.');
-  });
-  await check('coderabbit_repo', 'Check CodeRabbit repository task-list access.', async () => {
-    if (checks.repository.status !== 'pass' || checks.coderabbit_auth.status !== 'pass' || checks.coderabbit_org.status !== 'pass') return blocked('Confirm the intended repository and CodeRabbit organization first.');
-    const events = eventLines(await call('coderabbit', 'code', 'ls', '--repo', '.', '--agent'));
-    const last = events.at(-1);
-    if (hasBlockingEvent(events)) return fail('Check CodeRabbit repository access.');
-    return last?.type === 'complete' && last.status === 'tasks_listed' ? pass() : blocked('Confirm CodeRabbit repository task-list access manually.');
   });
   await check('docker_daemon', 'Start Docker Desktop manually and retry.', async () => (await call('docker', 'version', '--format', '{{.Server.Version}}')).trim() ? pass() : blocked('Start Docker Desktop manually and retry.'));
   await check('docker_amd64', 'Check a running Buildx builder manually.', async () => {
@@ -140,10 +97,10 @@ export async function preflight({ run = command, http = validateKeys, env = proc
   });
   const manual = [
     'Verify Jira identity and SC read access.',
-    'Verify provisioning IAM, ADC quota project and Datadog telemetry and management scopes.',
+    'Verify Datadog telemetry and management scopes.',
     'Verify Slack channel membership, automation instructions, effective agent scope and write permissions.',
     'Prove the native incident handoff, replay and concurrent button behavior in a separately authorized rehearsal.',
-    'Prove an actual linux/amd64 build before deployment.',
+    'Prove an actual linux/amd64 build before the local demo.',
   ];
   return { checks, manual, exitCode: Object.values(checks).every((x) => x.status === 'pass') ? 0 : 1 };
 }

@@ -1,20 +1,8 @@
-import { pathToFileURL } from 'node:url';
-
-const imagePattern = /^us-central1-docker\.pkg\.dev\/se-demos-project\/deskdrop\/deskdrop@sha256:[a-f0-9]{64}$/;
-export function validate({ url, source, image }) {
-  if (url !== 'http://deskdrop.test:3000') throw new Error('Target must be the private Compose app endpoint');
-  if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('A full source commit is required');
-  if (!imagePattern.test(image ?? '')) throw new Error('An owned immutable image digest is required');
-  return { url, source, image };
-}
 export function validateLocal({ url, source, image }) {
   if (url !== 'http://deskdrop.test:3000') throw new Error('Target must be the private Compose app endpoint');
   if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('A full source commit is required');
   if (!/^sha256:[a-f0-9]{64}$/.test(image ?? '')) throw new Error('A local image ID is required');
   return { url, source, image };
-}
-export async function journey(config, browserType, assertion) {
-  return runJourney(validate(config), browserType, assertion);
 }
 export async function journeyLocal(config, browserType, assertion, observe) {
   return runJourney(validateLocal(config), browserType, assertion, observe);
@@ -95,10 +83,4 @@ async function runJourney({ url, source, image }, browserType, assertion, observ
       return { status: 'pass', source, image, journey: 'cart-receipt-history' };
     } finally { await context.close(); }
   } finally { await browser.close(); }
-}
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  journey({ url: process.env.CHECKER_URL, source: process.env.SOURCE_COMMIT, image: process.env.APP_IMAGE }).then(
-    result => console.log(JSON.stringify(result)),
-    () => { console.error('Checker failed; inspect the private target without collecting customer data.'); process.exitCode = 1; },
-  );
 }

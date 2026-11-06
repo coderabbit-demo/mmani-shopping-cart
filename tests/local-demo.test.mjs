@@ -23,9 +23,9 @@ test('local image and container checks bind actual identity, source and project'
   assert.throws(() => verifyContainer(container, `sha256:${'c'.repeat(64)}`, 'deskdrop-mmani-local', 'app'));
   assert.throws(() => verifyContainer(container, id, 'other', 'app'));
 });
-test('approved brief metadata is compatible with the existing PR helper', async () => {
+test('local monitoring metadata fixture is compatible with the existing PR helper', async () => {
   const { readFile } = await import('node:fs/promises');
-  const text = await readFile(new URL('../docs/briefs/09-local-docker-monitoring.md', import.meta.url), 'utf8');
+  const text = await readFile(new URL('./fixtures/local-monitoring-brief.md', import.meta.url), 'utf8');
   const heading = text.match(/^#[ \t]+(.+)$/m)?.[1];
   assert.equal(heading?.match(/`([^`\r\n]+)`/)?.[1], 'feat: local Docker monitoring and controlled demo');
   assert.deepEqual([...text.matchAll(/\*\*Jira:\*\*[ \t]*([A-Z][A-Z0-9]*-[0-9]+)(?=[ \t\r\n]|$)/g)].map(m => m[1]), ['SC-37']);
