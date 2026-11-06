@@ -163,7 +163,7 @@ test('Postman and standalone deployment artifacts are importable, dependency-fre
     }
   }
   const pre = collection.event[0].script.exec.join('\n');
-  const env = { DEMO_BASE_URL: 'https://fixture.vercel.app/', EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
+  const env = { DEMO_BASE_URL: 'https://coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app/', EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
   const execute = () => runInNewContext(pre, { URL, pm: { environment: { get: key => env[key] } } });
   assert.doesNotThrow(execute);
   for (const url of ['http://fixture.vercel.app/', 'https://attacker.test/', 'https://fixture.vercel.app/?token=secret', 'https://fixture.vercel.app/path', 'https://person:secret@fixture.vercel.app/']) {
@@ -222,4 +222,80 @@ test('Postman response scripts distinguish platform/application denials and veri
   execute(3, 200, healthy);
   assert.throws(() => execute(3, 200, { ...healthy, source: { ...source, commit: 'b'.repeat(40) } }));
   assert.throws(() => execute(3, 200, healthy, 'public'));
+});
+
+test('every exported script compiles and runs, with origin guard before simulated header interpolation or send', async () => {
+  const collection = JSON.parse(await readFile(new URL('../tools/workflow-api/postman/workflow-api.postman_collection.json', import.meta.url), 'utf8'));
+  const approved = 'https://coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app/';
+  const badOrigins = [
+    'http://coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app/',
+    'https://fixture.vercel.app/', 'https://unrelated-project-a1b2c3d4e-coderabbitai.vercel.app/',
+    'https://coderabbit-automation-demo-a1b2c3d4e-otherteam.vercel.app/',
+    'https://coderabbit-automation-demo-coderabbitai.vercel.app/',
+    'https://coderabbit-automation-demo-git-main-coderabbitai.vercel.app/',
+    'https://coderabbit-automation-demo.vercel.app/',
+    'https://coderabbit-automation-demo-a1b2c3d4e-coderabbitai.vercel.app.attacker.test/',
+    'https://coderabbit-automation-demo-a1b2c3d4e-coderabbitaiXvercelXapp/',
+    approved + '?token=secret', approved + '#fragment', approved + 'api/health',
+    approved.replace('https://', 'https://person:secret@'),
+    approved.replace('.app/', '.app:443/'), approved.replace('.app/', '.app:444/'),
+    approved.replace('.app/', '.app./'), approved.replace('.app/', '.app@attacker.test/'),
+    approved.replace('https://', 'https:\\\\'), approved + '\n', '', null,
+  ];
+  let scriptCount = 0;
+  for (const [index, item] of collection.item.entries()) {
+    let interpolations = 0, sends = 0, assertions = 0, tests = 0, skipped = 0;
+    const prerequests = [...(collection.event ?? []), ...(item.event ?? [])].filter(e => e.listen === 'prerequest');
+    const responseScripts = [...(collection.event ?? []), ...(item.event ?? [])].filter(e => e.listen === 'test');
+    const environment = { DEMO_BASE_URL: approved, EXPECTED_COMMIT: commit, EXPECTED_DEPLOYMENT_ID: 'dpl_fixture123' };
+    const body = index === 0 ? '<html>Platform protection</html>' : index === 3 ? {
+      status: 'ok', requestId: '01234567-0123-4567-89ab-0123456789ab',
+      source: { project: 'coderabbit-automation-demo', environment: 'preview', commit, deploymentId: 'dpl_fixture123' },
+    } : { error: 'Unauthorized' };
+    const expect = value => ({
+      to: {
+        eql(expected) { assertions++; assert.deepEqual(value, JSON.parse(JSON.stringify(expected))); },
+        match(pattern) { assertions++; assert.match(value, pattern); },
+        include(expected) { assertions++; assert.ok(value.includes(expected)); },
+      },
+      not: { to: { eql(expected) { assertions++; assert.notDeepEqual(value, expected); } } },
+    });
+    const context = {
+      pm: {
+        environment: { get: key => environment[key] },
+        execution: { skipRequest() { skipped++; } },
+        test(_, fn) { tests++; fn(); }, expect,
+        response: { code: index === 3 ? 200 : 401,
+          to: { have: { status(expected) { assertions++; assert.equal(index === 3 ? 200 : 401, expected); } } },
+          json: () => body, text: () => typeof body === 'string' ? body : JSON.stringify(body),
+          headers: { get: () => 'no-store' },
+        },
+      },
+    };
+    const run = event => runInNewContext(event.script.exec.join('\n'), { ...context }, { timeout: 1000 });
+    for (const event of [...prerequests, ...responseScripts]) {
+      assert.doesNotThrow(() => new Function(event.script.exec.join('\n')));
+      scriptCount++;
+    }
+    const beforeSend = () => {
+      for (const event of prerequests) run(event);
+      interpolations += item.request.header.length;
+      sends++;
+    };
+    assert.doesNotThrow(beforeSend);
+    assert.equal(sends, 1);
+    assert.equal(interpolations, item.request.header.length);
+    for (const origin of badOrigins) {
+      environment.DEMO_BASE_URL = origin;
+      assert.throws(beforeSend, /Set an approved project\/team immutable Preview origin/);
+      assert.equal(sends, 1, 'rejected origin must not reach send');
+      assert.equal(interpolations, item.request.header.length, 'rejected origin must not reach header interpolation');
+    }
+    assert.equal(skipped, badOrigins.length, 'each rejected origin explicitly skips Postman request execution');
+    environment.DEMO_BASE_URL = approved;
+    for (const event of responseScripts) run(event);
+    assert.equal(tests, [1, 2, 2, 3][index]);
+    assert.equal(assertions, [2, 3, 3, 8][index]);
+  }
+  assert.equal(scriptCount, 8, 'collection guard and each request test script execute for all four requests');
 });
