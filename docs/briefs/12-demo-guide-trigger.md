@@ -124,6 +124,12 @@ The five validated PR findings are addressed in `6fd2280`: kernel-released claim
 
 <!-- coderabbit-ai-generated-section:v1:f5f7a77aada903fa1693b51caef22eab7104f569e7f69399d936805aa6540f38 -->
 
-The production preflight implements strict proof through the fixed notification-rule GET: exactly one conditional recipient for transition_type:is_alert and the reviewed webhook, with no ordinary/fallback delivery, extra conditions, bundling or dynamic delivery. Every runtime/controller/monitor/suppression guard must also pass; there is no operator override. The observed live plain-recipient rule still fails this proof, and live runtime/controller readiness remains unverified. Live routing or runtime work and a real-alert window require separate approval; fixture success is not live acceptance.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8a2f81f5376947c95f32fce8d3aa86c26d80354be9c24f9f0f9d7c77730bf9e9 -->
+
+The production preflight retains the fixed notification-rule GET proof and now requires complete, unfiltered notification-rule enumeration, including a consistent total and terminal empty page. Datadog unions recipients from all rules matching monitor tags or their union with the pinned reporting group, retaining multi-value keys. Every applicable rule must use exactly one `transition_type:is_alert` condition and the reviewed webhook, without ordinary/fallback delivery, additional conditions, bundling or dynamic delivery. Unknown or incomplete coverage blocks readiness. Enumeration and conservative grammar bounds are documented in [local setup](../demo/local-setup.md); verification and recovery repeat coverage checks. Every runtime/controller/monitor/suppression guard must also pass; there is no operator override. The observed live plain-recipient rule still fails, and live runtime/controller readiness remains unverified. Live routing or runtime work and a real-alert window require separate approval; fixture success is not live acceptance.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->

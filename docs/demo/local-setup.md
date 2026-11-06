@@ -139,7 +139,25 @@ The custom Socket Mode bridge remains stopped. No GCP apply, image publication, 
 
 <!-- coderabbit-ai-generated-section:v1:d3574a3d652053cdde11f42a451b1c13d496a8823a14531caaeaeff58eb4c199 -->
 
-The five commands above are implemented. Production preflight validates the existing rule GET for exactly one conditional recipient scope `transition_type:is_alert` targeting `webhook-deskdrop-mmani-local`, alongside the fixed rule identity, five owned tags and every runtime/monitor/suppression guard. Ordinary recipients and fallback recipients must be absent or empty arrays; malformed fields, additional conditions or recipients, bundling, threading and unknown delivery options are rejected. There is no attestation flag or override. The proof is rechecked during verification and recovery. These fields are documented in the [official rule GET schema](https://docs.datadoghq.com/api/latest/monitors/get-a-monitor-notification-rule/). `plan` reports ready only when the complete read-only preflight succeeds; failures return sanitized blockers. The observed live plain-recipient rule still fails this guard, and the known Agent/journey/checkout readiness failures remain operator prerequisites. Any live routing setup requires separate approval. No live rehearsal, routing edit or controller upgrade was performed by this feature.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:64f65fde5a25a2d13a4b8bea50a52df7331980604fca26d2c234ed56426c0235 -->
+
+The five commands above are implemented. Production preflight retains the fixed rule ID/name/five owned tags and requires exactly one conditional recipient scope `transition_type:is_alert` targeting `webhook-deskdrop-mmani-local`. It also enumerates **all** notification rules through the unfiltered US3 collection GET, because Datadog merges recipients from every matching rule. The direct owned record must equal its listed record. Every matching rule must have that same strict Alert-only destination; unrelated rule IDs/names need not equal the owned rule. Ordinary/fallback recipients must be absent or empty arrays. Extra conditions/recipients, bundling, threading, dynamic or unknown delivery fields block proof. There is no attestation flag or override. All runtime, controller, monitor and suppression guards remain required.
+
+The scan uses zero-based pages of100 sorted by `name:asc`, at most1000 rules and an additional empty terminal page. It requires a consistent integer `meta.page.total_count`, exact page lengths and unique IDs. Missing pages, inaccessible responses, count changes, duplicate records, a direct/list conflict or a limit breach block readiness. The entire scan shares the existing10-second request budget, clipped by its calling phase; response size remains capped at1MiB per request, with abort and redirect rejection unchanged. It never sends search filters or writes routing. This is bounded readback evidence, not an atomic provider snapshot: concurrent changes can invalidate it, so verification and recovery repeat the complete scan. No organization rules or recipient data are printed or persisted.
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d97bd217191ab4eeffd090308f7f40853632ecb100ff6729a71166ccd3f4b52e -->
+
+Matching evaluates both monitor-only tags and their union with the validated sole reporting group `host:deskdrop-mmani-local`. It retains every value for a key and evaluates `NOT` separately for each candidate. The pinned monitor query/ownership guard excludes other or unknown reporting groups. Tag arrays are limited to 128 entries and require every exact key:value pair (an empty array is global). The bounded scope parser accepts uppercase explicit/implicit `AND`, `OR`, unary `NOT`, parentheses, grouped same-key values, double-quoted values and `key:*` presence. Mixing `AND` and `OR` at one nesting level requires parentheses; it does not guess precedence. Limits are3000 characters,512 tokens and32 nesting/unary-negation levels. Keys use lowercase letters/digits/underscore/dot/hyphen, starting with a letter; bare values use letters/digits/underscore/dot/slash/hyphen. Quoted values allow spaces and other literal characters, but escapes and wildcard characters in quotes are refused. Partial/question-mark wildcards, keyless tokens, malformed or unsupported expressions and unknown filter fields block proof even if one branch looks nonmatching. Only definitively nonmatching rules can be ignored.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+These semantics are documented in the [notification rules matching guide](https://docs.datadoghq.com/monitors/notify/notification_rules/#how-matching-works), [collection GET schema](https://docs.datadoghq.com/api/latest/monitors/get-all-monitor-notification-rules/) and [individual GET schema](https://docs.datadoghq.com/api/latest/monitors/get-a-monitor-notification-rule/). `plan` reports ready only after complete successful read-only preflight; failures return sanitized blockers. The observed live plain-recipient rule still fails, and known Agent/journey/checkout readiness failures remain operator prerequisites. Any live routing setup requires separate approval. No live rehearsal, routing edit or controller upgrade was performed by this feature.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
 

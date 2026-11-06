@@ -627,3 +627,82 @@ test('checkout notification rule read is fixed and cannot become a routing write
   assert.equal(calls[0].hostname, 'api.us3.datadoghq.com');
   assert.equal(calls[0].path, '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc');
 });
+
+async function notificationClient(responseFor, deadlineMs = 1000) {
+  const {EventEmitter} = await import('node:events');
+  const {makeApi} = await import('../scripts/demo/datadog-monitors.mjs');
+  const calls=[], destroyed=[];
+  const api=makeApi({apiKey:'fixture-api',appKey:'fixture-app',deadlineMs,request(options,callback){
+    calls.push(options); const req=new EventEmitter();let timer;
+    req.destroy=()=>{clearTimeout(timer);destroyed.push(options.path);};
+    req.end=body=>{
+      assert.equal(body,undefined);
+      const result=responseFor(options,calls.length);
+      const respond=()=>{
+        const res=new EventEmitter();res.statusCode=result.status??200;res.destroy=()=>{};callback(res);
+        queueMicrotask(()=>{res.emit('data',Buffer.from(result.raw??JSON.stringify(result.body)));res.emit('end');});
+      };
+      if(result.delay)timer=setTimeout(respond,result.delay);else respond();
+    };return req;
+  }});
+  return {api,calls,destroyed};
+}
+const rulePage=(data,total)=>({data,meta:{page:{total_count:total}}});
+const rulesOf=count=>Array.from({length:count},(_,i)=>({id:`rule-${i}`,attributes:{name:`Rule ${i}`,filter:{tags:[]},recipients:[]}}));
+test('complete notification inventory reads every zero-based page and terminal proof without search filters', async()=>{
+  for(const count of [0,1,100,101,1000]){
+    const rules=rulesOf(count);
+    const f=await notificationClient(options=>{
+      const url=new URL(options.path,'https://fixture.invalid'),page=Number(url.searchParams.get('page'));
+      assert.deepEqual([...url.searchParams.keys()],['page','per_page','sort']);
+      assert.equal(url.pathname,'/api/v2/monitor/notification_rule');assert.equal(url.searchParams.get('per_page'),'100');assert.equal(url.searchParams.get('sort'),'name:asc');
+      return {body:rulePage(rules.slice(page*100,(page+1)*100),count)};
+    });
+    assert.deepEqual(await f.api.notificationRules(),rules);assert.equal(f.calls.length,Math.ceil(count/100)+1);
+    assert.ok(f.calls.every(c=>c.method==='GET'&&c.hostname==='api.us3.datadoghq.com'&&c.protocol==='https:'&&c.port===443));
+    assert.ok(f.calls.every(c=>c.headers['DD-API-KEY']==='fixture-api'&&c.headers['DD-APPLICATION-KEY']==='fixture-app'));
+  }
+});
+test('notification inventory fails closed on incomplete, inconsistent, duplicated, malformed or over-limit pages', async()=>{
+  const rules=rulesOf(101);
+  const scenarios=[
+    ()=>rulePage([],1),()=>rulePage(rules.slice(0,99),101),()=>rulePage(rules,101),
+    (_,n)=>n===1?rulePage(rules.slice(0,100),101):rulePage([],101),
+    (_,n)=>n===1?rulePage(rules.slice(0,100),101):rulePage([rules[0]],101),
+    (_,n)=>n===1?rulePage(rules.slice(0,100),101):rulePage([rules[100]],100),
+    ()=>rulePage([],1001),()=>rulePage([],1.5),()=>rulePage([],-1),()=>rulePage([],'0'),
+    ()=>({data:[]}),()=>({data:[],meta:{page:null}}),()=>rulePage(null,0),
+    ()=>rulePage([{id:'bad/id',attributes:{}}],1),()=>rulePage([{id:'good',attributes:null}],1),
+    ()=>rulePage([{id:'good',attributes:[]}],1),()=>rulePage([rules[0],rules[0]],2),
+    (_,n)=>n===1?rulePage([rules[0]],1):rulePage([rules[1]],1)
+  ];
+  for(const scenario of scenarios){const f=await notificationClient((o,n)=>({body:scenario(o,n)}));await assert.rejects(f.api.notificationRules(),/coverage incomplete/);assert.ok(f.calls.length<=2);}
+});
+test('notification collection arguments cannot broaden endpoint, methods or page bounds', async()=>{
+  const f=await notificationClient(()=>({body:rulePage([],0)}));
+  for(const args of [[-1],[11],[1.5],['0'],[0,0],[0,101],[0,'100'],[0,100,'name:asc&filters=x'],[0,100,'other:asc'],[0,100,'name:asc',0],[0,100,'name:asc',NaN],[0,100,'name:asc',Infinity],[{method:'POST'}]])assert.throws(()=>f.api.listNotificationRules(...args),/Invalid notification rule page/);
+  assert.equal(f.calls.length,0);
+  for(const sort of ['name:asc','name:desc','created_at:asc','created_at:desc'])await f.api.listNotificationRules(0,1,sort);
+  assert.ok(f.calls.every(c=>c.method==='GET'));assert.equal(f.calls.length,4);
+  await assert.rejects(f.api.cancelDowntime('../monitor/notification_rule'));
+  await assert.rejects(f.api.getMonitor('../v2/monitor/notification_rule'));
+  assert.equal(f.api.createNotificationRule,undefined);assert.equal(f.api.cancelNotificationRule,undefined);assert.equal(f.calls.length,4);
+});
+test('notification collection retains sanitized access, redirect, size, deadline and abort guards', async()=>{
+  for(const status of [401,403,429,302,500]){
+    const f=await notificationClient(()=>({status,raw:'private-rule-recipient-canary'}));
+    await assert.rejects(f.api.notificationRules(),e=>!e.message.includes('canary')&&/Datadog/.test(e.message));assert.equal(f.calls.length,1);
+  }
+  for(const raw of ['{', 'x'.repeat(1048577)]){
+    const f=await notificationClient(()=>({raw}));await assert.rejects(f.api.notificationRules(),/response invalid/);assert.equal(f.calls.length,1);
+  }
+  const {bounded}=await import('../scripts/demo/trigger-alert.mjs');
+  const stalled=await notificationClient(()=>({body:rulePage([],0),delay:100}),20);
+  await assert.rejects(stalled.api.notificationRules(),/outcome unknown/);assert.equal(stalled.destroyed.length,1);
+  const aborted=await notificationClient(()=>({body:rulePage([],0),delay:100}));
+  await assert.rejects(bounded(()=>aborted.api.notificationRules(),10));assert.equal(aborted.destroyed.length,1);
+  const rules=rulesOf(101);
+  const clipped=await notificationClient((_,n)=>({body:rulePage(n===1?rules.slice(0,100):[rules[100]],101),delay:n===1?30:100}),60);
+  await assert.rejects(clipped.api.notificationRules(),/outcome unknown|coverage incomplete/);assert.equal(clipped.calls.length,2);assert.equal(clipped.destroyed.length,1);
+  await new Promise(resolve=>setTimeout(resolve,110));assert.equal(aborted.calls.length,1);assert.equal(clipped.calls.length,2);
+});

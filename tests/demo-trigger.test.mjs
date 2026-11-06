@@ -7,7 +7,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { cli, bounds, target, readState, writeState, exclusive, validateReceipt, bounded } from '../scripts/demo/trigger-alert.mjs';
 import { rehearse, routeIdentity, healthyController } from '../scripts/demo/trigger-watchdog.mjs';
-import { fixedTags } from '../scripts/demo/datadog-monitors.mjs';
+import { EventEmitter } from 'node:events';
+import { makeApi, fixedTags } from '../scripts/demo/datadog-monitors.mjs';
 const run = promisify(execFile);
 const missing = () => Object.assign(new Error('missing'), { code: 'ENOENT' });
 function fixture(overrides = {}) {
@@ -217,7 +218,22 @@ async function adapterFixture() {
   const status = {triggerProtocol:1,journeyBlocked:false,operationIdentity:{operationId:'owned'},commit:'a'.repeat(40),appImageId:`sha256:${'b'.repeat(64)}`,checks:{telemetry:'sent',availability:{status:0,time:Date.now()},checkout:{status:0,time:Date.now()}}};
   const rule={data:{id:target.rule,attributes:{name:'DeskDrop local demo to CodeRabbit MMANI',filter:{tags:[...fixedTags,owner]},recipients:[target.recipient]}}};
   const readers={site:target.site,definitions,api:{async getMonitor(id){calls.push(['monitor',id]);return monitors.find(m=>m.id===id);},async getDowntime(id){calls.push(['downtime',id]);return downtime.get(id);},async matches(id){return [journal.monitors.find(m=>m.id===id).downtime];},async getNotificationRule(){calls.push(['rule']);return rule;}},read:async()=>structuredClone(journal),write:async(n,v)=>{journal=structuredClone(v);},control:async()=>status,runtime:async()=>({ctx:{commit:status.commit,ids:{app:status.appImageId}},owned:['app','agent','runner','forwarder'].map(service=>({Id:'c'.repeat(64),Config:{Labels:{'com.docker.compose.service':service}},State:{Running:true,Health:{Status:'healthy'}}}))}),operation:async()=>status.operationIdentity,availability:async()=>true,tooling:async()=>'d'.repeat(40)};
-  return {readers,state,monitors,downtime,status,rule,calls,make:()=>productionAdapter(readers),journal:()=>journal};
+  const rules = [rule.data];
+  const routing = {status:200, delay:0, page:page => ({data:rules.slice(page*100,(page+1)*100),meta:{page:{total_count:rules.length}}})};
+  const routeApi = makeApi({apiKey:'fixture',appKey:'fixture',request(options, callback) {
+    calls.push(['rule-page', options]);
+    const req = new EventEmitter(); let timer; req.destroy = () => clearTimeout(timer); req.end = () => {
+      const page = Number(new URL(options.path, 'https://fixture.invalid').searchParams.get('page'));
+      const respond = () => {
+        const response = new EventEmitter(); response.statusCode = options.path.includes('?') ? routing.status : 200; response.destroy = () => {}; callback(response);
+        queueMicrotask(() => {response.emit('data', Buffer.from(JSON.stringify(options.path.includes('?') ? routing.page(page) : rule)));response.emit('end');});
+      };
+      if(routing.delay && options.path.includes('?')) timer = setTimeout(respond,routing.delay); else respond();
+    }; return req;
+  }});
+  readers.api.notificationRules = routeApi.notificationRules;
+  readers.api.getNotificationRule = async () => {calls.push(['rule']);return routeApi.getNotificationRule();};
+  return {readers,state,monitors,downtime,status,rule,rules,routing,calls,make:()=>productionAdapter(readers),journal:()=>journal};
 }
 test('production validation reads actual definitions, journal, ownership, routing and runtime', async () => {
   const good = await adapterFixture(); await assert.rejects((await good.make()).baseline(), /Alert-only/); assert.ok(good.calls.some(c=>c[0]==='rule'));
@@ -475,6 +491,8 @@ test('optional empty delivery arrays are deliberate and inspect reports only act
 });
 test('approved rehearsal executes through the validated production adapter with scoped fixture operations', async () => {
   const f = await adapterFixture(); conditionalRule(f); const calls = [];
+  f.rules.push({id:'unrelated',attributes:{filter:{scope:'env:prod AND host:other'},recipients:['unrelated-private-recipient']}});
+  f.rules.push({id:'safe-host',attributes:{...structuredClone(f.rule.data.attributes),name:'Another safe route',filter:{scope:'host:deskdrop-mmani-local'}}});
   f.readers.api.matches = async id => [...f.downtime.values()].filter(d => d.data.attributes.monitor_identifier.monitor_id === id && d.data.attributes.status === 'active').map(d => d.data.id);
   f.readers.api.cancelDowntime = async id => {calls.push(['cancel', id]); f.downtime.get(id).data.attributes.status = 'canceled';};
   f.readers.api.createDowntime = async spec => {
@@ -546,4 +564,107 @@ test('supervisor launch decodes spaces and Unicode paths without leaking inherit
     const result = await new Promise((resolve,reject) => {child.once('message',resolve);child.once('error',reject);});
     assert.deepEqual(result,{argument:'recover',clean:true}); assert.equal(await done,0);
   } finally {if(saved===undefined)delete process.env.DD_API_KEY;else process.env.DD_API_KEY=saved;if(child.exitCode===null && child.signalCode===null)child.kill('SIGKILL');await done;await rm(dir,{recursive:true});}
+});
+
+test('effective route proof rejects an additional host-only ordinary recipient before arming', async () => {
+  const f = await adapterFixture(); conditionalRule(f);
+  f.rules.push({id:'host-rule',attributes:{name:'Host route',filter:{scope:'host:deskdrop-mmani-local'},recipients:['unexpected']}});
+  await assert.rejects((await f.make()).baseline(), /Alert-only/);
+});
+
+test('complete production coverage rejects every matching unsafe route without mutations', async () => {
+  const filters = [
+    {tags:[]}, {tags:['host:deskdrop-mmani-local']},
+    ...['host:*', 'NOT env:prod', 'env:prod OR host:deskdrop-mmani-local',
+      'host:(other OR deskdrop-mmani-local)', 'host:"deskdrop-mmani-local"',
+      '(env:local-demo AND host:deskdrop-mmani-local) OR env:prod',
+      'env:local-demo host:deskdrop-mmani-local', 'NOT host:*'].map(scope=>({scope}))
+  ];
+  const delivery = [
+    a=>{delete a.conditional_recipients;a.recipients=[target.recipient];},
+    a=>a.conditional_recipients.fallback_recipients=[target.recipient],
+    a=>a.conditional_recipients.conditions[0].recipients.push('private-extra-recipient'),
+    a=>a.conditional_recipients.conditions[0].scope='env:local-demo',
+    a=>a.bundle_config={duration:60}, a=>a.dynamic_recipients={team:'private-team'}
+  ];
+  for(const filter of filters) for(const mutate of delivery) {
+    const f=await adapterFixture();conditionalRule(f);
+    const attributes={...structuredClone(f.rule.data.attributes),name:'Other route',filter};mutate(attributes);
+    f.rules.push({id:'other-rule',attributes}); const mutations=[];
+    f.readers.control=async command=>{if(command!=='status')mutations.push(command);return f.status;};
+    f.readers.api.cancelDowntime=async()=>mutations.push('cancel');
+    f.readers.api.createDowntime=async()=>mutations.push('create');
+    await assert.rejects(rehearse(await f.make(),fixture().store),/Alert-only/);
+    assert.deepEqual(mutations,[]);
+    assert.ok(f.calls.filter(c=>c[0]==='rule-page').every(c=>c[1].method==='GET'));
+    const {inspectProduction}=await import('../scripts/demo/trigger-watchdog.mjs');
+    const safe=JSON.stringify(await inspectProduction(f.make));
+    assert.ok(!safe.includes('private-extra-recipient'));assert.ok(!safe.includes('Other route'));assert.ok(!safe.includes('private-team'));
+  }
+});
+test('scope matching preserves multi-values, group union, quoting and conservative grammar limits', async () => {
+  const {notificationMatches}=await import('../scripts/demo/trigger-watchdog.mjs');
+  const candidates=[['env:local-demo','team:data platform','host:monitor-host'],['env:local-demo','team:data platform','host:monitor-host','host:deskdrop-mmani-local']];
+  for(const scope of ['host:monitor-host AND host:deskdrop-mmani-local','host:(monitor-host AND deskdrop-mmani-local)', 'team:"data platform"', 'host:*','NOT env:prod','env:prod OR (host:monitor-host AND host:deskdrop-mmani-local)']) assert.equal(notificationMatches({scope},candidates),true,scope);
+  for(const scope of ['NOT host:monitor-host','env:prod','host:(other OR missing)','NOT (host:monitor-host OR env:prod)']) assert.equal(notificationMatches({scope},candidates),false,scope);
+  assert.equal(notificationMatches({tags:['host:monitor-host','host:deskdrop-mmani-local']},candidates),true);
+  assert.equal(notificationMatches({tags:['env:local-demo','env:prod']},candidates),false);
+  for(const scope of ['', '*','keyless','env:prod-*','env:pr?d','env:"pr?d"','env:','env:()','env:(prod OR)','env:prod AND','env:prod OR host:* AND team:x','env:"bad\\escape"','env:"unterminated','env:prod XOR env:dev','NOT '.repeat(34)+'env:prod','('.repeat(34)+'env:prod'+')'.repeat(34),'env:prod '.repeat(400),'env:prod '.repeat(172), 'env:prod OR (unsupported)']) assert.throws(()=>notificationMatches({scope},candidates),/filter unverified/,scope);
+  for(const filter of [null,{}, {tags:null},{scope:'env:prod',tags:[]},{unknown:'env:prod'},{tags:['host:*']},{tags:['keyless']}]) assert.throws(()=>notificationMatches(filter,candidates),/filter unverified/);
+});
+test('production rule inventory rejects missing, conflicting, malformed and incomplete evidence', async () => {
+  const cases=[
+    f=>f.rules.splice(0),
+    f=>f.rules[0]=structuredClone({...f.rule.data,attributes:{...f.rule.data.attributes,name:'conflicting'}}),
+    f=>f.rules.push(f.rule.data),
+    f=>f.routing.page=()=>({data:[],meta:{page:{total_count:1}}}),
+    f=>f.routing.page=page=>({data:page?[]:[f.rule.data],meta:{page:{total_count:page?2:1}}}),
+    f=>f.routing.page=()=>({data:[],meta:{page:{total_count:1001}}}),
+    f=>f.routing.page=()=>({data:[f.rule.data]}),
+    f=>f.rules.push({id:'unknown-filter',attributes:{filter:{scope:'env:prod OR unknown'},recipients:[]}}),
+    f=>f.monitors[1].state.groups['host:other']={status:'OK'},
+    ...[401,403,429,302].map(status=>f=>f.routing.status=status)
+  ];
+  for(const mutate of cases){
+    const f=await adapterFixture();conditionalRule(f);mutate(f);const mutations=[];
+    f.readers.control=async command=>{if(command!=='status')mutations.push(command);return f.status;};
+    await assert.rejects(rehearse(await f.make(),fixture().store));assert.deepEqual(mutations,[]);
+  }
+  const f=await adapterFixture();conditionalRule(f);f.routing.delay=100;
+  await assert.rejects(bounded(async()=>(await f.make()).baseline(),15));
+  await new Promise(r=>setTimeout(r,110));assert.equal(f.calls.filter(c=>c[0]==='rule-page').length,2);
+});
+test('verification and recovery re-enumerate and reject a newly matching unsafe rule', async () => {
+  const f=await adapterFixture();conditionalRule(f);const a=await f.make();await a.baseline();
+  const before=f.calls.filter(c=>c[0]==='rule-page').length;
+  f.rules.push({id:'new-unsafe',attributes:{filter:{scope:'host:*'},recipients:['unexpected']}});
+  await assert.rejects(a.verify(),/Alert-only/);await assert.rejects(a.verify(true),/Alert-only/);
+  await assert.rejects(a.replace('new-suppression'),/Alert-only/);
+  assert.equal(f.journal().monitors[1].downtime,'dt-1');
+  assert.ok(f.calls.filter(c=>c[0]==='rule-page').length>=before+9);
+});
+
+test('a route introduced during the fake outage fences completion while owned app recovery is still attempted', async()=>{
+  const f=await adapterFixture();conditionalRule(f);const calls=[];
+  f.readers.api.matches=async id=>[...f.downtime.values()].filter(d=>d.data.attributes.monitor_identifier.monitor_id===id&&d.data.attributes.status==='active').map(d=>d.data.id);
+  f.readers.api.cancelDowntime=async id=>{calls.push('cancel');f.downtime.get(id).data.attributes.status='canceled';};
+  f.readers.api.createDowntime=async()=>assert.fail('unsafe route allowed a new suppression write');
+  f.readers.control=async command=>{
+    if(command==='status')return f.status;
+    const action=command.split(':')[1];calls.push(action);
+    const group=f.monitors[1].state.groups['host:deskdrop-mmani-local'];
+    if(action==='stop'){
+      group.status='Alert';group.last_triggered_ts=Math.ceil(Date.now()/1000);
+      f.rules.push({id:'late-unsafe',attributes:{filter:{scope:'host:*'},recipients:['private-route-canary']}});
+    }
+    if(action==='restart')group.status='OK';
+    return {status:action};
+  };
+  const r=await rehearse(await f.make(),fixture().store);
+  assert.equal(r.phase,'uncertain');assert.equal(r.protected,false);assert.equal(r.recovered,false);
+  assert.deepEqual(calls,['reserve','cancel','stop','restart']);
+  assert.equal(f.monitors[1].state.groups['host:deskdrop-mmani-local'].status,'OK');
+  assert.equal(r.releaseConfirmed,undefined);assert.equal(r.createIntent,undefined);
+  assert.ok(!JSON.stringify(r).includes('private-route-canary'));
+  assert.equal(f.journal().monitors[1].downtime,'dt-1');
 });

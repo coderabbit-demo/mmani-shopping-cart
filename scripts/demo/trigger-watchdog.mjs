@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { bounds, target, directory, readState, writeState, supervisorLease, validateReceipt, bounded, evidence, confirmedControl } from './trigger-alert.mjs';
@@ -13,7 +14,9 @@ export function routeIdentity(rule, owner) {
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const emptyOptional = value => value === undefined || (Array.isArray(value) && value.length === 0);
 export function alertOnlyRule(rule, owner) {
-  if (!routeIdentity(rule, owner)) return false;
+  return routeIdentity(rule, owner) && alertOnlyDelivery(rule);
+}
+function alertOnlyDelivery(rule) {
   const a = rule.data.attributes, c = a.conditional_recipients;
   if (rule.data.type !== undefined && rule.data.type !== 'monitor-notification-rule') return false;
   if (Object.keys(a).some(k => !['name', 'filter', 'recipients', 'conditional_recipients', 'created', 'modified', 'created_at', 'modified_at', 'rule_options'].includes(k))) return false;
@@ -22,6 +25,97 @@ export function alertOnlyRule(rule, owner) {
   if (!Array.isArray(c.conditions) || c.conditions.length !== 1) return false;
   const condition = c.conditions[0];
   return object(condition) && Object.keys(condition).sort().join(',') === 'recipients,scope' && condition.scope === 'transition_type:is_alert' && JSON.stringify(condition.recipients) === JSON.stringify([target.recipient]);
+}
+const routeError = () => { throw new Error('Notification rule filter unverified'); };
+function scopePredicate(scope) {
+  if (typeof scope !== 'string' || !scope.trim() || scope.length > 3000) return routeError();
+  const tokens = [];
+  const lex = /\s+|"[^"\\\x00-\x1f]*"|[():]|[A-Za-z0-9_.*\/-]+/gy;
+  let at = 0;
+  while (at < scope.length) {
+    lex.lastIndex = at;
+    const match = lex.exec(scope);
+    if (!match) return routeError();
+    at = lex.lastIndex;
+    if (!/^\s+$/.test(match[0])) tokens.push({text:match[0], start:match.index, end:at});
+    if (tokens.length > 512) return routeError();
+  }
+  let i = 0;
+  const peek = () => tokens[i]?.text;
+  function atom(key, depth) {
+    if (depth > 32) return routeError();
+    if (peek() === 'NOT') {i++; const value = atom(key, depth + 1); return tags => !value(tags);}
+    if (peek() === '(') {
+      i++; const value = expression(key, depth + 1);
+      if (peek() !== ')') return routeError();
+      i++; return value;
+    }
+    if (!key) {
+      key = peek();
+      if (!/^[a-z][a-z0-9_.-]*$/.test(key ?? '') || tokens[i+1]?.text !== ':') return routeError();
+      i += 2;
+      if (peek() === '(') return atom(key, depth + 1);
+    }
+    const value = peek();
+    if (!value || ['AND','OR','NOT','(',')',':'].includes(value)) return routeError();
+    i++;
+    const quoted = value.startsWith('"'), literal = quoted ? value.slice(1,-1) : value;
+    if (!literal || literal.includes('?') || literal.includes('*') && (quoted || literal !== '*')) return routeError();
+    return tags => literal === '*' ? tags.has(key) : tags.get(key)?.has(literal) === true;
+  }
+  function expression(key, depth) {
+    const values = [atom(key, depth)]; let operator;
+    while (i < tokens.length && peek() !== ')') {
+      let next = peek();
+      if (next === 'AND' || next === 'OR') i++;
+      else {
+        if (tokens[i].start === tokens[i-1]?.end) return routeError();
+        next = 'AND';
+      }
+      if (operator && operator !== next) return routeError();
+      operator = next; values.push(atom(key, depth));
+    }
+    return tags => operator === 'OR' ? values.some(fn => fn(tags)) : values.every(fn => fn(tags));
+  }
+  const predicate = expression(undefined, 0);
+  if (i !== tokens.length) return routeError();
+  return predicate;
+}
+function tagset(tags) {
+  if (!Array.isArray(tags) || tags.length > 128) return routeError();
+  const result = new Map();
+  for (const tag of tags) {
+    if (typeof tag !== 'string' || tag.length > 3000 || /[\x00-\x1f]/.test(tag)) return routeError();
+    const colon = tag.indexOf(':'), key = tag.slice(0,colon), value = tag.slice(colon+1);
+    if (colon < 1 || !/^[a-z][a-z0-9_.-]*$/.test(key) || !value) return routeError();
+    if (!result.has(key)) result.set(key, new Set());
+    result.get(key).add(value);
+  }
+  return result;
+}
+export function notificationMatches(filter, candidates) {
+  if (!object(filter) || Object.keys(filter).length !== 1 || !Array.isArray(candidates) || candidates.length < 1 || candidates.length > 2) return routeError();
+  let predicate;
+  if (Object.hasOwn(filter, 'scope')) predicate = scopePredicate(filter.scope);
+  else if (Object.hasOwn(filter, 'tags')) {
+    const required = tagset(filter.tags);
+    if (filter.tags.some(tag => /[*?]/.test(tag))) return routeError();
+    predicate = tags => [...required].every(([key, values]) => [...values].every(value => tags.get(key)?.has(value)));
+  } else return routeError();
+  const sets = candidates.map(tagset);
+  return sets.some(predicate);
+}
+export function effectiveRoutes(rule, rules, monitor, owner) {
+  if (!alertOnlyRule(rule, owner)) throw new Error('Effective Alert-only delivery unverified');
+  groupState(monitor);
+  if (!Array.isArray(rules) || rules.length > 1000 || new Set(rules.map(r => r?.id)).size !== rules.length) throw new Error('Notification rule coverage incomplete');
+  const listed = rules.find(r => r?.id === target.rule);
+  if (!listed || !isDeepStrictEqual(listed, rule.data)) throw new Error('Notification rule coverage inconsistent');
+  const candidates = [monitor.tags, [...monitor.tags, `host:${target.host}`]];
+  for (const item of rules) {
+    if (!object(item) || typeof item.id !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(item.id) || Object.keys(item).some(k => !['id','type','attributes','relationships'].includes(k)) || (item.type !== undefined && item.type !== 'monitor-notification-rule') || !object(item.attributes)) throw new Error('Notification rule coverage incomplete');
+    if (notificationMatches(item.attributes.filter, candidates) && !alertOnlyDelivery({data:item})) throw new Error('Effective Alert-only delivery unverified');
+  }
 }
 export function healthyController(s, now = Date.now()) {
   return s?.triggerProtocol === 1 && s.journeyBlocked === false && s.checks?.telemetry === 'sent' && ['availability', 'checkout'].every(n => s.checks[n]?.status === 0 && Number.isSafeInteger(s.checks[n].time) && now >= s.checks[n].time && now - s.checks[n].time <= 60000);
@@ -55,10 +149,13 @@ export async function productionAdapter(readers, recover = false) {
     await readers.operation(operationIdentity);
     const current = await readers.read('monitors.json');
     if (JSON.stringify(current) !== snapshot) throw new Error('Monitor journal changed');
+    let checkout;
     for (let i = 0; i < wanted.length; i++) {
       const entry = state.monitors.find(e => e.name === wanted[i].name);
       if (entry?.id !== [target.availability, target.checkout, target.heartbeat][i]) throw new Error('Monitor target changed');
-      if (ownedMonitor(await api.getMonitor(entry.id), wanted[i]) !== entry.id) throw new Error('Monitor response ID changed');
+      const monitor = await api.getMonitor(entry.id);
+      if (entry.id === target.checkout) checkout = monitor;
+      if (ownedMonitor(monitor, wanted[i]) !== entry.id) throw new Error('Monitor response ID changed');
       if (recovery && entry.id === target.checkout) {
         const matches = await api.matches(entry.id);
         if (matches.some(id => id !== entry.downtime && id !== replacement)) throw new Error('Unexpected suppression');
@@ -71,10 +168,11 @@ export async function productionAdapter(readers, recover = false) {
     }
     const rule = await api.getNotificationRule();
     if (!routeIdentity(rule, state.owner)) throw new Error('Routing identity changed');
-    return rule;
+    return {rule, checkout};
   }
   async function verify(recovery = false, replacement) {
-    if (!alertOnlyRule(await inspect(recovery, replacement), state.owner)) throw new Error('Effective Alert-only delivery unverified');
+    const {rule, checkout} = await inspect(recovery, replacement);
+    effectiveRoutes(rule, await api.notificationRules(), checkout, state.owner);
   }
   let status;
   try { status = await readers.control('status'); } catch (e) { if (!recover) throw e; const receipt = validateReceipt(await readers.read('trigger.json')); status = { commit: receipt.identity.commit }; }
@@ -88,11 +186,12 @@ export async function productionAdapter(readers, recover = false) {
   return {
     identity, oldDowntime: entry?.downtime,
     async baseline() {
-      const rule = await inspect();
+      const {rule} = await inspect();
       if (!healthyController(status) || status.appImageId !== ctx.ids.app || !owned.every(x => x.State.Running) || !owned.some(x => x.Config.Labels['com.docker.compose.service'] === 'agent' && x.State.Health?.Status === 'healthy') || !await readers.availability(ctx)) throw new Error('Runtime unhealthy');
       const m = await api.getMonitor(target.checkout);
       if (m.overall_state !== 'OK' || groupState(m).status !== 'OK') throw new Error('Fresh healthy group required');
-      if (!alertOnlyRule(rule, state.owner)) throw new Error('Effective Alert-only delivery unverified');
+      if (ownedMonitor(m, wanted[1]) !== target.checkout) throw new Error('Monitor response ID changed');
+      effectiveRoutes(rule, await api.notificationRules(), m, state.owner);
     },
     verify,
     reserve: run => readers.control(`trigger:reserve:${run}`),
@@ -135,7 +234,7 @@ export async function inspectProduction(prepare = production) {
   const blockers = [];
   try { await bounded(async () => { const a = await prepare(); await a.baseline(); }, bounds.prepare); }
   catch (error) {
-    const safe = new Set(['Mac required', 'Wrong Datadog site', 'Invalid monitor journal', 'Monitor reconciliation required', 'Monitor journal changed', 'Monitor target changed', 'Monitor response ID changed', 'Monitor ownership or configuration changed', 'Suppression changed', 'Unexpected suppression', 'Routing identity changed', 'Effective Alert-only delivery unverified', 'Runtime unhealthy', 'Runtime identity inconsistent', 'Controller operation unverified', 'Runtime operation unknown', 'Runtime operation changed', 'Fresh healthy group required', 'Monitor group unknown', 'Outcome unknown', 'Datadog API access denied', 'Datadog API rate limited']);
+    const safe = new Set(['Mac required', 'Wrong Datadog site', 'Invalid monitor journal', 'Monitor reconciliation required', 'Monitor journal changed', 'Monitor target changed', 'Monitor response ID changed', 'Monitor ownership or configuration changed', 'Suppression changed', 'Unexpected suppression', 'Routing identity changed', 'Effective Alert-only delivery unverified', 'Runtime unhealthy', 'Runtime identity inconsistent', 'Controller operation unverified', 'Runtime operation unknown', 'Runtime operation changed', 'Fresh healthy group required', 'Monitor group unknown', 'Notification rule filter unverified', 'Notification rule coverage incomplete', 'Notification rule coverage inconsistent', 'Outcome unknown', 'Datadog API access denied', 'Datadog API rate limited', 'Datadog API redirect rejected', 'Datadog API request failed', 'Datadog request outcome unknown', 'Datadog response invalid or outcome unknown']);
     blockers.push(safe.has(error?.message) ? error.message : 'Runtime, ownership or suppression readiness not confirmed');
   }
   return { status: blockers.length ? 'blocked' : 'ready', target, bounds, blockers, events: 'unavailable' };

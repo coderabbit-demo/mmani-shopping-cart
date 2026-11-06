@@ -88,8 +88,9 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
     requestDeadline = Math.min(requestDeadline, operation ? operation.deadline - Date.now() : requestDeadline);
     if (requestDeadline <= 0) throw new Error('Datadog request outcome unknown');
     const ruleRead = method === 'GET' && path === '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc';
+    const ruleList = method === 'GET' && /^\/api\/v2\/monitor\/notification_rule\?page=(?:[0-9]|10)&per_page=(?:[1-9]|[1-9][0-9]|100)&sort=(?:name|created_at)%3A(?:asc|desc)$/.test(path);
     const groupRead = method === 'GET' && /^\/api\/v1\/monitor\/\d+\?group_states=all$/.test(path);
-    if ((!ruleRead && !groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
+    if ((!ruleRead && !ruleList && !groupRead && !/^(?:\/api\/v1\/monitor(?:\/validate|\/\d+)?(?:\?page=\d+&page_size=\d+)?|\/api\/v2\/downtime(?:\/[A-Za-z0-9-]+)?|\/api\/v2\/monitor\/\d+\/downtime_matches(?:\?page%5Boffset%5D=\d+&page%5Blimit%5D=\d+)?)$/.test(path)) || !['GET', 'POST', 'DELETE'].includes(method)) throw new Error('Invalid API operation');
     return new Promise((resolve, reject) => {
       let size = 0, chunks = [], finished = false, req, response;
       const fail = () => finish('Datadog request outcome unknown');
@@ -125,7 +126,34 @@ export function makeApi({ apiKey, appKey, request = https.request, deadlineMs = 
       } catch { finish('Datadog request outcome unknown'); }
     });
   }
+  const listNotificationRules = (page, perPage = 100, sort = 'name:asc', remaining = deadlineMs) => {
+    if (!Number.isInteger(page) || page < 0 || page > 10 || !Number.isInteger(perPage) || perPage < 1 || perPage > 100 || !['name:asc', 'name:desc', 'created_at:asc', 'created_at:desc'].includes(sort) || !Number.isFinite(remaining) || remaining <= 0) throw new Error('Invalid notification rule page');
+    return call('GET', `/api/v2/monitor/notification_rule?page=${page}&per_page=${perPage}&sort=${encodeURIComponent(sort)}`, undefined, Math.min(deadlineMs, remaining));
+  };
   return {
+    listNotificationRules,
+    async notificationRules() {
+      const end = performance.now() + deadlineMs, rules = [], ids = new Set();
+      let total;
+      for (let page = 0; page <= 10; page++) {
+        const remaining = end - performance.now();
+        if (remaining <= 0) throw new Error('Notification rule coverage incomplete');
+        const result = await listNotificationRules(page, 100, 'name:asc', remaining);
+        const count = result?.meta?.page?.total_count;
+        if (!Number.isSafeInteger(count) || count < 0 || count > 1000 || (total !== undefined && count !== total) || !Array.isArray(result?.data)) throw new Error('Notification rule coverage incomplete');
+        total = count;
+        if (result.data.length !== Math.min(100, Math.max(0, total - page * 100))) throw new Error('Notification rule coverage incomplete');
+        for (const rule of result.data) {
+          if (typeof rule?.id !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(rule.id) || ids.has(rule.id) || !rule.attributes || typeof rule.attributes !== 'object' || Array.isArray(rule.attributes)) throw new Error('Notification rule coverage incomplete');
+          ids.add(rule.id); rules.push(rule);
+        }
+        if (result.data.length === 0) {
+          if (rules.length !== total) throw new Error('Notification rule coverage incomplete');
+          return rules;
+        }
+      }
+      throw new Error('Notification rule coverage incomplete');
+    },
     getNotificationRule: () => call('GET', '/api/v2/monitor/notification_rule/8e4ea5f2-29e7-410d-a4a3-b258c8fc30fc'),
     listMonitors: (page, size, remaining = deadlineMs) => call('GET', `/api/v1/monitor?page=${page}&page_size=${size}`, undefined, Math.max(1, Math.min(deadlineMs, remaining))),
     validate: body => call('POST', '/api/v1/monitor/validate', body),
