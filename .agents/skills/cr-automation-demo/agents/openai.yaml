@@ -1,0 +1,4 @@
+interface:
+  display_name: "CR Automation Demo"
+  short_description: "Prepare the retained Mac Docker incident demo"
+  default_prompt: "Use $cr-automation-demo to prepare or resume the retained Mac Docker demo and leave the final trigger for me."
